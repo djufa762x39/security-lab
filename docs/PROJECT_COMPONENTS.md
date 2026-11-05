@@ -4,7 +4,7 @@ Components and requirements are defined by the Security Lab project specificatio
 
 | Team | Component 1 (ID) | Component 2 (ID) | Notes |
 | --- | --- | --- | --- |
-| Team 1 | IDN-02 Secure login and logout | | Denis Djuris (PR 14/2023): IDN-02; |
+| Team 1 | IDN-02 Secure login and logout | IDN-06 MFA for selected user groups | Denis Djuris (PR 14/2023): IDN-02; |
 | Team 2 | IDN-03 Account status | | Igor Cvijić (PR 21/2023): IDN-03; Vladimir Radlovački (PR 23/2023); Nebojša Golušin (PR 17/2023); |
 | [team] | IDN-05 Per-account lockout (ASP.NET Identity) | | milanmilosev1: IDN-05 lockout, [IDN-05 lockout](components/identity/IDN-05-lockout.md); per-IP limiting is in PR #28 |
 | Team 3 | ACC-05 — podrazumevano odbijanje | ACC-08 — kontekstualne politike pristupa | [ACC-05 i ACC-08](components/ACC-05-ACC-08.md) |

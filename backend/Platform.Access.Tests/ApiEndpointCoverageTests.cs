@@ -27,6 +27,8 @@ public class ApiEndpointCoverageTests
         "/api/admin/accounts/{id:guid}/status",
         "/api/admin/accounts/{id:guid}/unlock",
         "/api/auth/login",
+        "/api/auth/logout",
+        "/api/auth/me",
         "/api/authoring/templates",
         "/api/authoring/templates/{templateId:guid}/drafts",
         "/api/laboratories/",
