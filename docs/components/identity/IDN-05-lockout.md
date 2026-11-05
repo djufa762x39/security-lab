@@ -109,6 +109,7 @@ The lockout values are validated by `IdentityLockoutOptionsValidator` with `Vali
 
 - **Deliberate lockout of a victim.** Anyone who knows a victim's email can lock the account on purpose (denial of service). The lockout is limited in time and an administrator can unlock it.
 - **The per-IP limit is not attached to login yet.** `AuthController.Login` has no `[EnableRateLimiting(RateLimitPolicies.Login)]`, so the per-IP layer does not run on this endpoint. Until it does, spreading guesses across many accounts is limited only by each account's lockout.
+- **Small timing difference for locked accounts.** A locked account skips the failure update, so it answers a few database round trips faster than an unknown email. The BCrypt check dominates the response time, but the difference has not been measured.
 - **A correct password on a blocked account resets its counter.** The login is still refused by `LoginService`, so this gives no access.
 - **Accounts outside `identity.accounts`.** `AspNetUsers` accounts (IDN-01) cannot log in, and IDN-03 status changes still go to the in-memory repository. Both are known deviations, to be resolved when those stores move to D1 (ADM-02).
 
@@ -121,7 +122,7 @@ The lockout values are validated by `IdentityLockoutOptionsValidator` with `Vali
 - **Run instructions:**
   - `dotnet test backend/SecurityLab.slnx`. Docker is required for the Testcontainers tests.
   - Development applies migration `AddAccountLockout` at startup. Other environments must apply it before deploying this version, because login reads the new columns.
-- **Tests and results:** 2026-11-05: `Platform.Identity.Tests` 218 passed, 33 of them in category `IDN-05`, and a manual run in Development against a throwaway local Postgres confirmed lockout, identical 401 bodies, 403 for a teacher, admin unlock with a real session and login afterwards. With the lockout check disabled on purpose, 5 of the `IDN-05` tests failed, as they should. In the whole solution, 8 tests fail (`Platform.Audit.Tests` 7, `Laboratories.Tests` 1); the same 8 fail on `origin/main` at `e3c8f03` without this work.
+- **Tests and results:** 2026-11-05: `Platform.Identity.Tests` 218 passed, 33 of them in category `IDN-05`, and a manual run in Development against a throwaway local Postgres confirmed lockout, identical 401 bodies, 403 for a teacher, admin unlock with a real session and login afterwards. With the lockout check disabled on purpose, 5 of the `IDN-05` tests failed, as they should. The CI script `scripts/audit/test-postgres.ps1` passes for the whole solution: 1267 passed, 0 failed, 9 skipped.
 - **Next steps:**
   - Add `[EnableRateLimiting(RateLimitPolicies.Login)]` to `AuthController.Login`.
   - Frontend: add an unlock action to the admin UI.
