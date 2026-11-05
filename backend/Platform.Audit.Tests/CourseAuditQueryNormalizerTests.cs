@@ -79,6 +79,7 @@ public sealed class CourseAuditQueryNormalizerTests
     [TestCase("1e2", CourseAuditQueryErrorCode.InvalidFormat)]
     [TestCase(" 10", CourseAuditQueryErrorCode.InvalidFormat)]
     [TestCase("9999999", CourseAuditQueryErrorCode.InvalidFormat)]
+    [TestCase("10\n", CourseAuditQueryErrorCode.InvalidFormat)]
     public void Normalize_WithInvalidPageSize_IsRefused(string pageSize, CourseAuditQueryErrorCode code)
     {
         AssertSingleError(new CourseAuditQuery(CourseK, PageSize: pageSize), CourseAuditQueryField.PageSize, code);
@@ -88,6 +89,7 @@ public sealed class CourseAuditQueryNormalizerTests
     [TestCase("-1", CourseAuditQueryErrorCode.InvalidFormat)]
     [TestCase("abc", CourseAuditQueryErrorCode.InvalidFormat)]
     [TestCase("1.5", CourseAuditQueryErrorCode.InvalidFormat)]
+    [TestCase("1\n", CourseAuditQueryErrorCode.InvalidFormat)]
     public void Normalize_WithInvalidPage_IsRefused(string page, CourseAuditQueryErrorCode code)
     {
         AssertSingleError(new CourseAuditQuery(CourseK, Page: page), CourseAuditQueryField.Page, code);
@@ -165,6 +167,7 @@ public sealed class CourseAuditQueryNormalizerTests
     [TestCase("x'--")]
     [TestCase("<script>")]
     [TestCase("ć")]
+    [TestCase("corr-0001\n")]
     public void Normalize_WithInvalidCorrelationId_IsRefused(string correlationId)
     {
         AssertSingleError(new CourseAuditQuery(CourseK, CorrelationId: correlationId),
@@ -201,6 +204,7 @@ public sealed class CourseAuditQueryNormalizerTests
     [TestCase("2026-13-01T00:00:00Z")]
     [TestCase("2026-11-01T00:00:00+0100")]
     [TestCase("1730419200")]
+    [TestCase("2026-11-01T00:00:00Z\n")]
     public void Normalize_WithTimeWithoutValidIsoZone_IsRefused(string from)
     {
         AssertSingleError(new CourseAuditQuery(CourseK, From: from), CourseAuditQueryField.From,
@@ -230,6 +234,15 @@ public sealed class CourseAuditQueryNormalizerTests
 
         Assert.That(normalized.From, Is.EqualTo(new DateTimeOffset(2026, 10, 1, 0, 0, 0, TimeSpan.Zero)));
         Assert.That(normalized.To, Is.EqualTo(new DateTimeOffset(2026, 10, 8, 0, 0, 0, TimeSpan.Zero)));
+    }
+
+    [TestCase("9999-12-31T00:00:00Z", null)]
+    [TestCase(null, "0001-01-01T00:00:00Z")]
+    [TestCase(null, "0001-01-07T23:59:59Z")]
+    public void Normalize_WithOneSidedWindowOutsideCalendar_IsRefusedWithoutException(string? from, string? to)
+    {
+        AssertSingleError(new CourseAuditQuery(CourseK, From: from, To: to), CourseAuditQueryField.Range,
+            CourseAuditQueryErrorCode.OutOfRange);
     }
 
     [Test]

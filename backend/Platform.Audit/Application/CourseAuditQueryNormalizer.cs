@@ -31,17 +31,17 @@ internal sealed partial class CourseAuditQueryNormalizer(TimeProvider timeProvid
 {
     private static readonly string[] OutcomeNames = ["success", "denied", "failure"];
 
-    // Same rule as the correlation ID in the audit contract (AuditDraftValidator).
-    [GeneratedRegex(@"^[A-Za-z0-9._-]{1,64}$", RegexOptions.CultureInvariant)]
+    // Same characters as the correlation ID in the audit contract. \z, not $: $ also accepts a final newline.
+    [GeneratedRegex(@"^[A-Za-z0-9._-]{1,64}\z", RegexOptions.CultureInvariant)]
     private static partial Regex CorrelationIdPattern();
 
     // Date and time with a mandatory zone: Z or +hh:mm / -hh:mm. No date-only or local times.
     [GeneratedRegex(
-        @"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(:[0-9]{2}(\.[0-9]{1,7})?)?(Z|[+-][0-9]{2}:[0-9]{2})$",
+        @"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(:[0-9]{2}(\.[0-9]{1,7})?)?(Z|[+-][0-9]{2}:[0-9]{2})\z",
         RegexOptions.CultureInvariant)]
     private static partial Regex TimestampPattern();
 
-    [GeneratedRegex(@"^[0-9]{1,6}$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[0-9]{1,6}\z", RegexOptions.CultureInvariant)]
     private static partial Regex NumberPattern();
 
     private readonly TimeProvider _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
@@ -103,6 +103,15 @@ internal sealed partial class CourseAuditQueryNormalizer(TimeProvider timeProvid
             return null;
 
         var window = CourseAuditQueryLimits.DefaultRange;
+
+        // A one-sided window must stay inside the DateTimeOffset range, or adding it would throw.
+        if ((from is { } onlyFrom && to is null && onlyFrom > DateTimeOffset.MaxValue - window)
+            || (to is { } onlyTo && from is null && onlyTo < DateTimeOffset.MinValue + window))
+        {
+            errors.Add(new(CourseAuditQueryField.Range, CourseAuditQueryErrorCode.OutOfRange));
+            return null;
+        }
+
         (DateTimeOffset From, DateTimeOffset To) range = (from, to) switch
         {
             (null, null) => Last(window),
@@ -200,8 +209,10 @@ internal sealed partial class CourseAuditQueryNormalizer(TimeProvider timeProvid
         if (!IsSet(value))
             return defaultValue;
 
-        if (value.Length <= CourseAuditQueryLimits.MaxNumberLength && NumberPattern().IsMatch(value))
-            return int.Parse(value, NumberStyles.None, CultureInfo.InvariantCulture);
+        if (value.Length <= CourseAuditQueryLimits.MaxNumberLength
+            && NumberPattern().IsMatch(value)
+            && int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var number))
+            return number;
 
         errors.Add(new(field, CourseAuditQueryErrorCode.InvalidFormat));
         return null;
