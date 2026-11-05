@@ -1,13 +1,19 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Platform.Access.AspNet;
+using Platform.Access.Contracts;
 using Platform.Access.Domain.Enums;
 using Platform.Access.Domain.Models;
+using Platform.Access.Infrastructure.Catalog;
+using Platform.Access.Infrastructure.Policies;
 using Platform.Api.Interfaces.Identity;
 
 namespace Platform.Api.Modules.RevisionReviews;
 
 public static class ReviewEndpoints
 {
+    private const string EntryAction = "revision.entry";
+
     public static IServiceCollection AddRevisionReviews(this IServiceCollection services)
     {
         services.TryAddScoped<IPublicationSource, StoredPublicationSource>();
@@ -18,7 +24,14 @@ public static class ReviewEndpoints
 
     public static IEndpointRouteBuilder MapRevisionReviews(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/revisions").WithTags("Revision review");
+        var catalog = app.ServiceProvider.GetRequiredService<InMemoryActionCatalog>();
+        catalog.Register(EntryAction);
+        app.ServiceProvider.GetRequiredService<InMemoryAccessPolicyRegistry>()
+            .Register(EntryAction, new RevisionEntryPolicy());
+
+        // The central middleware requires an active account. The services then check each
+        // operation on its concrete resource, including course IDs in the body and list rows.
+        var group = app.MapGroup("/api/revisions").WithTags("Revision review").RequireAccess(EntryAction);
         group.MapPost("/", (CreateReviewDraft? body, HttpContext http, IRequestSubjectResolver subjects,
             DraftRevisionService drafts, CancellationToken ct) =>
         {
@@ -70,5 +83,14 @@ public static class ReviewEndpoints
         var subject = subjects.Resolve(http);
         return subject is { State: AccountState.Active } && Guid.TryParse(subject.Id, out var id) && id != Guid.Empty
             ? (id, subject) : null;
+    }
+
+    private sealed class RevisionEntryPolicy : IAccessPolicy
+    {
+        public string Id => EntryAction;
+        public string Version => "1";
+
+        public ValueTask<bool> EvaluateAsync(AccessRequest request, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(request.Subject is { State: AccountState.Active } && request.Resource is null);
     }
 }

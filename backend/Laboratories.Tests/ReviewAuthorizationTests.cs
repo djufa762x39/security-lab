@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Platform.Access.AspNet;
 using Platform.Access.Domain.Enums;
 using Platform.Access.Domain.Models;
 using Platform.Api.Interfaces.Identity;
@@ -23,7 +24,10 @@ public sealed class ReviewAuthorizationTests
             host.ConfigureTestServices(services =>
             {
                 services.RemoveAll<IRequestSubjectResolver>();
-                services.AddSingleton<IRequestSubjectResolver>(new TestResolver(authenticated));
+                services.RemoveAll<IAccessSubjectProvider>();
+                var resolver = new TestResolver(authenticated);
+                services.AddSingleton<IRequestSubjectResolver>(resolver);
+                services.AddSingleton<IAccessSubjectProvider>(resolver);
             });
         });
         using var client = factory.CreateClient();
@@ -41,9 +45,12 @@ public sealed class ReviewAuthorizationTests
         Assert.That(response.StatusCode, Is.EqualTo(expected));
     }
 
-    private sealed class TestResolver(bool authenticated) : IRequestSubjectResolver
+    private sealed class TestResolver(bool authenticated) : IRequestSubjectResolver, IAccessSubjectProvider
     {
         public SubjectRef? Resolve(Microsoft.AspNetCore.Http.HttpContext context) =>
             authenticated ? new SubjectRef("11111111-1111-1111-1111-111111111111", AccountState.Active) : null;
+
+        public ValueTask<SubjectRef?> GetSubjectAsync(Microsoft.AspNetCore.Http.HttpContext context,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(Resolve(context));
     }
 }

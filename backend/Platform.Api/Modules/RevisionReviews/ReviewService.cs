@@ -18,7 +18,7 @@ public sealed class ReviewService(
     TimeProvider clock)
 {
     public const string ReadAction = "revision.read";
-    public const string PendingAction = "revision.pending-reviews";
+    public const string PendingAction = "revision.pending.reviews";
     public const string MineAction = "revision.mine";
 
     public async Task<IResult> ApplyAsync(Guid id, Guid actor, SubjectRef subject, ReviewCommand command,
