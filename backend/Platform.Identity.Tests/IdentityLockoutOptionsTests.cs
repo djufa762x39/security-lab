@@ -1,12 +1,12 @@
-using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Platform.Identity.Tests;
 
-// IDN-05: podešavanja zaključavanja. Ne treba baza.
+// IDN-05: lockout settings. No database needed.
 [TestFixture]
+[Category("IDN-05")]
 public sealed class IdentityLockoutOptionsTests
 {
     [Test]
@@ -14,15 +14,14 @@ public sealed class IdentityLockoutOptionsTests
     {
         using var provider = Build(new Dictionary<string, string?>());
 
-        var lockout = provider.GetRequiredService<IOptions<IdentityOptions>>().Value.Lockout;
+        var lockout = provider.GetRequiredService<IOptions<IdentityLockoutOptions>>().Value;
 
         Assert.That(lockout.MaxFailedAccessAttempts, Is.EqualTo(5));
-        Assert.That(lockout.DefaultLockoutTimeSpan, Is.EqualTo(TimeSpan.FromMinutes(15)));
-        Assert.That(lockout.AllowedForNewUsers, Is.True);
+        Assert.That(lockout.LockoutMinutes, Is.EqualTo(15));
     }
 
     [Test]
-    public void Configured_values_are_applied_to_identity_options()
+    public void Configured_values_are_used()
     {
         using var provider = Build(new Dictionary<string, string?>
         {
@@ -30,10 +29,10 @@ public sealed class IdentityLockoutOptionsTests
             ["Identity:Lockout:LockoutMinutes"] = "30"
         });
 
-        var lockout = provider.GetRequiredService<IOptions<IdentityOptions>>().Value.Lockout;
+        var lockout = provider.GetRequiredService<IOptions<IdentityLockoutOptions>>().Value;
 
         Assert.That(lockout.MaxFailedAccessAttempts, Is.EqualTo(3));
-        Assert.That(lockout.DefaultLockoutTimeSpan, Is.EqualTo(TimeSpan.FromMinutes(30)));
+        Assert.That(lockout.LockoutMinutes, Is.EqualTo(30));
     }
 
     [TestCase("0", "15")]
@@ -41,7 +40,7 @@ public sealed class IdentityLockoutOptionsTests
     [TestCase("5", "0")]
     [TestCase("5", "1441")]
     [TestCase("-1", "-1")]
-    public void Out_of_range_values_are_rejected(string attempts, string minutes)
+    public void Out_of_range_values_fail_startup_validation(string attempts, string minutes)
     {
         using var provider = Build(new Dictionary<string, string?>
         {
@@ -50,18 +49,15 @@ public sealed class IdentityLockoutOptionsTests
         });
 
         Assert.Throws<OptionsValidationException>(() =>
-            _ = provider.GetRequiredService<IOptions<IdentityLockoutOptions>>().Value);
-        Assert.Throws<OptionsValidationException>(() =>
-            _ = provider.GetRequiredService<IOptions<IdentityOptions>>().Value);
+            provider.GetRequiredService<IStartupValidator>().Validate());
     }
 
     private static ServiceProvider Build(Dictionary<string, string?> settings)
     {
-        settings["ConnectionStrings:Identity"] = "Host=127.0.0.1;Database=unused";
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().AddInMemoryCollection(settings).Build());
-        services.AddIdentityModule();
+        services.AddIdentityModule(configuration);
         return services.BuildServiceProvider();
     }
 }

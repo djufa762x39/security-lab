@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using Moq;
 using Platform.Identity.Enums;
 using Platform.Identity.Interfaces;
@@ -97,6 +98,46 @@ public class PasswordAndCredentialTests
         Assert.That((await empty.VerifyAsync("nobody@example.com", Password)).IsValid, Is.False);
     }
 
+    [Test]
+    public async Task Verifier_UnknownEmail_RunsTheSameFailureUpdate_SoTimingDoesNotReveal()
+    {
+        var verifier = VerifierWith(null, out var store);
+
+        var result = await verifier.VerifyAsync("  Student@Example.COM ", Password);
+
+        Assert.That(result, Is.EqualTo(CredentialResult.Invalid));
+        store.Verify(s => s.RecordFailureAsync(
+            "student@example.com", It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Once());
+    }
+
+    [Test]
+    public async Task Verifier_LockedAccount_IsRefused_EvenWithTheCorrectPassword_AndTheAttemptIsNotCounted()
+    {
+        var id = Guid.NewGuid();
+        var lockoutEnd = DateTimeOffset.UtcNow.AddMinutes(5);
+        var verifier = VerifierWith(
+            new CredentialRecord(id, AccountStatus.Active, _hasher.Hash(Password), LockoutEnd: lockoutEnd), out var store);
+
+        var result = await verifier.VerifyAsync("student@example.com", Password);
+
+        Assert.That(result.IsValid, Is.False);
+        Assert.That(result.IsLockedOut, Is.True);
+        Assert.That(result.AccountId, Is.EqualTo(id));
+        store.Verify(s => s.RecordFailureAsync(
+            It.IsAny<string>(), It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Never());
+        store.Verify(s => s.ClearFailuresAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never());
+    }
+
+    [Test]
+    public async Task Verifier_CleanAccount_DoesNotWriteOnSuccess()
+    {
+        var verifier = VerifierWith(new CredentialRecord(Guid.NewGuid(), AccountStatus.Active, _hasher.Hash(Password)), out var store);
+
+        await verifier.VerifyAsync("student@example.com", Password);
+
+        store.Verify(s => s.ClearFailuresAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never());
+    }
+
     private CredentialVerifier VerifierWith(CredentialRecord? record) => VerifierWith(record, out _);
 
     // The store answers only for the normalized e-mail "student@example.com"; any other lookup returns null.
@@ -105,6 +146,6 @@ public class PasswordAndCredentialTests
         store = new Mock<ICredentialStore>();
         store.Setup(s => s.FindByEmailAsync("student@example.com", It.IsAny<CancellationToken>()))
             .ReturnsAsync(record);
-        return new CredentialVerifier(store.Object, _hasher);
+        return new CredentialVerifier(store.Object, _hasher, Options.Create(new IdentityLockoutOptions()), TimeProvider.System);
     }
 }
