@@ -3,11 +3,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using Platform.Identity.Composition;
-using Platform.Identity.Contracts;
-using Platform.Identity.Domain.Enums;
-using Platform.Identity.Domain.Models;
-using Platform.Identity.Infrastructure.Persistence;
+using Platform.Identity.Entities;
+using Platform.Identity.Interfaces;
+using Platform.Identity.Enums;
+using Platform.Identity.Models;
+using Platform.Identity.Persistence;
 using Testcontainers.PostgreSql;
 
 namespace Platform.Identity.Tests;

@@ -1,4 +1,7 @@
 using System.Security.Cryptography;
+using Platform.Api.Enums.Identity;
+using Platform.Api.Interfaces.Identity;
+using Platform.Api.Models.Identity;
 
 namespace Platform.Api.Services.Identity;
 

@@ -21,8 +21,10 @@
     <Using Include="NUnit.Framework" />
   </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\Platform.Api\Platform.Api.csproj" />
-  </ItemGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\Platform.Api\Platform.Api.csproj" />
+		<ProjectReference Include="..\Platform.Assignments\Platform.Assignments.csproj" />
+		<ProjectReference Include="..\Platform.Prerequisites\Platform.Prerequisites.csproj" />
+	</ItemGroup>
 
 </Project>

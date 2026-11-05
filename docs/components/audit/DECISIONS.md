@@ -1,0 +1,107 @@
+# Audit module: decisions and KT1 scope
+
+**Status:** maintained by the Audit component (AUD-01, AUD-06), story S-03. A decision is
+**accepted** only when its owner's confirmation is linked (pull request, review comment or
+written answer). Until then it is **open** and the temporary rule applies.
+
+## Decisions already taken in code
+
+These were decided inside the Audit component and are visible in merged or proposed code.
+They can still change through review.
+
+| # | Decision | Reason | Where |
+|-|-|-|-|
+| A1 | The contract lives in `Platform.Audit/Contracts`; there is no separate contracts project. Only contract types and `AddAudit()` are public, everything else is `internal`. | `internal` gives the same protection without changing the skeleton from S-01. | PR #42 |
+| A2 | `IAuditWriter.WriteAsync` returns `AuditWriteResult` (`Recorded`, `Rejected` with a stable code, `Unavailable`) instead of throwing for expected failures. | No silent success; same style as `Platform.Access` (records and enums). | PR #42, CONTRACTS.md |
+| A3 | The draft has no actor, time or correlation ID. A separate `ITrustedAuditWriter` exists for server adapters. | The client cannot forge who, when or which request (AUD-01, SEC-01). | PR #42 |
+| A4 | Details are an allowlist per event type, string values only, at most 20 keys and 2048 bytes; secret-like key names are rejected as an extra check. | The system cannot reliably detect every secret in free text, so free text is not accepted (AUD-03). | PR #42 |
+| A5 | The catalog and draft validation belong to S-02; the writer (S-06) calls `AuditDraftValidator` before storing. | Avoids two validators for the same rules. Proposed in PR #42; member 3 to confirm. | PR #42 |
+| A6 | `AuditEvent` is an immutable domain record with its own invariants, independent of the validator. A retry with the same `EventId` and content is not a conflict; the time is not compared. | Defence in depth (ADM-07); supports idempotent retries. | S-03 |
+
+## Open decisions from the team plan (v2.2)
+
+| # | Question | Owner | Target | Temporary rule |
+|-|-|-|-|-|
+| D1 | Identity and membership sources; owners of AUD-02..05; does Identity switch to the Audit contract or keep its own `IAuditWriter` behind an adapter? | Member 9 | 03.11 | Only test adapters until confirmed. Proposal: [INTEGRATION.md](INTEGRATION.md) S11-07, S11-08, S11-10. |
+| D2 | Access DI lifetimes, explicit replacement of `NullAccessAuditWriter`, behaviour when the audit write fails. | Members 1, 5, 9 with Team 3 | 03.11 | No claim of a finished Access integration. Proposal: [INTEGRATION.md](INTEGRATION.md) S11-01 to S11-05. |
+| D3 | Shared transaction or transactional outbox for privileged changes; meaning of each outcome per producer. | Members 2, 3, 9 with producers | before S-12 | Demo producer only; no real committed change without a guaranteed audit record. Proposal: one transaction for KT1, [INTEGRATION.md](INTEGRATION.md) S11-06. |
+| D4 | Global or administrator view of events; events without a course; which fields a teacher sees. | Members 5, 7, 9 with the assistant | before S-14 | Only the course view; no automatic global access. |
+| D5 | Query limits and behaviour when writing `audit.events.viewed` fails. | Members 4, 5, 6 | before S-14 | Proposed: 503 before any data is sent. |
+| D6 | Audit volume of Deny decisions and load on the database. | Member 9 with Team 3 | before S-13 | No silent sampling of mandatory records; measure and alarm on loss. Proposal: [INTEGRATION.md](INTEGRATION.md) S11-04, S11-07. |
+| D7 | KT1 and KT2 dates and team capacity. | Member 1 | 03.11 | 09–10.11 is a working assumption. Everyone re-estimates the stories. |
+| D8 | Retention, restore and extra integrity protection. | Members 2, 7, 9 with ADM owners | KT2 | No public delete; stronger protection only with a justified design. |
+
+## New questions found while working
+
+| # | Question | Found in | Owner | Temporary rule |
+|-|-|-|-|-|
+| D9 | IDN-01 account registration (PR #40) creates accounts without an audit record, although it is a privileged action (spec 2.1). Add an `account.created` event type to the catalog? | `Platform.Identity` | Member 9 with Team 1 | Not in catalog v1; a new type needs a schema and a test. |
+| D10 | Three interfaces named `IIdentityContext` now exist (`Platform.Api.Services.Identity`, `Platform.Identity.Contracts`, and the reference contract in the spec). Which one gives the current caller for the audit actor? | `Platform.Api`, `Platform.Identity` | Members 3 and 9 with Identity teams | The writer's context adapter is not built until this is answered. |
+| D11 | `Platform.Identity.Tests` is not in `SecurityLab.slnx`, so its tests do not run locally or in CI. | `backend/SecurityLab.slnx` | Identity team; member 1 for CI | Reported only; the Audit component does not change another team's project. |
+| D12 | `ChangeAccountStatus` writes a free-text administrator reason into its audit detail, which conflicts with AUD-03. Proposed: a reason code. | `Platform.Api` | Member 9 with Team 2 | Same as open question 1 in CONTRACTS.md. |
+| D13 | `DefaultDenyAccessDecision` calls the audit writer outside any `try`/`catch`, so a writer exception replaces the computed decision. | `Platform.Access` | Member 9 with Team 3 | Forwarder not connected; proposal in INTEGRATION.md S11-04. |
+| D14 | A policy that returns `false` gives `Deny` with reason `PolicyError`, the same as a policy that throws. | `Platform.Access` | Member 9 with Team 3 | Recorded as `policy_error`; proposal for a separate reason in INTEGRATION.md S11-05. |
+| D15 | `SubjectRef.Id` is a free string, while the audit actor ID is an account GUID. | `Platform.Access` | Member 9 with Team 3 | The forwarder records nothing for a non-GUID subject and raises an alarm (S11-05). |
+
+## KT1 scope
+
+The official KT1 minimum comes from `docs/CHECKPOINT_1.md`: started code and behaviour,
+individual contribution, component architecture, DFD with trust boundaries, a short
+demonstration and a plan for the remaining work. Documentation alone is not enough.
+
+### Minimum for KT1
+
+| Item | Stories | State on 03.11 |
+|-|-|-|
+| Audit module skeleton, solution and CI that fails on zero tests | S-01 | Done (PR #35) |
+| Audit contract, event catalog, draft validation and T03 tests | S-02 | Done (PR #42) |
+| Domain record, decisions and KT1 scope | S-03 | This pull request |
+| Threat model, security matrix and DFD of the Audit component | S-04, S-18 | Not started |
+| A verifiable write of an event, at least in memory and clearly marked as such | S-06, S-12 | Not started |
+| Individual evidence for each of the 10 members | S-20, S-21 | Not started |
+
+If the AUD-06 endpoint is shown as working, server-side authorization and course isolation are
+mandatory. An unfinished endpoint stays unreachable, and every stub is labelled as a stub.
+
+### Extended internal goal for KT1
+
+PostgreSQL storage with migration and restricted runtime rights (S-05, S-16), the Access adapter
+(S-13), the course query API with test memberships (S-07, S-14, S-15), correlation context (S-10)
+and integration tests against PostgreSQL (S-09). These are team goals, not an official KT1
+condition. Unfinished items move to the KT2 backlog with a new date.
+
+## Story estimates
+
+The plan's 113 story points are the historical estimate from v2.1. Every member re-estimates
+their own stories at the team sync; the new value is entered in Tapiz and here.
+
+| Story | Owner | Plan SP | New SP | Card in Tapiz |
+|-|-|-|-|-|
+| S-01 | 1 | 5 | done | |
+| S-02 | 8 | 5 | done | |
+| S-03 | 8 | 3 | | |
+| S-04 | 7 | 5 | | |
+| S-05 | 2 | 5 | | |
+| S-06 | 3 | 5 | | |
+| S-07 | 4 | 5 | | |
+| S-08 | 5 | 5 | | |
+| S-09 | 6 | 5 | | |
+| S-10 | 10 | 5 | | |
+| S-11 | 9 | 3 | | |
+| S-12 | 3 | 8 | | |
+| S-13 | 9 | 8 | | |
+| S-14 | 4 | 8 | | |
+| S-15 | 5 | 5 | | |
+| S-16 | 2 | 5 | | |
+| S-17 | 6 | 5 | | |
+| S-18 | 7 | 8 | | |
+| S-19 | 10 | 5 | | |
+| S-20 | 8 | 5 | | |
+| S-21 | 1 | 5 | | |
+
+## Change history
+
+| Date | Change |
+|-|-|
+| 2026-11-03 | Initial register, KT1 scope and estimate table (S-03) |
+| 2026-11-03 | Links to the S-11 proposals; new questions D13 to D15 (S-11) |

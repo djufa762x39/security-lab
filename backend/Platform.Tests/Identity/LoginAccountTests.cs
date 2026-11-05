@@ -1,5 +1,7 @@
-using Platform.Api.Domain.Identity;
+using Platform.Api.Interfaces.Identity;
+using Platform.Api.Models.Identity;
 using Platform.Api.Services.Identity;
+using Platform.Identity.Enums;
 
 namespace Platform.Tests.Identity;
 

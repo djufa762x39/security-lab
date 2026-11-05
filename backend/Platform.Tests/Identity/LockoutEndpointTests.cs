@@ -9,11 +9,10 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Platform.Access.Domain.Enums;
 using Platform.Access.Domain.Models;
-using Platform.Api.Security;
+using Platform.Api.Interfaces.Identity;
 using Platform.Api.Services.Identity;
-using Platform.Identity.Contracts;
-using Platform.Identity.Domain.Enums;
-using AccountStatus = Platform.Api.Domain.Identity.AccountStatus;
+using Platform.Identity.Interfaces;
+using Platform.Identity.Enums;
 
 namespace Platform.Tests.Identity;
 

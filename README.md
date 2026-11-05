@@ -80,6 +80,25 @@ CI builds and tests the whole backend through the solution file `backend/Securit
 
 If you add a backend module or a test project, add it to the solution so that CI picks it up: `dotnet sln backend/SecurityLab.slnx add backend/<Project>/<Project>.csproj`.
 
+## Trying the authoring API
+
+The Development environment identifies the caller from the configuration key `Identity:DevSubjectId`. The account `11111111-1111-1111-1111-111111111111` is listed as an author in `backend/Platform.Api/appsettings.Development.json` (`Authoring:AuthorAccountIds`). In PowerShell:
+
+```
+$env:Identity__DevSubjectId = "11111111-1111-1111-1111-111111111111"
+cd backend/Platform.Api
+dotnet run --urls http://localhost:5080
+```
+
+In a second terminal:
+
+```
+curl.exe -i http://localhost:5080/api/authoring/templates
+curl.exe -i -X POST http://localhost:5080/api/authoring/templates/a1000000-0000-4000-8000-000000000001/drafts
+```
+
+The first call lists the templates (`200`), the second creates a draft from one (`201`). Restart with another account id to see `403`, or without the variable to see `401`. Details and the full endpoint contract are in [docs/components/AUT-authoring.md](docs/components/AUT-authoring.md).
+
 ## Troubleshooting
 
 | Problem | What to do |
@@ -96,6 +115,7 @@ If you add a backend module or a test project, add it to the solution so that CI
 - `backend/SecurityLab.slnx` — backend solution file used by CI.
 - `backend/Platform.Api/` — API entry point.
 - `backend/Platform.Access/` — access control module (ACC-05, ACC-08).
+- `backend/Platform.Assignments/` — assignments module: assignment model, attempt limit and individual deadline extension (ASN-04, ASN-06). Its tests are in `backend/Platform.Tests/Assignments/`.
 - `backend/Platform.Audit/` and `backend/Platform.Audit.Tests/` — audit module skeleton and its tests (AUD-01).
 - `backend/Platform.Authoring/` — authoring module: laboratory drafts and templates (AUT-01, AUT-06).
 - `backend/Platform.Authoring.Tests/` — NUnit tests for the authoring module.
@@ -113,3 +133,15 @@ If you add a backend module or a test project, add it to the solution so that CI
 Use short-lived branches and pull requests for changes (for example `feature/AUT-01-AUT-06-lab-drafts`), and mention the requirement IDs from the specification in commits and pull requests. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the full workflow. Keep credentials and other secrets out of the repository.
 
 See the course specification for the full requirements.
+
+## ACC-04 and ADM-08 KT1 implementation
+
+The started coursework component adds concrete attempt ownership checks and course-scoped administrative delegation through the existing shared `Platform.Access` contract. It includes read/update of an own draft, version checks, two isolated courses, limited delegation/revocation, metadata-only audit, automated negative tests and a React demonstration.
+
+Start the synthetic API with `dotnet run --project backend/Platform.Api/Platform.Api.csproj --launch-profile AccessKt1`, then run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/kt1-demo.ps1` in a second terminal. The frontend starts with the existing commands above. Docker is not needed for this in-memory demonstration.
+
+Build/test: `dotnet test backend/SecurityLab.slnx --configuration Release`. The existing backend/frontend CI jobs are retained; the backend job additionally runs the KT1 tests and live demo and uploads their results. A new remote run must still be confirmed after pushing.
+
+See [the KT1 checklist](docs/components/coursework/KT1.md), [startup and demonstration](docs/components/coursework/DEMO.md), [architecture and DFD diagrams](docs/components/coursework/diagrams), [domain/access matrix](docs/components/coursework/DOMAIN_MODEL.md), [threat model](docs/components/coursework/THREAT_MODEL.md), [provider contracts](docs/components/coursework/CONTRACTS.md), [backlog](docs/components/coursework/BACKLOG.md) and [actual local validation](docs/components/coursework/VALIDATION.md) and [external closure steps](docs/components/coursework/CLOSURE.md).
+
+The synthetic login is enabled only in Development with `Kt1Demo:Enabled=true`; no production authentication, persistent database or actual external contract acceptance is claimed. Other teams' shared components are preserved.

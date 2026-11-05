@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using Platform.Identity.Composition;
 
 namespace Platform.Identity.Tests;
 

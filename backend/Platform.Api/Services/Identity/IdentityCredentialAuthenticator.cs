@@ -1,7 +1,5 @@
-using Platform.Identity.Contracts;
-using Platform.Identity.Domain.Enums;
-using ApiAccountStatus = Platform.Api.Domain.Identity.AccountStatus;
-using IdentityAccountStatus = Platform.Identity.Domain.Enums.AccountStatus;
+using Platform.Identity.Enums;
+using Platform.Identity.Interfaces;
 
 namespace Platform.Api.Services.Identity;
 
@@ -20,18 +18,10 @@ public sealed class IdentityCredentialAuthenticator(IPasswordSignInCheck check) 
         return result.Outcome switch
         {
             PasswordCheckOutcome.Valid => new(
-                CredentialAuthenticationOutcome.Valid, result.AccountId, Map(result.Status)),
+                CredentialAuthenticationOutcome.Valid, result.AccountId, result.Status),
             PasswordCheckOutcome.LockedOut => new(
                 CredentialAuthenticationOutcome.LockedOut, result.AccountId),
             _ => new(CredentialAuthenticationOutcome.Invalid)
         };
     }
-
-    private static ApiAccountStatus? Map(IdentityAccountStatus? status) => status switch
-    {
-        IdentityAccountStatus.Active => ApiAccountStatus.Active,
-        IdentityAccountStatus.Blocked => ApiAccountStatus.Blocked,
-        IdentityAccountStatus.Archived => ApiAccountStatus.Archived,
-        _ => null
-    };
 }

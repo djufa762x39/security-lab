@@ -14,8 +14,8 @@
   - The same generic response whether the account doesn't exist, the password is wrong or the account is locked.
   - An administrator can unlock an account.
 - **Contracts with other modules:**
-  - `Platform.Identity.Contracts.IPasswordSignInCheck` checks the password with `SignInManager.CheckPasswordSignInAsync(..., lockoutOnFailure: true)` over `AppUser`.
-  - `Platform.Identity.Contracts.IAccountLockoutAdministration` handles admin unlock.
+  - `Platform.Identity.Interfaces.IPasswordSignInCheck` checks the password with `SignInManager.CheckPasswordSignInAsync(..., lockoutOnFailure: true)` over `AppUser`.
+  - `Platform.Identity.Interfaces.IAccountLockoutAdministration` handles admin unlock.
   - `Platform.Api.Services.Identity.ICredentialAuthenticator` (the IDN-02 boundary) is implemented by `IdentityCredentialAuthenticator`. It is now async and adds the `LockedOut` outcome and the account `Status`.
   - Access action `identity.account.unlock` uses policy `identity.account.unlock.admin-only` (ids in `Identity:AdminAccountIds`).
 - **Relation to PR #28** (`feature/IDN-05-rate-limiting`): that branch limits login requests per IP (SEC-04). This component adds the per-account lockout stored in the database, and replaces the in-memory per-email limiter planned in PR #28's IDN-05 doc. Both layers are meant to run together. A locked account gets **401**, not 429, so the response does not reveal that the account exists.
@@ -107,7 +107,7 @@ The values are validated by `IdentityLockoutOptionsValidator` with `ValidateOnSt
 ## Evidence of work
 
 - **Changed files:**
-  - `Platform.Identity`: `Composition/IdentityLockoutOptions.cs`, `Application/IdentityPasswordSignInCheck.cs`, `Application/AccountLockoutAdministrationService.cs`, `Application/UnlockAccountPolicy.cs`, `Application/AdminAccounts.cs`, and the contracts and result types.
+  - `Platform.Identity`: `IdentityLockoutOptions.cs`, `Services/IdentityPasswordSignInCheck.cs`, `Services/AccountLockoutAdministrationService.cs`, `Services/UnlockAccountPolicy.cs`, `Services/AdminAccounts.cs`, and the contracts and result types.
   - `Platform.Api`: `LoginAccount`, `LoginController`, `IdentityCredentialAuthenticator`, `FakeSessionIssuer`, `AccountEndpoints` (unlock), `Program.cs`.
   - `Platform.Audit`: the `account.lockout.cleared` event type.
   - `SecurityLab.slnx` now includes `Platform.Identity` and `Platform.Identity.Tests`, so CI runs them.

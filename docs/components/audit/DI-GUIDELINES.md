@@ -70,5 +70,7 @@ dotnet test backend/SecurityLab.slnx --configuration Release
 - Should the audit writer be scoped, or a singleton that opens its own short-lived
   `DbContext` per call through `IDbContextFactory`? Decide when the storage and the
   writer are designed.
+- Explicit replacement of `NullAccessAuditWriter` and public registration of actions and
+  policies are proposed in [INTEGRATION.md](INTEGRATION.md), S11-01 to S11-03.
 - Who owns the final registration order in `Program.cs`? Proposal: the Audit component
   owner, with review by the Access team for any change to Access composition.

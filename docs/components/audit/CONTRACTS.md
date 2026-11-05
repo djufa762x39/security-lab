@@ -279,6 +279,9 @@ Planned tests in `backend/Platform.Audit.Tests`, each with its negative case:
 | 5 | Is an incoming `X-Correlation-Id` header accepted, and in which format? | Member 10 with the AUD-04 owner |
 | 6 | Retention, archive and anonymization rules. | Members 2, 7 and 9 with the ADM owners (D8) |
 
+Agreements with the consumers and producers listed above are tracked in
+[INTEGRATION.md](INTEGRATION.md) (story S-11).
+
 ## Change history
 
 | Version | Date | Change |
