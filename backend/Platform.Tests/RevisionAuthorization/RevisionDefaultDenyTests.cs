@@ -6,6 +6,7 @@ using Platform.Access.Domain.Models;
 using Platform.Access.Infrastructure.Catalog;
 using Platform.Api.Security.RevisionAuthorization;
 
+
 namespace Platform.Tests.RevisionAuthorization;
 
 [TestFixture]
@@ -14,7 +15,7 @@ public sealed class RevisionDefaultDenyTests
     [TestCase(RevisionActions.Submit, "revision")]
     [TestCase(RevisionActions.Approve, "revision")]
     [TestCase(RevisionActions.Return, "revision")]
-    [TestCase(RevisionActions.UnlockAccount, "account")]
+    
     public async Task RegisteredAction_WithoutPermission_IsDenied(
         string action, string resourceType)
     {
@@ -40,7 +41,35 @@ public sealed class RevisionDefaultDenyTests
 
         Assert.That(result.Outcome, Is.EqualTo(AccessOutcome.Deny));
         Assert.That(result.DenialReason,
-            Is.EqualTo(AccessDenialReason.PolicyError));
+            Is.EqualTo(AccessDenialReason.PolicyDenied));
+    }
+
+    [Test]
+    public async Task UnlockAccount_WithResource_IsDeniedByAccContract()
+    {
+   var services = new ServiceCollection();
+
+    services.AddAccessControl();
+    services.AddRevisionAuthorization();
+
+    services.AddSingleton<IRevisionAuthorReader>(
+    new FakeRevisionAuthorReader(Guid.NewGuid()));
+
+using var provider = services.BuildServiceProvider();
+
+    provider.RegisterRevisionPolicies();
+
+    var decisionService =
+        provider.GetRequiredService<IAccessDecision>();
+
+    var request = CreateRequest(
+        RevisionActions.UnlockAccount, "account");
+
+    var result = await decisionService.DecideAsync(request);
+
+    Assert.That(result.Outcome, Is.EqualTo(AccessOutcome.Deny));
+    Assert.That(result.DenialReason,
+        Is.EqualTo(AccessDenialReason.PolicyError));
     }
 
     [Test]
@@ -74,7 +103,11 @@ public sealed class RevisionDefaultDenyTests
         var catalog =
             provider.GetRequiredService<InMemoryActionCatalog>();
 
-        catalog.Register(RevisionActions.Submit);
+        catalog.Register(new ActionDefinition(
+            RevisionActions.Submit,
+            ActionScope.Course,
+            "revision",
+            false));
 
         var decisionService =
             provider.GetRequiredService<IAccessDecision>();

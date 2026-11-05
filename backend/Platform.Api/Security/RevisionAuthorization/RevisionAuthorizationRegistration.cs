@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Platform.Access.Infrastructure.Catalog;
 using Platform.Access.Infrastructure.Policies;
+using Platform.Access.Domain.Enums;
+using Platform.Access.Domain.Models;
 
 namespace Platform.Api.Security.RevisionAuthorization;
 
@@ -26,28 +28,48 @@ public static class RevisionAuthorizationRegistration
     }
 
     public static void RegisterRevisionPolicies(this IServiceProvider services)
-    {
-        var catalog = services.GetRequiredService<InMemoryActionCatalog>();
-        var registry = services.GetRequiredService<InMemoryAccessPolicyRegistry>();
+{
+    var catalog = services.GetRequiredService<InMemoryActionCatalog>();
+    var registry = services.GetRequiredService<InMemoryAccessPolicyRegistry>();
 
-        catalog.Register(RevisionActions.Submit);
-        registry.Register(
-            RevisionActions.Submit,
-            services.GetRequiredService<RevisionActionPolicy>());
+    catalog.Register(new ActionDefinition(
+        RevisionActions.Submit,
+        ActionScope.Course,
+        "revision",
+        false));
 
-        catalog.Register(RevisionActions.Approve);
-        registry.Register(
-            RevisionActions.Approve,
-            services.GetRequiredService<RevisionApprovalPolicy>());
+    registry.Register(
+        RevisionActions.Submit,
+        services.GetRequiredService<RevisionActionPolicy>());
 
-        catalog.Register(RevisionActions.Return);
-        registry.Register(
-            RevisionActions.Return,
-            services.GetRequiredService<RevisionActionPolicy>());
+    catalog.Register(new ActionDefinition(
+        RevisionActions.Approve,
+        ActionScope.Course,
+        "revision",
+        true));
 
-        catalog.Register(RevisionActions.UnlockAccount);
-        registry.Register(
-            RevisionActions.UnlockAccount,
-            services.GetRequiredService<RevisionActionPolicy>());
-    }
+    registry.Register(
+        RevisionActions.Approve,
+        services.GetRequiredService<RevisionApprovalPolicy>());
+
+    catalog.Register(new ActionDefinition(
+        RevisionActions.Return,
+        ActionScope.Course,
+        "revision",
+        false));
+
+    registry.Register(
+        RevisionActions.Return,
+        services.GetRequiredService<RevisionActionPolicy>());
+
+    catalog.Register(new ActionDefinition(
+        RevisionActions.UnlockAccount,
+        ActionScope.System,
+        null,
+        true));
+
+    registry.Register(
+        RevisionActions.UnlockAccount,
+        services.GetRequiredService<RevisionActionPolicy>());
+}
 }
