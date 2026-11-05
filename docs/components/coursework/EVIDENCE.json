@@ -1,0 +1,207 @@
+{
+  "requirements": [
+    "ACC-04",
+    "ADM-08"
+  ],
+  "baseCommit": "0a4f3d1325ef340f19dea25d230209105dfa67b0",
+  "localValidation": {
+    "date": "2026-11-03",
+    "environment": "Linux / .NET 10.0.403 / PowerShell 7.6.9",
+    "mergeInputHead": "3d751274493141202f85c3d686378aedada012c2",
+    "mergeInputMain": "0a4f3d1325ef340f19dea25d230209105dfa67b0",
+    "nunit": {
+      "total": 65,
+      "passed": 65,
+      "failed": 0,
+      "skipped": 0
+    },
+    "solutionNunit": {
+      "total": 317,
+      "passed": 317,
+      "failed": 0,
+      "skipped": 0,
+      "projects": [
+        {
+          "project": "laboratories.tests",
+          "total": 31,
+          "passed": 31,
+          "failed": 0,
+          "skipped": 0,
+          "report": "_91aa03a382b8_2026-11-03_23_09_29_net10.0.trx"
+        },
+        {
+          "project": "platform.audit.tests",
+          "total": 95,
+          "passed": 95,
+          "failed": 0,
+          "skipped": 0,
+          "report": "_91aa03a382b8_2026-11-03_23_09_32_net10.0.trx"
+        },
+        {
+          "project": "platform.authoring.tests",
+          "total": 55,
+          "passed": 55,
+          "failed": 0,
+          "skipped": 0,
+          "report": "_91aa03a382b8_2026-11-03_23_09_37_net10.0.trx"
+        },
+        {
+          "project": "platform.kt1.tests",
+          "total": 65,
+          "passed": 65,
+          "failed": 0,
+          "skipped": 0,
+          "report": "_91aa03a382b8_2026-11-03_23_09_42_net10.0.trx"
+        },
+        {
+          "project": "platform.ratelimiting.tests",
+          "total": 24,
+          "passed": 24,
+          "failed": 0,
+          "skipped": 0,
+          "report": "_91aa03a382b8_2026-11-03_23_09_49_net10.0.trx"
+        },
+        {
+          "project": "platform.tests",
+          "total": 47,
+          "passed": 47,
+          "failed": 0,
+          "skipped": 0,
+          "report": "_91aa03a382b8_2026-11-03_23_09_54_net10.0.trx"
+        }
+      ]
+    },
+    "liveHttpDemo": {
+      "total": 41,
+      "passed": 41,
+      "revocationProof": {
+        "delegateSignIns": 1,
+        "separateClients": true,
+        "samePreRevocationCookie": true
+      }
+    },
+    "frontendBuild": "PASS",
+    "compositionSmoke": {
+      "health": 200,
+      "main_shared_default_deny": 200,
+      "main_status_anonymous": 401,
+      "main_status_development_stub": 200,
+      "main_registration_anonymous": 401
+    },
+    "browser": "NOT_RERUN_AFTER_SECOND_MAIN_SYNC"
+  },
+  "externalEvidence": {
+    "newPrUrl": "https://github.com/owlCoder/security-lab/pull/36",
+    "testedCommit": null,
+    "ciRunUrl": null,
+    "ciArtifactConfirmed": false,
+    "tapizTaskLinks": [],
+    "neighborContractReview": null,
+    "contributors": [],
+    "referenceStatus": "PR36_SECOND_MAIN_SYNC_NEW_CI_PENDING_PUSH",
+    "previousCi": {
+      "url": "https://github.com/owlCoder/security-lab/actions/runs/41637786694",
+      "headSha": "3d751274493141202f85c3d686378aedada012c2",
+      "conclusion": "success",
+      "note": "Verified prior integration result; not evidence of the new main merge."
+    }
+  },
+  "note": "No remote task, external acceptance, student commit, or GitHub Actions success is fabricated. Complete external references after actual actions.",
+  "previousLocalValidation": {
+    "date": "2026-11-01",
+    "environment": "Linux / .NET 10.0.403 / PowerShell 7.6.9",
+    "nunit": {
+      "total": 60,
+      "passed": 60,
+      "failed": 0,
+      "skipped": 0
+    },
+    "liveHttpDemo": {
+      "total": 41,
+      "passed": 41,
+      "revocationProof": {
+        "separateClients": true,
+        "samePreRevocationCookie": true,
+        "delegateSignIns": 1
+      }
+    },
+    "frontendBuild": "PASS",
+    "browser": "PASS",
+    "revision": "Corrected old-session regression and DFD return/denial data flows; actual test reports regenerated.",
+    "browserProof": {
+      "passed": true,
+      "separateBrowserContexts": true,
+      "delegateSignIns": 1,
+      "samePreRevocationCookie": true,
+      "readAfterRevoke": 404,
+      "writeAfterRevoke": 404,
+      "viewportWidth": 420
+    }
+  },
+  "previousIntegrationValidation": {
+    "date": "2026-11-03",
+    "environment": "Linux / .NET 10.0.403 / PowerShell 7.6.9",
+    "nunit": {
+      "total": 63,
+      "passed": 63,
+      "failed": 0,
+      "skipped": 0
+    },
+    "solutionNunit": {
+      "total": 231,
+      "passed": 231,
+      "failed": 0,
+      "skipped": 0,
+      "projects": [
+        {
+          "project": "platform.audit.tests",
+          "total": 71,
+          "passed": 71,
+          "failed": 0,
+          "skipped": 0
+        },
+        {
+          "project": "platform.authoring.tests",
+          "total": 55,
+          "passed": 55,
+          "failed": 0,
+          "skipped": 0
+        },
+        {
+          "project": "platform.kt1.tests",
+          "total": 63,
+          "passed": 63,
+          "failed": 0,
+          "skipped": 0
+        },
+        {
+          "project": "platform.tests",
+          "total": 42,
+          "passed": 42,
+          "failed": 0,
+          "skipped": 0
+        }
+      ]
+    },
+    "liveHttpDemo": {
+      "total": 41,
+      "passed": 41,
+      "revocationProof": {
+        "separateClients": true,
+        "samePreRevocationCookie": true,
+        "delegateSignIns": 1
+      }
+    },
+    "frontendBuild": "PASS",
+    "compositionSmoke": {
+      "health": 200,
+      "main_shared_default_deny": 200,
+      "main_status_anonymous": 401,
+      "main_status_development_stub": 200,
+      "main_registration_anonymous": 401
+    },
+    "browser": "NOT_RERUN_AFTER_MAIN_SYNC",
+    "mergeInputHead": "3f535351b3a3289fde78c6fa7b90580477863634",
+    "mergeInputMain": "8420f3b6710dda51b483b3743691996951370c88"
+  }
+}

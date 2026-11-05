@@ -1,0 +1,280 @@
+{
+  "requirements": [
+    "ACC-04",
+    "ADM-08"
+  ],
+  "note": "Prepared descriptions only. Actual Tapiz cards, dates, authorship and review are not created by this file.",
+  "tasks": [
+    {
+      "id": "ACC04-01",
+      "phase": "KT1",
+      "implementation": "IMPLEMENTED_LOCAL",
+      "title": "Read own attempt and reject ID substitution",
+      "requirements": [
+        "ACC-04"
+      ],
+      "useCases": [
+        "Read own attempt",
+        "Reject foreign and missing IDs"
+      ],
+      "prerequisites": "Trusted account, membership and ATT snapshots; shared decision engine",
+      "acceptance": "Owner succeeds; foreign/missing share public 404; no client identity override",
+      "evidence": [
+        "AttemptPolicy.cs",
+        "ConcreteReadChecksOwnershipMembershipAndTeachingRole"
+      ],
+      "tapizId": null,
+      "tapizUrl": null
+    },
+    {
+      "id": "ACC04-02",
+      "phase": "KT1",
+      "implementation": "IMPLEMENTED_LOCAL",
+      "title": "Update own draft with validation and atomic version check",
+      "requirements": [
+        "ACC-04"
+      ],
+      "useCases": [
+        "Update draft",
+        "Preserve submitted/completed history"
+      ],
+      "prerequisites": "ACC04-01; ATT snapshot/CAS contract",
+      "acceptance": "Own InProgress draft persists; stale or concurrent write cannot overwrite; history stays immutable",
+      "evidence": [
+        "AttemptService.cs",
+        "ConcurrentDraftWritesWithSameVersionHaveExactlyOneWinner"
+      ],
+      "tapizId": null,
+      "tapizUrl": null
+    },
+    {
+      "id": "ACC04-03",
+      "phase": "KT1",
+      "implementation": "IMPLEMENTED_LOCAL",
+      "title": "Verify teaching scope and fail closed on provider outage",
+      "requirements": [
+        "ACC-04"
+      ],
+      "useCases": [
+        "Teacher reads submitted own-course attempt",
+        "Reject blocked account/outage"
+      ],
+      "prerequisites": "ACC04-01; positive/negative provider doubles",
+      "acceptance": "Teacher cannot read draft or other course; admin cannot bypass; outage denies with no mutation",
+      "evidence": [
+        "DependencyOutageDeniesOwnerReadAndWriteWithoutMutation"
+      ],
+      "tapizId": null,
+      "tapizUrl": null
+    },
+    {
+      "id": "ADM08-01",
+      "phase": "KT1",
+      "implementation": "IMPLEMENTED_LOCAL",
+      "title": "Model two courses with separate administrative and teaching authority",
+      "requirements": [
+        "ADM-08"
+      ],
+      "useCases": [
+        "Read authorized course administration",
+        "Separate powers"
+      ],
+      "prerequisites": "Current account provider; seeded explicit course root grants; shared engine",
+      "acceptance": "Admin A cannot administer B or read student answers; teacher lacks admin by default",
+      "evidence": [
+        "AdministrationPolicy.cs",
+        "AdministrativeGrantDoesNotCreateTeachingMembership"
+      ],
+      "tapizId": null,
+      "tapizUrl": null
+    },
+    {
+      "id": "ADM08-02",
+      "phase": "KT1",
+      "implementation": "IMPLEMENTED_LOCAL",
+      "title": "Delegate limited course administration and update settings",
+      "requirements": [
+        "ADM-08"
+      ],
+      "useCases": [
+        "Grant view/settings capability",
+        "Delegate changes course display name"
+      ],
+      "prerequisites": "ADM08-01; whitelist and active target checks",
+      "acceptance": "Only a same-course root delegates; no self-grant, teaching capability or redelegation",
+      "evidence": [
+        "AdministrationService.cs",
+        "DelegationRenameRevokeIsScopedAndImmediatelyEffective"
+      ],
+      "tapizId": null,
+      "tapizUrl": null
+    },
+    {
+      "id": "ADM08-03",
+      "phase": "KT1",
+      "implementation": "IMPLEMENTED_LOCAL",
+      "title": "Revoke delegation and reject reused authority",
+      "requirements": [
+        "ADM-08"
+      ],
+      "useCases": [
+        "Revoke active grant",
+        "Recheck existing session"
+      ],
+      "prerequisites": "ADM08-02; atomic grant snapshot/version check",
+      "acceptance": "Revocation is course-scoped. Independently authenticated delegate sends the exact cookie issued before revocation, without signing in again, and both read/write deny; captured grant cannot authorize final store operation.",
+      "evidence": [
+        "RevocationRejectsTheSamePreviouslyIssuedCookie",
+        "RevocationRejectsPreviouslyCapturedAuthorityAtCommitBoundary",
+        "scripts/kt1-demo.ps1"
+      ],
+      "tapizId": null,
+      "tapizUrl": null
+    },
+    {
+      "id": "KT1-01",
+      "phase": "KT1",
+      "implementation": "PREPARED_LOCAL",
+      "title": "Prepare domain model, matrix, architecture and DFD for both components",
+      "requirements": [
+        "ACC-04",
+        "ADM-08"
+      ],
+      "useCases": [
+        "Explain components, data and trust boundaries"
+      ],
+      "prerequisites": "Current implementation and selected specification sections",
+      "acceptance": "Two architecture diagrams and two DFDs agree with actual code; unified model and matrix present",
+      "evidence": [
+        "DOMAIN_MODEL.md",
+        "diagrams/"
+      ],
+      "tapizId": null,
+      "tapizUrl": null
+    },
+    {
+      "id": "KT1-02",
+      "phase": "KT1",
+      "implementation": "IMPLEMENTED_LOCAL",
+      "title": "Threat model, repeatable seed and metadata-only change audit",
+      "requirements": [
+        "ACC-04",
+        "ADM-08"
+      ],
+      "useCases": [
+        "Reset synthetic state",
+        "Audit authorized changes and denials"
+      ],
+      "prerequisites": "ACC04-02; ADM08-03",
+      "acceptance": "Restart restores seed; structured event excludes answers/cookies/secrets",
+      "evidence": [
+        "THREAT_MODEL.md",
+        "DemoStore.cs"
+      ],
+      "tapizId": null,
+      "tapizUrl": null
+    },
+    {
+      "id": "KT1-03",
+      "phase": "KT1",
+      "implementation": "EXTERNAL_PENDING",
+      "title": "Review at least one provider contract with the actual neighboring team",
+      "requirements": [
+        "ACC-04",
+        "ADM-08"
+      ],
+      "useCases": [
+        "Agree ATT snapshot/CAS or identity boundary"
+      ],
+      "prerequisites": "Prepared CONTRACTS.md and real provider owner",
+      "acceptance": "Attach acknowledgement URL, reviewer, actual date and reviewed commit; request alone is insufficient",
+      "evidence": [
+        "CONTRACTS.md"
+      ],
+      "tapizId": null,
+      "tapizUrl": null
+    },
+    {
+      "id": "KT1-04",
+      "phase": "KT1",
+      "implementation": "EXTERNAL_PENDING",
+      "title": "Record actual Tapiz task to branch to PR and green CI",
+      "requirements": [
+        "ACC-04",
+        "ADM-08"
+      ],
+      "useCases": [
+        "Publish own contribution",
+        "Confirm actual remote checks"
+      ],
+      "prerequisites": "Create actual cards; clean main-based branch; commit and push",
+      "acceptance": "Record actual IDs, branch, new PR URL, tested commit and successful Actions URL",
+      "evidence": [
+        "EVIDENCE.json",
+        "VALIDATION.md"
+      ],
+      "tapizId": null,
+      "tapizUrl": null
+    },
+    {
+      "id": "KT1-05",
+      "phase": "KT1",
+      "implementation": "IMPLEMENTED_LOCAL",
+      "title": "Demonstrate both flows and automated negative cases",
+      "requirements": [
+        "ACC-04",
+        "ADM-08"
+      ],
+      "useCases": [
+        "Run HTTP and React demo"
+      ],
+      "prerequisites": "Start AccessKt1 profile; run current code tests",
+      "acceptance": "All scripted scenarios pass; preserve actual reports, not expected counts",
+      "evidence": [
+        "scripts/kt1-demo.ps1",
+        "DEMO.md"
+      ],
+      "tapizId": null,
+      "tapizUrl": null
+    },
+    {
+      "id": "ACC04-04",
+      "phase": "KT2",
+      "implementation": "PLANNED",
+      "title": "Integrate real identity, membership and ATT providers",
+      "requirements": [
+        "ACC-04"
+      ],
+      "useCases": [
+        "Use production authenticated subject and ATT storage"
+      ],
+      "prerequisites": "KT1-03 accepted contracts",
+      "acceptance": "Cross-module authorization and CAS remain correct with real providers",
+      "evidence": [
+        "CONTRACTS.md"
+      ],
+      "tapizId": null,
+      "tapizUrl": null
+    },
+    {
+      "id": "ADM08-04",
+      "phase": "KT2",
+      "implementation": "PLANNED",
+      "title": "Persist grants and course metadata with durable audit",
+      "requirements": [
+        "ADM-08"
+      ],
+      "useCases": [
+        "Provision roots safely",
+        "Persist delegation lifecycle"
+      ],
+      "prerequisites": "ADM08-03; agreed root recovery/course metadata contracts",
+      "acceptance": "Migrations, grant uniqueness, concurrency and transaction-bound audit; real UI integration",
+      "evidence": [
+        "CONTRACTS.md"
+      ],
+      "tapizId": null,
+      "tapizUrl": null
+    }
+  ]
+}

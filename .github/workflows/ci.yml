@@ -13,10 +13,9 @@ jobs:
           dotnet-version: '10.0.x'
       - name: Build backend solution
         run: dotnet build backend/SecurityLab.slnx --configuration Release
-      - name: Test backend solution
-        run: >
-          dotnet test backend/SecurityLab.slnx --configuration Release --no-build
-          --logger "trx" --results-directory TestResults
+      - name: Test backend solution with isolated Audit PostgreSQL
+        shell: pwsh
+        run: ./scripts/audit/test-postgres.ps1 -NoBuild
       - name: Verify tests were discovered and executed
         shell: bash
         run: |
@@ -35,6 +34,26 @@ jobs:
             echo "::error::Zero tests were executed; a green run with no tests proves nothing."
             exit 1
           fi
+      - name: Live KT1 demonstration
+        shell: bash
+        run: |
+          ASPNETCORE_ENVIRONMENT=Development Kt1Demo__Enabled=true dotnet backend/Platform.Api/bin/Release/net10.0/Platform.Api.dll --contentRoot "$GITHUB_WORKSPACE/backend/Platform.Api" --urls http://127.0.0.1:5080 > /tmp/kt1-api.log 2>&1 &
+          api_pid=$!
+          trap 'kill "$api_pid" 2>/dev/null || true' EXIT
+          ready=false
+          for attempt in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:5080/api/kt1/info > /dev/null; then ready=true; break; fi
+            sleep 0.5
+          done
+          if [ "$ready" != true ]; then cat /tmp/kt1-api.log; exit 1; fi
+          pwsh -NoLogo -NoProfile -File scripts/kt1-demo.ps1 -BaseUrl http://127.0.0.1:5080
+      - name: Upload KT1 test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acc04-adm08-kt1-results
+          path: TestResults/
+          if-no-files-found: error
       - name: Upload backend test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -55,3 +74,6 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: npm run build
+      - name: Test frontend
+        working-directory: frontend
+        run: npm test

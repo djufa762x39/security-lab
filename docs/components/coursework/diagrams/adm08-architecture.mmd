@@ -1,0 +1,10 @@
+flowchart TD
+  UI["React course administration demo"] -->|HTTP / cookie / input| API["KT1 administration endpoints"]
+  API --> SERVICE["AdministrationService: view / rename / delegate / revoke"]
+  SERVICE -->|AccessRequest| ENGINE["Shared IAccessDecision: default deny"]
+  ENGINE --> POLICY["AdministrationPolicy: explicit same-course capability"]
+  POLICY --> ACCOUNTS["IAccountReader: current account"]
+  POLICY --> STORE["ICourseAdministrationStore: current grants / courses"]
+  SERVICE -->|Captured authority + version| STORE
+  STORE --> SIM["DemoStore: recheck grant under mutation lock"]
+  SERVICE --> AUDIT["ISecurityAudit: change metadata"]

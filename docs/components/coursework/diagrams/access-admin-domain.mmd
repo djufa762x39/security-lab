@@ -1,0 +1,39 @@
+classDiagram
+  class Account {
+    Guid Id
+    bool IsActive
+  }
+  class Membership {
+    Guid AccountId
+    Guid CourseId
+    CourseRole Role
+    bool IsActive
+  }
+  class Attempt {
+    Guid Id
+    Guid OwnerId
+    Guid CourseId
+    AttemptState State
+    int Version
+  }
+  class Course {
+    Guid Id
+    string DisplayName
+    int Version
+  }
+  class AdminGrant {
+    Guid Id
+    Guid GranteeId
+    Guid GrantedBy
+    Guid CourseId
+    AdminCapability Capabilities
+    GrantState State
+    int Version
+    bool IsRoot
+  }
+  Account "1" --> "many" Membership : current member
+  Course "1" --> "many" Membership : course scope
+  Account "1" --> "many" Attempt : owns
+  Course "1" --> "many" Attempt : scopes
+  Account "1" --> "many" AdminGrant : receives
+  Course "1" --> "many" AdminGrant : administrative scope

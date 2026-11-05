@@ -1,0 +1,10 @@
+flowchart TD
+  UI["React attempt demo"] -->|HTTP / cookie / input| API["KT1 attempt endpoints"]
+  API --> SERVICE["AttemptService: read and draft update"]
+  SERVICE -->|AccessRequest| ENGINE["Shared IAccessDecision: default deny"]
+  ENGINE -->|Registered action policy| POLICY["AttemptPolicy: owner, course, state"]
+  POLICY --> PORTS["Account / membership / ATT snapshot ports"]
+  SERVICE -->|Authorized snapshot + expected version| STORE["IAttemptStore: read / atomic draft CAS"]
+  PORTS --> SIM["DemoStore: synthetic provider adapters"]
+  STORE --> SIM
+  SERVICE --> AUDIT["ISecurityAudit: metadata only"]

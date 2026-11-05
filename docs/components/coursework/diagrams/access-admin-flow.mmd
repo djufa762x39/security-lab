@@ -1,0 +1,11 @@
+flowchart TD
+  R["Protected request"] --> V["Validate input and resolve synthetic cookie subject"]
+  V --> S["Resolve current account and resource snapshots"]
+  S --> D{"Shared engine returns Allow?"}
+  D -->|No / unavailable| DENY["Deny: public generic response + internal audit"]
+  D -->|Yes| KIND{"Requested operation"}
+  KIND -->|Attempt| A["Snapshot-bound read or atomic draft CAS"]
+  KIND -->|Course administration| G["Current active grant bound to course and capability"]
+  G --> M["Recheck exact grant at read / commit boundary"]
+  A --> E["Audit metadata and return result"]
+  M --> E
