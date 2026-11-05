@@ -1,8 +1,10 @@
+using Platform.Access.AspNet;
 using Microsoft.AspNetCore.Mvc;
 using Platform.Access.Contracts;
 using Platform.Access.Domain.Enums;
 using Platform.Access.Domain.Models;
-using Platform.Api.Security;
+using Platform.Api.Interfaces.Identity;
+using AuthoringAccessDecision = Platform.Access.Contracts.IAccessDecision;
 using Platform.Authoring.Application;
 using Platform.Authoring.Domain;
 
@@ -34,15 +36,18 @@ public static class AuthoringEndpoints
 {
     public static IEndpointRouteBuilder MapAuthoringEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/authoring/templates", ListTemplatesAsync);
-        app.MapPost("/api/authoring/templates/{templateId:guid}/drafts", CopyTemplateAsync);
+        // Both handlers call AuthorizeAsync and the authoring service rechecks access.
+        app.MapGet("/api/authoring/templates", ListTemplatesAsync)
+            .DelegatesToLegacyAuthorization();
+        app.MapPost("/api/authoring/templates/{templateId:guid}/drafts", CopyTemplateAsync)
+            .DelegatesToLegacyAuthorization();
         return app;
     }
 
     public static async Task<IResult> ListTemplatesAsync(
         HttpContext context,
         IRequestSubjectResolver subjectResolver,
-        IAccessDecision accessDecision,
+        AuthoringAccessDecision accessDecision,
         [FromServices] TemplateCatalogService catalog,
         CancellationToken cancellationToken)
     {
@@ -69,7 +74,7 @@ public static class AuthoringEndpoints
         Guid templateId,
         HttpContext context,
         IRequestSubjectResolver subjectResolver,
-        IAccessDecision accessDecision,
+        AuthoringAccessDecision accessDecision,
         [FromServices] DraftService drafts,
         CancellationToken cancellationToken)
     {
@@ -99,7 +104,7 @@ public static class AuthoringEndpoints
     private static async Task<(IResult? Denied, Guid ActorId)> AuthorizeAsync(
         HttpContext context,
         IRequestSubjectResolver subjectResolver,
-        IAccessDecision accessDecision,
+        AuthoringAccessDecision accessDecision,
         string action,
         ResourceRef? resource,
         string correlationId,
