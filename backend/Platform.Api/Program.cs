@@ -10,6 +10,10 @@ using Platform.Access.Domain.Enums;
 using Platform.Access.Domain.Models;
 using Platform.Access.AspNet;
 
+using Platform.Api.Authorization;
+using Platform.Access.Infrastructure.Catalog;
+using Platform.Access.Infrastructure.Policies;
+
 using Platform.Api.Endpoints;
 using Platform.Identity;
 using Platform.Api.Endpoints.Identity;
@@ -25,6 +29,8 @@ using Platform.Authoring.Composition;
 using Platform.LabVisibility.Composition;
 using Platform.LabVisibility.Contracts;
 using Platform.LabVisibility.Infrastructure.Membership;
+using Platform.Prerequisites.Contracts;
+using Platform.Prerequisites.Infrastructure;
 
 // Oba modula imaju IAccessDecision, zato koristimo alias.
 using IdentityAccessDecision = Platform.Api.Interfaces.Identity.IAccessDecision;
@@ -70,6 +76,7 @@ builder.Services.AddAuthoring();
 builder.Services.AddLabVisibility();
 builder.Services.AddIdentityRateLimiting(builder.Configuration);
 builder.Services.AddControllers();
+builder.Services.AddSingleton<IPrerequisiteRepository, InMemoryPrerequisiteRepository>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton(TimeProvider.System);
 
@@ -147,6 +154,30 @@ app.MapAccountEndpoints();
 
 // AUT-06: radnje i politike za sablone laboratorija, pa endpointi
 app.Services.RegisterAuthoringAccess();
+var actionCatalog = app.Services
+    .GetRequiredService<InMemoryActionCatalog>();
+
+var policyRegistry = app.Services
+    .GetRequiredService<InMemoryAccessPolicyRegistry>();
+
+var prerequisitePolicy = new PrerequisiteModificationPolicy(
+    app.Services.GetRequiredService<
+        Platform.Authoring.Application.IAuthorDirectory>());
+
+actionCatalog.Register(new ActionDefinition(
+    "prerequisites.add",
+    ActionScope.Authenticated,
+    null,
+    true));
+
+actionCatalog.Register(new ActionDefinition(
+    "prerequisites.remove",
+    ActionScope.Authenticated,
+    null,
+    true));
+
+policyRegistry.Register("prerequisites.add", prerequisitePolicy);
+policyRegistry.Register("prerequisites.remove", prerequisitePolicy);
 app.MapAuthoringEndpoints();
 
 // AUT-04/AUT-07: radnje i politike za prikaz laboratorije
