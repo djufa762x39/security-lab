@@ -1,4 +1,8 @@
+using Platform.Access.AspNet;
 using Microsoft.AspNetCore.Mvc;
+using Platform.Api.Enums.Identity;
+using Platform.Api.Interfaces.Identity;
+using Platform.Api.Models.Identity;
 using Platform.Api.Services.Identity;
 
 namespace Platform.Api.Controllers.Identity;
@@ -9,6 +13,7 @@ public sealed record LoginRequest(string? Email, string? Password);
 [Route("api/auth")]
 public sealed class LoginController(LoginAccount login) : ControllerBase
 {
+    [DelegatedAuthorization]
     [HttpPost("login")]
     public IActionResult Login([FromBody] LoginRequest request)
     {

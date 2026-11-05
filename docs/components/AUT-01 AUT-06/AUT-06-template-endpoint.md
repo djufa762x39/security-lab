@@ -1,56 +1,57 @@
 # AUT06 - Creating drafts from a template
 
-The endpoint accepts `POST /api/authoring/templates/{templateId}/drafts`. For KT1, it runs in the DEVELOPMENT environment. It uses the
-`X-Test-User` header for development identity, reads from built-in templates and stores created drafts in memory until the application is stopped.
+`POST /api/authoring/templates/{templateId}/drafts` creates a draft from an existing template. The server resolves the caller's identity and checks access before reading the template. The new draft has its own ID and owner and retains the source template ID, title, goal and lab type. The open source template is unchanged.
 
 ## Component architecture
 
 ```mermaid
 flowchart TD
     API["AUT-06 POST endpoint"]
-    ID["IIdentityContext"]
-    SVC["DraftService"]
-    ACCESS["DevelopmentAuthoringAccess"]
-    TEMPLATES["BuiltInTemplateRepository"]
-    DRAFTS["DevelopmentDraftRepository"]
+    ID["IRequestSubjectResolver"]
+    POLICY["Platform access policy"]
+    SERVICE["DraftService"]
+    ACCESS["IAuthoringAccess"]
+    TEMPLATES["ITemplateRepository"]
+    DRAFTS["IDraftRepository"]
 
-    API --> |"Reads caller identity"| ID
-    API --> |"Calls CreateDraftFromTemplateAsync"| SVC
-    SVC --> |"Checks permission through IAuthoringAccess"| ACCESS
-    ACCESS --> |"Checks caller ID and role"| ID
-    SVC --> |"Reads through ITemplateRepository"| TEMPLATES
-    SVC --> |"Writes through IDraftRepository"| DRAFTS
+    API --> |"Resolves caller identity"| ID
+    API --> |"Checks permission through IAccessDecision"| POLICY
+    API --> |"Calls CreateDraftFromTemplateAsync"| SERVICE
+    SERVICE --> |"Checks authorization again"| ACCESS
+    SERVICE --> |"Reads source template"| TEMPLATES
+    SERVICE --> |"Stores new draft"| DRAFTS
 ```
 
-`Platform.Api` handles the HTTP requests and maps the outcome to a HTTP response
-`DraftService` in `Platform.Authoring` checks permissions, loads the template, creates and stores the draft
+The endpoint handles the HTTP request and maps the result to a HTTP response. 
+`DraftService` applies the Authoring rules and uses the repository interfaces to read the template and store the draft.
 
 ## Data flow diagram
 
 ```mermaid
 flowchart TD
     CLIENT["HTTP client"]
+    IDENTITY["Server-side identity resolver"]
     CREATE(("Create draft from template"))
     ACCESS(("Check access"))
-    TEMPLATES[("Built-in templates")]
-    DRAFTS[("In-memory draft store")]
+    TEMPLATES[("Template store")]
+    DRAFTS[("Draft sotre")]
 
-    CLIENT --> |"Template ID and development identity header"| CREATE
-    CREATE --> |"Actor ID, action and template ID"| ACCESS
+    CLIENT --> |"POST request with template ID"| CREATE
+    IDENTITY --> |"Caller identity or anonymous"| CREATE
+    CREATE --> |"Caller, action and template ID"| ACCESS
     ACCESS --> |"Allow or deny"| CREATE
     CREATE --> |"Template ID"| TEMPLATES
-    TEMPLATES --> |"Template content or no match"| CREATE
-    CREATE --> |"New draft ID, owner ID, source template ID and content"| DRAFTS
-    CREATE --> |"201 with draft data or HTTP error"| CLIENT
+    TEMPLATES --> |"Template data or no match"| CREATE
+    CREATE --> |"New draft with owner and source template ID"| DRAFTS
+    CREATE --> |"HTTP status and response body"| CLIENT
 ```
 
-The endpoint checks the caller identity first. `DraftService` then checks for a permission before reading the template.
-A successful request stores a new draft with its own ID and the template's title, goal and lab type. The response contains the created draft.
+In Development, `DevelopmentSubjectResolver` reads the caller ID from the server setting `Identity:DevSubjectId`. The HTTP tests set that value in their test host configuration.
 
 | Status | Outcome |
 |---|---|
-| `201 Created` | The API stores and returns the new draft|
-|`401 Unauthorized` | The request lacks a valid caller identity|
+| `201 Created` | The API stores and returns its data|
+|`401 Unauthorized` | The request has no authenticated caller|
 |`403 Forbidden` | The caller has no permission to create a draft from a template|
 |`404 Not Found` | The authorized caller requested a template that doesn't exist|
 

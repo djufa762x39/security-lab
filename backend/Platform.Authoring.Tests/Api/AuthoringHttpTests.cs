@@ -9,6 +9,8 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Platform.Authoring.Tests.Fakes;
 
+using Microsoft.Extensions.Configuration;
+
 namespace Platform.Authoring.Tests.Api;
 
 [TestFixture]
@@ -20,12 +22,20 @@ public sealed class AuthoringHttpRequests
         var templateId = Guid.Parse("a1000000-0000-4000-8000-000000000001");
         var assistantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
         
-        using var factory = new AuthoringHostFactory();
+        using var baseFactory = new AuthoringHostFactory();
+        using var factory = baseFactory.WithWebHostBuilder(builder =>
+        {
+            //supply the caller ID thorugh the configuration read by DevelopmentSubjectResolver
+            builder.ConfigureAppConfiguration((_, config) =>
+            {
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Identity:DevSubjectId"] = assistantId.ToString("D")
+                });
+            });
+        });
         using var client = factory.CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/authoring/templates/{templateId}/drafts");
-
-        //development host reads the caller identity here
-        request.Headers.Add("X-Test-User", $"{assistantId}:Assistant");
 
         using var response = await client.SendAsync(request);
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Created));
@@ -45,7 +55,8 @@ public sealed class AuthoringHttpRequests
             Assert.That(draftId, Is.Not.EqualTo(templateId));
             Assert.That(draft.GetProperty("sourceTemplateId").GetGuid(), Is.EqualTo(templateId));
             Assert.That(draft.GetProperty("ownerId").GetGuid(), Is.EqualTo(assistantId));
-            Assert.That(draft.GetProperty("content").GetProperty("title").GetString(), Is.EqualTo("Access control and ownership"));
+            Assert.That(draft.GetProperty("title").GetString(), Is.EqualTo("Access control and ownership"));
+            Assert.That(storedDraft, Is.Not.Null);
         });
     }
 
@@ -58,6 +69,15 @@ public sealed class AuthoringHttpRequests
         using var baseFactory = new AuthoringHostFactory();
         using var factory = baseFactory.WithWebHostBuilder(builder =>
         {
+            //use the same authorized caller as in the successful creation test
+            builder.ConfigureAppConfiguration((_, config) =>
+            {
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Identity:DevSubjectId"] = "11111111-1111-1111-1111-111111111111"
+                });
+            });
+
             //Replace API"s draft repository with the existing Authoring test fake
             builder.ConfigureTestServices(services =>
             {
@@ -68,9 +88,6 @@ public sealed class AuthoringHttpRequests
 
         using var client = factory.CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/authoring/templates/{unknownTemplateId}/drafts");
-
-        //use an authorized assistant so the request reaches the template lookup
-        request.Headers.Add("X-Test-User", "11111111-1111-1111-1111-111111111111:Assistant");
 
         using var response = await client.SendAsync(request);
 
@@ -87,6 +104,15 @@ public sealed class AuthoringHttpRequests
         using var baseFactory = new AuthoringHostFactory();
         using var factory = baseFactory.WithWebHostBuilder(builder =>
         {
+            //resolve the student as a known caller so the access policy can deny the action
+            builder.ConfigureAppConfiguration((_, config) =>
+            {
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Identity:DevSubjectId"] = "22222222-2222-2222-2222-222222222222"
+                });
+            });
+
             //use the test repository to check whether a draft is stored
             builder.ConfigureTestServices(services =>
             {
@@ -97,9 +123,6 @@ public sealed class AuthoringHttpRequests
 
         using var client = factory.CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/authoring/templates/{templateId}/drafts");
-
-        //use an existing template to isolate access check
-        request.Headers.Add("X-Test-User", "22222222-2222-2222-2222-222222222222:Student");
 
         using var response = await client.SendAsync(request);
         
