@@ -198,11 +198,13 @@ if (app.Environment.IsDevelopment())
                 Guid.NewGuid().ToString("N")),
             cancellationToken);
 
-        return decision.Outcome == AccessOutcome.Allow
-            ? Results.Ok(new { outcome = "allow", decision.CorrelationId })
-            : Results.Json(
-                new { outcome = "deny", decision.CorrelationId },
-                statusCode: StatusCodes.Status403Forbidden);
+        // This DEVELOPMENT-ONLY diagnostic reports the engine's denial as data.
+        // It never grants access to a resource; clients receive no secret data.
+        return Results.Ok(new {
+            outcome = decision.Outcome == AccessOutcome.Allow ? "allow" : "deny",
+            denialReason = decision.DenialReason.ToString(),
+            decision.CorrelationId
+        });
     })
     .AllowPublic();
 }
