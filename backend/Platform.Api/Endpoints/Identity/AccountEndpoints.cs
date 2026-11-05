@@ -10,6 +10,7 @@ using Platform.Identity.Services;
 
 // Oba modula imaju IAccessDecision; ovaj endpoint koristi Access modul.
 using IAccessDecision = Platform.Access.Contracts.IAccessDecision;
+using SessionIdentityContext = Platform.Api.Interfaces.Identity.IIdentityContext;
 
 namespace Platform.Api.Endpoints.Identity;
 
@@ -81,10 +82,10 @@ public static class AccountEndpoints
 
     // IDN-05: administratorsko otključavanje. Pravo se proverava pre traženja naloga,
     // pa neovlašćeni pozivalac ne saznaje da li nalog postoji.
+    // Pozivalac je iz prave sesije (IDN-02), da otključavanje radi i van Developmenta.
     private static async Task<IResult> UnlockAccountAsync(
         Guid id,
-        HttpContext context,
-        IRequestSubjectResolver subjectResolver,
+        SessionIdentityContext identity,
         IAccessDecision accessDecision,
         IAccountLockoutAdministration lockouts,
         IAuditWriter audit,
@@ -93,8 +94,11 @@ public static class AccountEndpoints
     {
         const string auditAction = "account.lockout.cleared";
         var correlationId = Guid.NewGuid().ToString("N");
-        var subject = subjectResolver.Resolve(context);
-        Guid? actorId = Guid.TryParse(subject?.Id, out var parsed) ? parsed : null;
+        var caller = identity.Current;
+        var actorId = caller?.UserId;
+        var subject = caller is { IsAuthenticated: true, UserId: Guid userId }
+            ? new SubjectRef(userId.ToString(), AccountState.Active)
+            : null;
 
         void Write(string outcome, string? reasonCode) =>
             audit.Write(new AuditEvent(

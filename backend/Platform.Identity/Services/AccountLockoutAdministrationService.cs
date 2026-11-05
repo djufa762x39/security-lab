@@ -1,34 +1,28 @@
-using Microsoft.AspNetCore.Identity;
-using Platform.Identity.Entities;
-using Platform.Identity.Interfaces;
+using Microsoft.EntityFrameworkCore;
 using Platform.Identity.Enums;
-using Platform.Identity.Models;
+using Platform.Identity.Interfaces;
+using Platform.Identity.Persistence;
 
 namespace Platform.Identity.Services;
 
-public sealed class AccountLockoutAdministrationService(UserManager<AppUser> userManager)
-    : IAccountLockoutAdministration
+public sealed class AccountLockoutAdministrationService(
+    PlatformIdentityDbContext db,
+    ICredentialStore store,
+    TimeProvider clock) : IAccountLockoutAdministration
 {
     public async Task<UnlockOutcome> UnlockAsync(Guid accountId, CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
+        var account = await db.Accounts
+            .AsNoTracking()
+            .Where(a => a.Id == accountId)
+            .Select(a => new { a.LockoutEnd })
+            .FirstOrDefaultAsync(cancellationToken);
 
-        var user = await userManager.FindByIdAsync(accountId.ToString());
-        if (user is null)
+        if (account is null)
             return UnlockOutcome.NotFound;
 
-        var wasLockedOut = await userManager.IsLockedOutAsync(user);
-        if (!wasLockedOut && user.AccessFailedCount == 0)
-            return UnlockOutcome.NotLocked;
+        await store.ClearFailuresAsync(accountId, cancellationToken);
 
-        var cleared = await userManager.SetLockoutEndDateAsync(user, null);
-        if (!cleared.Succeeded)
-            throw new InvalidOperationException("Otključavanje naloga nije uspelo.");
-
-        var reset = await userManager.ResetAccessFailedCountAsync(user);
-        if (!reset.Succeeded)
-            throw new InvalidOperationException("Resetovanje brojača neuspešnih prijava nije uspelo.");
-
-        return wasLockedOut ? UnlockOutcome.Unlocked : UnlockOutcome.NotLocked;
+        return account.LockoutEnd > clock.GetUtcNow() ? UnlockOutcome.Unlocked : UnlockOutcome.NotLocked;
     }
 }
