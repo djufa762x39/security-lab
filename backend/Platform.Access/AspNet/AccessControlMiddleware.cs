@@ -36,15 +36,18 @@ public sealed class AccessControlMiddleware
         var requirement = endpoint.Metadata.GetMetadata<IAccessRequirementMetadata>();
         var isPublic = endpoint.Metadata.GetMetadata<PublicEndpointMetadata>() is not null
                        || endpoint.Metadata.GetMetadata<AllowPublicAttribute>() is not null;
+        var delegated = endpoint.Metadata.GetMetadata<DelegatedAuthorizationAttribute>() is not null;
 
-        if (requirement is null && isPublic)
+        // Explicitly reviewed legacy endpoints retain their own tested authorization.
+        // Conflicting or missing metadata fails closed as before.
+        if (requirement is null && (isPublic != delegated))
         {
             await _next(context);
             return;
         }
 
         var correlationId = Guid.NewGuid().ToString("N");   
-        if (requirement is null || isPublic)
+        if (requirement is null || isPublic || delegated)
         {
             _logger.LogWarning(
                 "Fallback deny for endpoint {Endpoint} (requirement: {HasRequirement}, public: {IsPublic}). CorrelationId: {CorrelationId}",
