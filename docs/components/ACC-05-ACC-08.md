@@ -205,3 +205,17 @@ deklariraju `RequireAccess` ili odobreni `AllowPublic`; test endpoint
 coverage-a se ne isključuje radi zelenog CI-a.
 
 Integraciona provera 2026-11-05: resursne akcije Authoring i LabVisibility sada se registruju sa eksplicitnim tipom resursa i opsegom u kompoziciji pripadajućih modula; provera scope-a i dalje ostaje fail-closed.
+
+## Migracija postojećih rutera bez promene njihovih autorizacionih pravila
+
+`DelegatedAuthorizationAttribute` je eksplicitni integracioni most isključivo
+za proverene starije endpoint-e koji već imaju samostalne guard-ove (LAB-01
+`RequireLabAccess` i provera vlasništva, IDN i AUT handleri sa sopstvenim
+`IAccessDecision` pozivom). Nije ekvivalent `AllowPublic`: samo ovim
+označenim rutama dopušta se izvršenje njihovih već postojećih autorizacionih
+provera. Novi neoznačeni endpoint ostaje zabranjen. ACC-05 test proverava
+tačno odobrenu listu ruta i odbija nepoznate delegacije.
+
+Audit probni `/__test/audit-events` postoji isključivo u `Testing` hostu
+i oslanja se na testovima definisan sintetički kontekst. Ne postoji u
+produkcijskom registru endpoint-a.
