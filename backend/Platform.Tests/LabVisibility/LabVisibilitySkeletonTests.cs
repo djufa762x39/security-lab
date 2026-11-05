@@ -6,6 +6,8 @@ using Platform.Access.Domain.Models;
 using Platform.LabVisibility.Composition;
 using Platform.LabVisibility.Contracts;
 
+using LabVisibilityCourseRole = Platform.LabVisibility.Contracts.CourseRole;
+
 namespace Platform.Tests.LabVisibility;
 
 public class LabVisibilitySkeletonTests
@@ -30,16 +32,15 @@ public class LabVisibilitySkeletonTests
             new ResourceRef("lab", Guid.NewGuid().ToString()),
             Guid.NewGuid().ToString("N"));
 
+    // Važi i kad svako doda svoju politiku: nepoznata laboratorija se uvek odbija.
     [TestCaseSource(typeof(LabVisibilityActions), nameof(LabVisibilityActions.All))]
-    public async Task RegisteredActionWithoutPolicy_IsDenied(string action)
+    public async Task UnknownLab_IsDeniedForEveryAction(string action)
     {
         await using var provider = BuildProvider();
         var decision = await provider.GetRequiredService<IAccessDecision>()
             .DecideAsync(ActiveStudentRequest(action));
 
-        // Radnja je poznata, ali bez politike mora biti odbijena (fail-closed).
         Assert.That(decision.Outcome, Is.EqualTo(AccessOutcome.Deny));
-        Assert.That(decision.DenialReason, Is.EqualTo(AccessDenialReason.NoPolicy));
     }
 
     [Test]
@@ -66,6 +67,6 @@ public class LabVisibilitySkeletonTests
         var role = await provider.GetRequiredService<ICourseMembership>()
             .GetRoleAsync(Guid.NewGuid(), Guid.NewGuid());
 
-        Assert.That(role, Is.EqualTo(CourseRole.None));
+        Assert.That(role, Is.EqualTo(LabVisibilityCourseRole.None));
     }
 }
