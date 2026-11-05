@@ -8,6 +8,7 @@ import LabsSection from './components/labs/LabsSection'
 import LoginPage from './pages/LoginPage'
 import RevisionDetailPage from './pages/RevisionDetailPage'
 import RevisionListPage from './pages/RevisionListPage'
+import LabVisibilitySection from './labs/LabVisibilitySection'
 
 type View = { tab: 'pending' | 'mine'; revisionId?: string }
 
@@ -74,7 +75,6 @@ export default function App() {
     {/* Komponente drugih timova sa main grane (ACC-04/ADM-08 i LAB-07) */}
     <CourseworkKt1 />
     <LabsSection />
-
-
+    <LabVisibilitySection />
   </main>
 }
