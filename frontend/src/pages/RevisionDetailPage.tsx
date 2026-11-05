@@ -105,11 +105,24 @@ export default function RevisionDetailPage({ revisionId, onBack, onChanged }: Pr
           <dt>Kurs</dt><dd>{revision.courseName}</dd>
           <dt>Autor</dt><dd>{revision.author.displayName}</dd>
           <dt>Broj revizije</dt><dd>{revision.revisionNumber ?? 'dodeljuje se pri objavi'}</dd>
-          <dt>Poslednja izmena</dt><dd>{formatDateTime(revision.updatedAt)}</dd>
+          <dt>Poslednja izmena</dt><dd>{revision.updatedAt ? formatDateTime(revision.updatedAt) : '—'}</dd>
           <dt>Heš sadržaja</dt><dd><code title={revision.contentHash}>{shortHash(revision.contentHash)}</code></dd>
           <dt>Politika</dt>
           <dd>{revision.policy.requiresSeparateApprover ? 'Obavezan drugi odobravalac (autor ne može sam da odobri)' : 'Autor može sam da objavi'}</dd>
         </dl>
+
+        {revision.preview && (
+          <section aria-label="Sadržaj revizije">
+            <h3>Sadržaj revizije</h3>
+            <p>{revision.preview.goal}</p>
+            <ul>
+              {revision.preview.events?.map((event, index) => event && (
+                <li key={index}><code>{event.timestamp} {event.id}</code> {event.message}</li>
+              ))}
+            </ul>
+            <p>{revision.preview.question}</p>
+          </section>
+        )}
 
         {success && <p className="alert alert-ok" role="status">{success}</p>}
         {actionError && (
