@@ -35,6 +35,14 @@ public static class AccessEndpointExtensions
         return builder;
     }
 
+    public static TBuilder DelegateAuthorization<TBuilder>(this TBuilder builder)
+        where TBuilder : IEndpointConventionBuilder
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        builder.WithMetadata(new DelegatedAuthorizationAttribute());
+        return builder;
+    }
+
     public static TBuilder AllowPublic<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder
     {
