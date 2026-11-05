@@ -15,7 +15,7 @@
   - In Development only, the API applies the identity migrations and seeds four known accounts (US-09, implemented).
 - Contracts with other modules:
   - Provided: `IIdentityContext` (implemented by `SessionIdentityContext`), `ISessionManager` (implemented by `SessionManager`), `IMfaPolicy` (proposed).
-  - Used: `IAuditWriter` (`LoggerAuditWriter`), account status from IDN-03, attempt limiting from IDN-05 (not integrated).
+  - Used: `IAuditWriter` (`LoggerAuditWriter`), account status from IDN-03, per-account lockout from IDN-05 (inside `CredentialVerifier`).
 - Implementation status: see [Implementation status](#implementation-status). P1, P3, P4 and P6 are implemented. P2 and P5 (MFA) are planned.
 
 This file covers only the data flow diagram (US-10). The component architecture diagram is a separate story (US-11).
@@ -41,7 +41,7 @@ flowchart LR
   end
 
   subgraph DATA["Data zone: PostgreSQL, memory and log - TB2 is its outer edge"]
-    D1[("D1 identity.accounts: email, status, role, password_hash")]
+    D1[("D1 identity.accounts: email, status, role, password_hash, failed_login_count, lockout_end")]
     D2[("D2 identity.sessions: token_hash, auth_level, expiry, revoked_at")]
     D3[("D3 Audit log - via IAuditWriter, application log")]
     D4[("D4 InMemoryAccountRepository - IDN-03, not shared with D1")]
@@ -116,7 +116,7 @@ Process numbers follow the team work plan (P5 is listed after P2 only for layout
 
 | ID | Store | Content | Status |
 |-|-|-|-|
-| D1 | `identity.accounts` (`PlatformIdentityDbContext`, entity `UserAccount`) | `id`, `email` (unique, lower-case), `status` (`Active`, `Blocked`, `Archived`), `role` (`Student`, `Teacher`, `Administrator`), `password_hash` (BCrypt, nullable). MFA columns planned (names pending US-12) | implemented. Read by login (`EfCredentialStore`), written by the seeder (P6). Migrations `InitialIdentity`, `AddAccountPasswordHash`, `AddAccountRole` |
+| D1 | `identity.accounts` (`PlatformIdentityDbContext`, entity `UserAccount`) | `id`, `email` (unique, lower-case), `status` (`Active`, `Blocked`, `Archived`), `role` (`Student`, `Teacher`, `Administrator`), `password_hash` (BCrypt, nullable), `failed_login_count`, `lockout_end` (IDN-05). MFA columns planned (names pending US-12) | implemented. Read by login (`EfCredentialStore`), written by the seeder (P6) and by the lockout (IDN-05). Migrations `InitialIdentity`, `AddAccountPasswordHash`, `AddAccountRole`, `AddAccountLockout` |
 | D2 | `identity.sessions` (entity `Session`) | `id`, `user_id` (FK to D1, cascade), `token_hash` (SHA-256, unique, never the token), `session_handle` (public, unique), `auth_level` (`MfaPending` or `Active`), `created_at`, `expires_at`, `last_activity_at`, `revoked_at` (concurrency token) | implemented (migration `AddSessions`), accessed through `ISessionStore` and `SessionManager` |
 | D3 | Audit log | actor, action, target, time, outcome, correlation ID, detail | `LoggerAuditWriter` writes to the application log. A real store is owned by the AUD team |
 | D4 | `InMemoryAccountRepository` | `UserAccount` objects for IDN-03, seeded at startup in Development (admin, student, other) | temporary, lost on restart, **not the same data as D1** |
@@ -203,7 +203,7 @@ These are the places where the code and the intended single data model differ. T
 - **Administrator check is a stub.** `ConfigAdminDirectory` reads `Stub:AdminIds` from configuration. The `role` column in D1 is not used for authorization yet.
 - **`POST /api/admin/accounts` resolves the caller from `Identity:DevSubjectId`** (`DevelopmentSubjectResolver`), not from the session. Outside Development the caller is always unauthenticated.
 - **Audit goes to the application log** (D3), not to a store owned by AUD.
-- **No attempt limiting (IDN-05), no CSRF token (US-15), no inactivity timeout.** The session lifetime is fixed at 8 hours (US-14).
+- **No CSRF token (US-15), no inactivity timeout.** The session lifetime is fixed at 8 hours (US-14).
 
 ## Implementation status
 
@@ -220,9 +220,9 @@ Present in the repository now:
 - Frontend: `frontend/src/auth/authApi.ts` calls `/api/auth/me`, `/api/auth/login` and `/api/auth/logout`, `frontend/src/api/accounts.ts` calls `POST /api/admin/accounts`.
 - Not used on the request path: `StubIdentityContext`, `AnonymousIdentityContext` and `StoreSessionManager` (a stub whose revoke and list methods do nothing, shadowed by `SessionManager` in `Program.cs`).
 
-Planned (this DFD describes them, but the code does not exist yet): P2 MFA verify, P5 MFA enroll, `IMfaPolicy`, MFA columns in D1, attempt limiting, CSRF token, endpoints for revoke one and list sessions.
+Planned (this DFD describes them, but the code does not exist yet): P2 MFA verify, P5 MFA enroll, `IMfaPolicy`, MFA columns in D1, CSRF token, endpoints for revoke one and list sessions.
 
-Open decisions that can change this diagram (to confirm with the assistant): which groups have mandatory MFA, physical names of the MFA columns, exact MFA endpoint names, how IDN-05 attempt limiting is shared, when D4 and D5 are merged into D1.
+Open decisions that can change this diagram (to confirm with the assistant): which groups have mandatory MFA, physical names of the MFA columns, exact MFA endpoint names, when D4 and D5 are merged into D1.
 
 ## Evidence of work
 
