@@ -28,48 +28,80 @@ public static class RevisionAuthorizationRegistration
     }
 
     public static void RegisterRevisionPolicies(this IServiceProvider services)
-{
-    var catalog = services.GetRequiredService<InMemoryActionCatalog>();
-    var registry = services.GetRequiredService<InMemoryAccessPolicyRegistry>();
+    {
+        var catalog = services.GetRequiredService<InMemoryActionCatalog>();
+        var registry = services.GetRequiredService<InMemoryAccessPolicyRegistry>();
 
-    catalog.Register(new ActionDefinition(
-        RevisionActions.Submit,
-        ActionScope.Course,
-        "revision",
-        false));
+        // Kreiranje revizije nad kursom
+        catalog.Register(new ActionDefinition(
+            RevisionActions.Create,
+            ActionScope.Course,
+            "course",
+            false));
 
-    registry.Register(
-        RevisionActions.Submit,
-        services.GetRequiredService<RevisionActionPolicy>());
+        // Citanje revizije
+        catalog.Register(new ActionDefinition(
+            RevisionActions.Read,
+            ActionScope.Course,
+            "revision",
+            false));
 
-    catalog.Register(new ActionDefinition(
-        RevisionActions.Approve,
-        ActionScope.Course,
-        "revision",
-        true));
+        // Pregled vlastitih revizija
+        catalog.Register(new ActionDefinition(
+            RevisionActions.Mine,
+            ActionScope.Course,
+            "revision",
+            false));
 
-    registry.Register(
-        RevisionActions.Approve,
-        services.GetRequiredService<RevisionApprovalPolicy>());
+        // Pregled revizija koje cekaju odluku
+        catalog.Register(new ActionDefinition(
+            RevisionActions.PendingReviews,
+            ActionScope.Course,
+            "revision",
+            false));
 
-    catalog.Register(new ActionDefinition(
-        RevisionActions.Return,
-        ActionScope.Course,
-        "revision",
-        false));
+        // Slanje revizije
+        catalog.Register(new ActionDefinition(
+            RevisionActions.Submit,
+            ActionScope.Course,
+            "revision",
+            false));
 
-    registry.Register(
-        RevisionActions.Return,
-        services.GetRequiredService<RevisionActionPolicy>());
+        registry.Register(
+            RevisionActions.Submit,
+            services.GetRequiredService<RevisionActionPolicy>());
 
-    catalog.Register(new ActionDefinition(
-        RevisionActions.UnlockAccount,
-        ActionScope.System,
-        null,
-        true));
+        // Odobravanje revizije
+        catalog.Register(new ActionDefinition(
+            RevisionActions.Approve,
+            ActionScope.Course,
+            "revision",
+            true));
 
-    registry.Register(
-        RevisionActions.UnlockAccount,
-        services.GetRequiredService<RevisionActionPolicy>());
-}
+        registry.Register(
+            RevisionActions.Approve,
+            services.GetRequiredService<RevisionApprovalPolicy>());
+
+        // Vracanje revizije
+        catalog.Register(new ActionDefinition(
+            RevisionActions.Return,
+            ActionScope.Course,
+            "revision",
+            false));
+
+        registry.Register(
+            RevisionActions.Return,
+            services.GetRequiredService<RevisionActionPolicy>());
+
+        // Otkljucavanje naloga
+        catalog.Register(new ActionDefinition(
+            RevisionActions.UnlockAccount,
+            ActionScope.System,
+            null,
+            true));
+
+        registry.Register(
+            RevisionActions.UnlockAccount,
+            services.GetRequiredService<RevisionActionPolicy>());
+    }
 }
