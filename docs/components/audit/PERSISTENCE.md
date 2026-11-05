@@ -86,8 +86,7 @@ Run from the repository root:
 dotnet tool restore
 ```
 
-The root `dotnet-tools.json` pins `dotnet-ef` to 10.0.4, matching the resolved EF Core
-packages. The PostgreSQL provider is 10.0.3; provider patch numbers need not match EF's.
+The root `dotnet-tools.json` pins `dotnet-ef` to 10.0.14 for the shared solution. Audit keeps its EF Core 10.0.4 packages. The PostgreSQL provider is 10.0.3; provider patch numbers need not match EF's.
 
 `AuditDbContextFactory` reads `AUDIT_MIGRATION_CONNECTION_STRING`. It does not read `.env`
 or API user-secrets and never enables sensitive-data logging. Actual database updates
@@ -216,8 +215,8 @@ try {
 
 Do not print the connection string. Without this environment variable, the 7 database
 tests are explicitly skipped. With it set, a failed database connection or migration fails
-the tests. The current shared CI has no Audit PostgreSQL configuration, so its green result
-does not yet prove database coverage. Coordinate that service/setup with S-09 and S-01.
+the tests. The S-09 [test runner](S09-TESTING.md) configures both database connections
+in shared CI and checks that the PostgreSQL fixtures actually ran.
 
 To include runtime permission tests, before the same test command set
 `AUDIT_TEST_RUNTIME_CONNECTION_STRING` using the same connection-string builder pattern,
