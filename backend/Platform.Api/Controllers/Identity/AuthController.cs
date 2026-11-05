@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Platform.Access.AspNet;
 using Platform.Api.Enums.Identity;
 using Platform.Api.Interfaces.Identity;
 using Platform.Api.Models.Identity;
@@ -8,9 +7,6 @@ using Platform.Api.Services.Identity;
 
 namespace Platform.Api.Controllers.Identity;
 
-// ACC-05: login/logout are reachable without a session and /me checks the session itself,
-// so the strict Access middleware delegates authorization to these handlers.
-[DelegatedAuthorization]
 [ApiController]
 [Route("api/auth")]
 public class AuthController(ILoginService login, ILogoutService logout, IIdentityContext identity) : ControllerBase

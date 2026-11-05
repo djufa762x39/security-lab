@@ -13,7 +13,7 @@ public sealed class StubIdentityContext(IHttpContextAccessor http) : IIdentityCo
         get
         {
             var raw = http.HttpContext?.Request.Headers["X-Stub-User"].FirstOrDefault();
-            return Guid.TryParse(raw, out var id) ? new CallerIdentity(true, id, AuthenticationLevel.None, Guid.NewGuid()) : null;
+            return Guid.TryParse(raw, out var id) ? new CallerIdentity(true, id, AuthenticationLevel.None, new Guid()) : null;
         }
     }
 }
