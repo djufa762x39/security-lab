@@ -16,8 +16,14 @@ public sealed record LaboratoryResponse(
     Guid CreatedBy,
     DateTimeOffset CreatedAt);
 
+public sealed record LaboratorySearchItem(
+    Guid Id,
+    string Title,
+    string Status,
+    DateTimeOffset CreatedAt);
+
 public sealed record LaboratorySearchResponse(
-    IReadOnlyList<LaboratoryResponse> Items,
+    IReadOnlyList<LaboratorySearchItem> Items,
     bool Truncated);
 
 // Kodovi su stabilni; frontend (api/labs.ts) ih prevodi u poruke za korisnika.

@@ -7,7 +7,6 @@ const LAB = {
   id: '6f1c2a9e-1111-4c4c-9a9a-000000000001',
   title: 'RBAC i kontrola pristupa',
   status: 'Draft',
-  createdBy: '6f1c2a9e-2222-4c4c-9a9a-000000000002',
   createdAt: '2026-11-04T10:00:00+00:00',
 }
 

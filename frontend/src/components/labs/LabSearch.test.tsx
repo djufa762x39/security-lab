@@ -6,7 +6,7 @@ const teacher = { id: 'marko', role: 'Teacher' } as const
 const student = { id: 'ana', role: 'Student' } as const
 
 function lab(id: string, title: string) {
-  return { id, title, status: 'Draft', createdBy: 'c', createdAt: '2026-11-04T10:00:00+00:00' }
+  return { id, title, status: 'Draft', createdAt: '2026-11-04T10:00:00+00:00' }
 }
 
 function serverReturns(status: number, body: unknown) {

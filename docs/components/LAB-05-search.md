@@ -4,17 +4,20 @@
 
 **Student:** Zorana Jošić PR57/2023
 
-**Zahtevi iz specifikacije:** LAB-05 (Pretraga i filtriranje, nivo J). Kriterijum prihvatanja: *„Rezultati poštuju prava pristupa korisnika.”* Ovaj deo pokriva prvu korisničku priču iz LAB-05: *„Kao korisnik, želim da pretražujem laboratorije po nazivu ili delu naziva, kako bih lakše pronašao vežbu.”*
+**Zahtevi iz specifikacije:** LAB-05 (Pretraga i filtriranje, nivo J). Kriterijum prihvatanja: *„Rezultati poštuju prava pristupa korisnika.”* Ovaj deo pokriva dve korisničke priče iz LAB-05:
+
+- *„Kao korisnik, želim da pretražujem laboratorije po nazivu ili delu naziva, kako bih lakše pronašao vežbu.”*
+- *„Kao korisnik, želim da u rezultatima pretrage vidim samo laboratorije kojima imam pravo pristupa.”* (Bezbedan pristup rezultatima pretrage)
 
 Zajednički zahtevi koje deo pokriva: SEC-01 (serverska autorizacija, nema IDOR-a kroz pretragu), SEC-05 (validacija ulaza i bezbedan prikaz teksta), LAB-04 (student ne vidi nacrt, ni kroz pretragu), ACC-05 (podrazumevano odbijanje nepoznate radnje), OPS-02 (pozitivni i negativni automatski testovi), OPS-07 (pristupačnost i poruke o grešci bez tajni).
 
-**Grana:** `feature/LAB-05-search-by-name`
+**Grane:** `feature/LAB-05-search-by-name` (pretraga po nazivu), `feature/LAB-05-secure-search-results` (bezbedan pristup rezultatima, nastavlja se na prethodnu)
 
 ## Odgovornosti i granice
 
 - **Procesi i scenariji:**
   - Korisnik unese naziv ili deo naziva: `GET /api/laboratories/search?q=<tekst>` (isto i preko aliasa `/api/labs/search`).
-  - Server vraća `200 { "items": [...], "truncated": false }`. Svaka stavka ima isti oblik kao odgovor `GET /api/laboratories/{id}` (`id`, `title`, `status`, `createdBy`, `createdAt`).
+  - Server vraća `200 { "items": [...], "truncated": false }`. Stavka sadrži samo ono što je potrebno za prikaz rezultata: `id`, `title`, `status`, `createdAt`. Interni ID autora (`createdBy`) se ne šalje u rezultatima pretrage. Odgovor ima `Cache-Control: no-store`, pa ga browser i proxy ne čuvaju.
   - Poređenje ne razlikuje velika i mala slova, kvačice (`sifr` nalazi „Šifrovanje”, `kljuc` nalazi „ključevi”, `đ` = `d`) ni višestruke razmake. Upit se traži kao podniz naziva (deo naziva), a ne kao šablon: `%`, `*` i `' OR '1'='1` su običan tekst.
   - Redosled: prvo nazivi koji počinju upitom, zatim abecedno; najviše 50 rezultata (`truncated: true` kad ih ima više).
   - Frontend: panel „Pretraga laboratorija” (oznaka LAB-05) u `LabsSection`, ispod forme za kreiranje i prikaza.
@@ -40,6 +43,8 @@ Zajednički zahtevi koje deo pokriva: SEC-01 (serverska autorizacija, nema IDOR-
 | Nastavnik, autor | `laboratory.read` | sopstvena laboratorija | u rezultatu, ako naziv odgovara upitu |
 | Nastavnik, nije autor | `laboratory.read` | tuđa laboratorija | nije u rezultatu (ni naslov ni ID se ne pojavljuju) |
 | Student (ista osoba i kad je autor u drugoj ulozi) | `laboratory.read` | nacrt | nije u rezultatu (LAB-04) |
+| Asistent, Administrator (i kad je ista osoba autor) | `laboratory.read` | nacrt | nije u rezultatu; tehnička uloga ne daje automatski pristup sadržaju (specifikacija, pogl. 2) |
+| bilo ko, posle oduzimanja prava | `laboratory.read` | ta laboratorija | u sledećoj pretrazi više nije u rezultatu; prava se proveravaju u svakom zahtevu |
 | bilo ko, van Development okruženja | bilo koja | bilo koji | Deny, 401 |
 
 Ključno pravilo: **laboratorija je u rezultatu pretrage samo ako bi je isti korisnik mogao i da otvori preko `GET /api/laboratories/{id}`.** Zato pretraga koristi isto pravilo vidljivosti (`LaboratoryVisibility`) i istu radnju `laboratory.read` kao čitanje po ID-u. To dokazuje test `Search_EveryResultCanBeOpenedBySameCaller`.
@@ -134,12 +139,19 @@ Sve što dolazi preko granice poverenja je nepouzdano: parametar `q`, eventualni
 | Interni detalji servera | greška skladišta otkrije connection string ili stack trace | `SafeErrors`: generički 500 + `traceId` | `Search_WhenStorageFails_Returns500WithoutInternalDetails` |
 | Resursi servera | ogroman odgovor za širok upit | najviše 50 rezultata, `truncated` | `Search_ReturnsAtMostMaxResultsAndMarksTruncated` |
 | Rezultati prethodnog korisnika | posle promene korisnika na ekranu ostanu tuđi rezultati | `LabSearch` briše rezultate pri promeni korisnika i posle odbijanja | `LabSearch.test.tsx` „promena korisnika briše rezultate”, „posle odbijanja (401)…” |
+| Identitet autora | rezultati pretrage otkriju interni ID drugog korisnika | stavka pretrage (`LaboratorySearchItem`) nema `createdBy` | `Search_ResultsDoNotExposeAuthorId` |
+| Rezultati na deljenom računaru | browser ili proxy sačuva rezultate i pokaže ih sledećem korisniku | `Cache-Control: no-store` na svakom odgovoru pretrage (i 200 i 400) | `Search_ResponseIsNeverCached` |
+| Nacrti pred tehničkim ulogama | asistent ili administrator pretragom vidi tuđi nacrt | ista politika `laboratory.read`: samo nastavnik-autor čita nacrt | `Search_WhenAssistantOrAdministratorSearches_DoesNotSeeDrafts` (HTTP i servis) |
+| Oduzeto pravo | posle oduzimanja prava laboratorija i dalje stiže u rezultatima | provera prava u svakom zahtevu, bez keširanja odluke | `Search_RechecksAccessOnEveryRequest` |
+| Broj skrivenih laboratorija | `truncated` ili broj rezultata otkrije da postoje tuđe laboratorije sa istim nazivom | limit i `truncated` se računaju tek posle filtriranja po pravima | `Search_HiddenLaboratoriesDoNotAffectLimitOrTruncation` |
+| Delimični rezultati | greška pri proveri prava za jednu laboratoriju vrati ostale bez provere | greška prekida celu pretragu; klijent dobija generički 500 bez rezultata | `Search_WhenAccessCheckFails_ReturnsNoPartialResults`, `Search_WhenAccessCheckFails_Returns500WithoutResults` |
 
 ## Bezbednosni zahtevi
 
 - **Provere na serveru:** ruta ima `RequireLabAccess(laboratory.search)` (401/403 pre servisa). Servis ponovo proverava identitet i za svaku laboratoriju traži `laboratory.read` od `IAccessDecision` sa ID-em te laboratorije. Frontend ne filtrira po pravima; on samo prikazuje ono što server vrati (specifikacija, pogl. 1: „Klijentski interfejs nije bezbednosna granica”).
 - **Validacija ulaza:** parametar `q` se čita ručno: tačno jedna vrednost, posle `Trim()` od 1 do 200 znakova (najduži dozvoljeni naslov), bez ijednog kontrolnog znaka. Inače `400 INVALID_QUERY` sa fiksnom porukom koja ne ponavlja upit.
-- **Osetljivi podaci:** odgovor ne sadrži tuđe laboratorije ni broj tuđih pogodaka. Log beleži pozivaoca, dužinu upita i broj rezultata, ali ne i sam upit (proizvoljan korisnički tekst).
+- **Osetljivi podaci:** odgovor ne sadrži tuđe laboratorije ni broj tuđih pogodaka. Stavka rezultata nema interni ID autora. Odgovor se ne kešira (`Cache-Control: no-store`). Log beleži pozivaoca, dužinu upita i broj rezultata, ali ne i sam upit (proizvoljan korisnički tekst).
+- **Odbijanje u slučaju greške:** ako provera prava za bilo koju laboratoriju ne uspe, pretraga se prekida i ne vraća delimične rezultate; klijent dobija generički 500 sa `traceId`.
 - **Poznata ograničenja:**
   - Pravilo vidljivosti je za sada „samo autor”, kao u LAB-01. Kad LAB-03/ACC uvedu kurs i članstvo, menja se `LaboratoryVisibility` i pretraga to automatski nasleđuje.
   - `X-Test-User` je simulacija identiteta (isto ograničenje kao LAB-01).
@@ -212,6 +224,17 @@ Provera je izvršena 5. novembra 2026. nad lokalnim izmenama, .NET SDK 10.0.301 
 | `GET /api/labs/search?q=analiza` | `marko:Teacher` | 200, „Analiza logova” (alias) |
 
 - Frontend je proveren u browseru (`npm run dev`): nastavnik pronalazi svoju laboratoriju, a posle prelaska na studenta rezultati nestaju i pretraga vraća poruku da nema dostupnih laboratorija.
+
+### Bezbedan pristup rezultatima pretrage
+
+- **Fajlovi:** `backend/Platform.Api/Modules/Laboratories/Api/LaboratoryContracts.cs` (`LaboratorySearchItem` bez `createdBy`), `LaboratoriesEndpoints.cs` (`ToSearchItem`, `Cache-Control: no-store`).
+- **Novi testovi (11):**
+  - `LaboratorySearchServiceTests`: `Search_WhenAssistantOrAdministratorSearches_DoesNotSeeDrafts` (2), `Search_RechecksAccessOnEveryRequest`, `Search_HiddenLaboratoriesDoNotAffectLimitOrTruncation`, `Search_WhenAccessCheckFails_ReturnsNoPartialResults`
+  - `LaboratorySearchHttpTests`: `Search_ResultsDoNotExposeAuthorId`, `Search_ResponseIsNeverCached` (2), `Search_WhenAssistantOrAdministratorSearches_DoesNotSeeDrafts` (2), `Search_WhenAccessCheckFails_Returns500WithoutResults`
+- **Provera 6. novembra 2026** (grana spojena sa `main`, lokalno):
+  - `Laboratories.Tests`: 210 od 211 prolazi; svih 90 LAB-05 testova prolazi. Jedini pad je `ReviewAuthorizationTests.Approve_WithoutRegisteredPolicy_DeniesBeforeDatabase` (REV-05), koji pada i na čistom `main`.
+  - Frontend: `npm run build` i `npm test` 73/73.
+- **Šta ova priča ne može dok ne postoji LAB-03:** prava po kursu i članstvu (npr. student vidi objavljene laboratorije svog kursa). LAB-01 laboratorija još nema kurs ni stanje „objavljena”; kad ih dobije, menja se samo `LaboratoryVisibility`, a pretraga i ovi testovi ostaju isti.
 
 ## Sledeći koraci
 

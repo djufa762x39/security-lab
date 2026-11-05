@@ -47,6 +47,8 @@ public static class LaboratoriesEndpoints
 
         group.MapGet("/search", async (HttpContext http, [FromServices] LaboratorySearchService service, [FromServices] IIdentityContext caller) =>
         {
+            http.Response.Headers.CacheControl = "no-store";
+
             StringValues query = http.Request.Query[SearchQueryParameter];
             if (query.Count != 1)
             {
@@ -57,7 +59,7 @@ public static class LaboratoriesEndpoints
             return result.Status switch
             {
                 LabSearchStatus.Ok => Results.Ok(new LaboratorySearchResponse(
-                    result.Items.Select(ToResponse).ToList(), result.Truncated)),
+                    result.Items.Select(ToSearchItem).ToList(), result.Truncated)),
                 LabSearchStatus.InvalidQuery => InvalidQuery(),
                 LabSearchStatus.Unauthenticated => Results.Problem(statusCode: StatusCodes.Status401Unauthorized, title: "Unauthenticated"),
                 _ => Results.Problem(statusCode: StatusCodes.Status500InternalServerError, title: "Unexpected error"),
@@ -109,6 +111,9 @@ public static class LaboratoriesEndpoints
 
     private static LaboratoryResponse ToResponse(Laboratory lab) =>
         new(lab.Id, lab.Title, lab.Status.ToString(), lab.CreatedBy, lab.CreatedAt);
+
+    private static LaboratorySearchItem ToSearchItem(Laboratory lab) =>
+        new(lab.Id, lab.Title, lab.Status.ToString(), lab.CreatedAt);
 
     private static IResult ToFailure(LabResultStatus status) => status switch
     {

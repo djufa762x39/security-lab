@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using Platform.Api.Modules.Laboratories.Api;
 using Platform.Api.Modules.Laboratories.Application;
 using Platform.Api.Modules.Laboratories.Domain;
+using Platform.Api.Modules.Laboratories.Infrastructure;
 
 namespace Laboratories.Tests;
 
@@ -82,7 +83,7 @@ public sealed class LaboratorySearchHttpTests
         Assert.That(result, Is.Not.Null);
         Assert.Multiple(() =>
         {
-            Assert.That(result!.Items, Is.EqualTo(new[] { rbac }));
+            Assert.That(result!.Items, Is.EqualTo(new[] { AsSearchItem(rbac) }));
             Assert.That(result.Truncated, Is.False);
         });
     }
@@ -96,7 +97,7 @@ public sealed class LaboratorySearchHttpTests
 
         LaboratorySearchResponse result = await SearchAsync(client, Teacher, "kljucevi");
 
-        Assert.That(result.Items, Is.EqualTo(new[] { lab }));
+        Assert.That(result.Items, Is.EqualTo(new[] { AsSearchItem(lab) }));
     }
 
     [Test]
@@ -123,7 +124,7 @@ public sealed class LaboratorySearchHttpTests
         using var anonymous = await client.SendAsync(Get("/api/labs/search?q=alias", null));
 
         Assert.That(teacher.StatusCode, Is.EqualTo(HttpStatusCode.OK));
-        Assert.That((await teacher.Content.ReadFromJsonAsync<LaboratorySearchResponse>())!.Items, Is.EqualTo(new[] { lab }));
+        Assert.That((await teacher.Content.ReadFromJsonAsync<LaboratorySearchResponse>())!.Items, Is.EqualTo(new[] { AsSearchItem(lab) }));
         Assert.That(anonymous.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
     }
 
@@ -178,11 +179,11 @@ public sealed class LaboratorySearchHttpTests
 
         LaboratorySearchResponse result = await SearchAsync(client, caller, "kontrola");
 
-        foreach (LaboratoryResponse item in result.Items)
+        foreach (LaboratorySearchItem item in result.Items)
         {
             using var read = await client.SendAsync(Get($"{LabsRoute}{item.Id}", caller));
             Assert.That(read.StatusCode, Is.EqualTo(HttpStatusCode.OK), $"Rezultat {item.Id} nije dostupan pozivaocu.");
-            Assert.That(await read.Content.ReadFromJsonAsync<LaboratoryResponse>(), Is.EqualTo(item));
+            Assert.That(AsSearchItem((await read.Content.ReadFromJsonAsync<LaboratoryResponse>())!), Is.EqualTo(item));
         }
 
         int expected = caller switch
@@ -257,7 +258,7 @@ public sealed class LaboratorySearchHttpTests
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(response.Content.Headers.ContentType?.MediaType, Is.EqualTo("application/json"));
         var result = await response.Content.ReadFromJsonAsync<LaboratorySearchResponse>();
-        Assert.That(result!.Items, Is.EqualTo(new[] { lab }));
+        Assert.That(result!.Items, Is.EqualTo(new[] { AsSearchItem(lab) }));
     }
 
     [Test]
@@ -278,6 +279,83 @@ public sealed class LaboratorySearchHttpTests
             Assert.That(body, Does.Contain("traceId"));
         });
     }
+
+    [Test]
+    public async Task Search_ResultsDoNotExposeAuthorId()
+    {
+        using var factory = new SearchHostFactory("Development");
+        using var client = factory.CreateClient();
+        LaboratoryResponse lab = await CreateLabAsync(client, Teacher, "RBAC i kontrola pristupa");
+
+        using var response = await client.SendAsync(Get($"{SearchRoute}?q=rbac", Teacher));
+        string body = await response.Content.ReadAsStringAsync();
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.Multiple(() =>
+        {
+            Assert.That(body, Does.Contain(lab.Id.ToString()));
+            Assert.That(body, Does.Not.Contain("createdBy"));
+            Assert.That(body, Does.Not.Contain(lab.CreatedBy.ToString()));
+        });
+    }
+
+    [TestCase("?q=rbac", HttpStatusCode.OK)]
+    [TestCase("?q=", HttpStatusCode.BadRequest)]
+    public async Task Search_ResponseIsNeverCached(string queryString, HttpStatusCode expectedStatus)
+    {
+        using var factory = new SearchHostFactory("Development");
+        using var client = factory.CreateClient();
+        await CreateLabAsync(client, Teacher, "RBAC i kontrola pristupa");
+
+        using var response = await client.SendAsync(Get($"{SearchRoute}{queryString}", Teacher));
+
+        Assert.That(response.StatusCode, Is.EqualTo(expectedStatus));
+        Assert.That(response.Headers.CacheControl?.NoStore, Is.True);
+    }
+
+    [TestCase("petar:Assistant")]
+    [TestCase("admin:Administrator")]
+    public async Task Search_WhenAssistantOrAdministratorSearches_DoesNotSeeDrafts(string caller)
+    {
+        using var factory = new SearchHostFactory("Development");
+        using var client = factory.CreateClient();
+        LaboratoryResponse draft = await CreateLabAsync(client, Teacher, "RBAC nacrt nastavnika");
+
+        using var response = await client.SendAsync(Get($"{SearchRoute}?q=rbac", caller));
+        string body = await response.Content.ReadAsStringAsync();
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.Multiple(() =>
+        {
+            Assert.That(body, Does.Contain("\"items\":[]"));
+            Assert.That(body, Does.Not.Contain("RBAC nacrt nastavnika"));
+            Assert.That(body, Does.Not.Contain(draft.Id.ToString()));
+        });
+    }
+
+    [Test]
+    public async Task Search_WhenAccessCheckFails_Returns500WithoutResults()
+    {
+        using var factory = new SearchHostFactory("Development", services =>
+            services.AddSingleton<IAccessDecision, ReadCheckFailsAccessDecision>());
+        using var client = factory.CreateClient();
+        LaboratoryResponse lab = await CreateLabAsync(client, Teacher, "RBAC i kontrola pristupa");
+
+        using var response = await client.SendAsync(Get($"{SearchRoute}?q=rbac", Teacher));
+        string body = await response.Content.ReadAsStringAsync();
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.InternalServerError));
+        Assert.Multiple(() =>
+        {
+            Assert.That(body, Does.Not.Contain("RBAC i kontrola pristupa"));
+            Assert.That(body, Does.Not.Contain(lab.Id.ToString()));
+            Assert.That(body, Does.Not.Contain(ReadCheckFailsAccessDecision.SecretDetail));
+            Assert.That(body, Does.Contain("traceId"));
+        });
+    }
+
+    private static LaboratorySearchItem AsSearchItem(LaboratoryResponse lab) =>
+        new(lab.Id, lab.Title, lab.Status, lab.CreatedAt);
 
     private static async Task<LaboratoryResponse> CreateLabAsync(HttpClient client, string user, string title)
     {
@@ -337,5 +415,17 @@ public sealed class LaboratorySearchHttpTests
         public Task UpdateAsync(Laboratory laboratory, CancellationToken cancellationToken = default) => throw Fail();
         public Task<LabRevision> AddRevisionAsync(Guid laboratoryId, CancellationToken cancellationToken = default) => throw Fail();
         public Task<IReadOnlyList<LabRevision>> GetRevisionsAsync(Guid laboratoryId, CancellationToken cancellationToken = default) => throw Fail();
+    }
+
+    private sealed class ReadCheckFailsAccessDecision : IAccessDecision
+    {
+        public const string SecretDetail = "policy-store=Host=acl;Password=do-not-leak";
+
+        private readonly FakeAccessDecision _inner = new();
+
+        public AccessResult Decide(IIdentityContext subject, string action, string? resourceId = null) =>
+            action == LabActions.Read
+                ? throw new InvalidOperationException(SecretDetail)
+                : _inner.Decide(subject, action, resourceId);
     }
 }

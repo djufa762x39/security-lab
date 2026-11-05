@@ -231,6 +231,75 @@ public sealed class LaboratorySearchServiceTests
         Assert.That(result.Reason, Is.EqualTo(DenyReason.Unauthenticated));
     }
 
+    [TestCase(PlatformRole.Assistant)]
+    [TestCase(PlatformRole.Administrator)]
+    public async Task Search_WhenAssistantOrAdministratorSearches_DoesNotSeeDrafts(PlatformRole role)
+    {
+        await AddAsync(Marko, "RBAC i kontrola pristupa");
+
+        LabSearchResult otherUser = await _service.SearchAsync("rbac", new Caller("petar", role), CancellationToken.None);
+        LabSearchResult sameUser = await _service.SearchAsync("rbac", new Caller("marko", role), CancellationToken.None);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(otherUser.Status, Is.EqualTo(LabSearchStatus.Ok));
+            Assert.That(otherUser.Items, Is.Empty);
+            Assert.That(sameUser.Items, Is.Empty);
+        });
+    }
+
+    [Test]
+    public async Task Search_RechecksAccessOnEveryRequest()
+    {
+        Laboratory lab = await AddAsync(Marko, "RBAC i kontrola pristupa");
+        var decision = new RevocableReadAccess();
+        LaboratorySearchService service = CreateService(decision);
+
+        LabSearchResult before = await service.SearchAsync("rbac", Marko, CancellationToken.None);
+        decision.Revoke(lab.Id);
+        LabSearchResult after = await service.SearchAsync("rbac", Marko, CancellationToken.None);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(before.Items.Select(l => l.Id), Is.EqualTo(new[] { lab.Id }));
+            Assert.That(after.Items, Is.Empty);
+        });
+    }
+
+    [Test]
+    public async Task Search_HiddenLaboratoriesDoNotAffectLimitOrTruncation()
+    {
+        for (int i = 0; i < LaboratorySearchService.MaxResults; i++)
+        {
+            await AddAsync(Marko, $"Lab {i:D3}");
+        }
+
+        for (int i = 0; i < 10; i++)
+        {
+            await AddAsync(Jelena, $"Lab tudji {i:D3}");
+        }
+
+        LabSearchResult result = await _service.SearchAsync("lab", Marko, CancellationToken.None);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Items, Has.Count.EqualTo(LaboratorySearchService.MaxResults));
+            Assert.That(result.Truncated, Is.False);
+            Assert.That(result.Items.Select(l => l.CreatedBy).Distinct(), Is.EqualTo(new[] { CallerId.From(Marko) }));
+        });
+    }
+
+    [Test]
+    public async Task Search_WhenAccessCheckFails_ReturnsNoPartialResults()
+    {
+        await AddAsync(Marko, "RBAC prva");
+        Laboratory failing = await AddAsync(Marko, "RBAC druga");
+        LaboratorySearchService service = CreateService(new ReadCheckFailsFor(failing.Id));
+
+        Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.SearchAsync("rbac", Marko, CancellationToken.None));
+    }
+
     private LaboratorySearchService CreateService(IAccessDecision decision) =>
         new(_repository, decision, NullLogger<LaboratorySearchService>.Instance);
 
@@ -267,5 +336,28 @@ public sealed class LaboratorySearchServiceTests
 
             return _inner.Decide(subject, action, resourceId);
         }
+    }
+
+    private sealed class RevocableReadAccess : IAccessDecision
+    {
+        private readonly FakeAccessDecision _inner = new();
+        private readonly HashSet<string> _revoked = [];
+
+        public void Revoke(Guid laboratoryId) => _revoked.Add(laboratoryId.ToString());
+
+        public AccessResult Decide(IIdentityContext subject, string action, string? resourceId = null) =>
+            action == LabActions.Read && resourceId is not null && _revoked.Contains(resourceId)
+                ? AccessResult.Deny(DenyReason.NotPermitted)
+                : _inner.Decide(subject, action, resourceId);
+    }
+
+    private sealed class ReadCheckFailsFor(Guid laboratoryId) : IAccessDecision
+    {
+        private readonly FakeAccessDecision _inner = new();
+
+        public AccessResult Decide(IIdentityContext subject, string action, string? resourceId = null) =>
+            action == LabActions.Read && resourceId == laboratoryId.ToString()
+                ? throw new InvalidOperationException("Access store unavailable.")
+                : _inner.Decide(subject, action, resourceId);
     }
 }
