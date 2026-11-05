@@ -1,7 +1,6 @@
 using Platform.Membership.Composition;
-
+using Platform.Membership.Contracts;
 namespace Platform.Api.Modules.Membership;
-
 /// <summary>
 /// ACC-02: jedino mesto gde se modul za članstvo povezuje sa Platform.Api.
 /// Program.cs poziva samo AddMembership() i MapMembershipAsync(); sve ostalo je ovde,
@@ -11,18 +10,23 @@ public static class MembershipApiExtensions
 {
     /// <summary>Poziva se pre AddAccessControl() (zbog ACC-02-5).</summary>
     public static IServiceCollection AddMembership(
-        this IServiceCollection services,
-        IHostEnvironment environment)
+    this IServiceCollection services,
+    IHostEnvironment environment)
     {
         services.AddMembershipModule(environment);
+        // PRIVREMENO: status naloga iz podataka koje koristi IDN-03 (vidi AccountRepositoryStatusReader).
+        services.AddSingleton<IAccountStatusReader, AccountRepositoryStatusReader>();
         return services;
     }
-
-    public static Task MapMembershipAsync(this WebApplication app)
+    public static async Task MapMembershipAsync(this WebApplication app)
     {
         ArgumentNullException.ThrowIfNull(app);
-
-        // Endpoint za upis dolazi u ACC-02-3, a pravilo ko sme da upisuje u ACC-02-4.
-        return Task.CompletedTask;
+        // ACC-02-3: POST /api/courses/{courseId}/members
+        app.MapMembershipEndpoints();
+        // Samo lokalno: probni nastavnici u probnim kursevima (ako je baza podesena).
+        if (app.Environment.IsDevelopment())
+        {
+            await app.Services.SeedMembershipDevelopmentDataAsync();
+        }
     }
 }
