@@ -9,7 +9,7 @@ namespace Platform.AssignmentOverview.Application;
 // Kriterijum prihvatanja: "Student vidi samo aktivne dodele svojih kurseva."
 // KT1 verzija: samo dodele sa kurseva na koje je student aktivno upisan.
 // Sledece (Sprint 2): bez arhiviranih, isteklih, otkazanih i duplikata.
-public sealed class MyAssignmentsService
+public sealed class MyAssignmentsService : IMyAssignmentsService
 {
     private readonly IStudentCourseReader _courses;
     private readonly IAssignmentRepository _assignments;
