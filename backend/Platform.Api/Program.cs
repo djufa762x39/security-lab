@@ -73,7 +73,7 @@ else
     builder.Services.AddSingleton<IRequestSubjectResolver, UnauthenticatedSubjectResolver>();
 }
 
-builder.Services.AddAudit();
+builder.Services.AddAudit(builder.Configuration);
 builder.Services.AddAuthoring();
 builder.Services.AddLabVisibility();
 builder.Services.AddIdentityRateLimiting(builder.Configuration);
@@ -95,6 +95,7 @@ builder.Services.AddScoped<ChangeAccountStatus>();
 builder.Services.AddScoped<ILoginService, LoginService>();
 builder.Services.AddScoped<ILogoutService, LogoutService>();
 builder.Services.AddScoped<ISessionCreator, StoreSessionCreator>();
+builder.Services.AddScoped<IdentityAuditProducer>();
 
 builder.Services.AddScoped<Platform.Api.Interfaces.Identity.IIdentityContext, SessionIdentityContext>();
 
