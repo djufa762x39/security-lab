@@ -15,6 +15,7 @@ public static class AccessActions
                 "lab.revision.publish",
                 "lab.criteria.hidden.read",
                 "assignment.manage",
+                "assignment.read.own",
                 "attempt.create",
                 "attempt.read",
                 "attempt.submit",
@@ -37,6 +38,7 @@ public static class AccessActions
         LabRevisionPublish,
         LabCriteriaHiddenRead,
         AssignmentManage,
+        AssignmentReadOwn,
         AttemptCreate,
         AttemptRead,
         AttemptSubmit,
@@ -69,6 +71,9 @@ public static class AccessActions
 
     public static ActionDefinition AssignmentManage { get; } =
         new("assignment.manage", ActionScope.Course, "assignment", false);
+
+    public static ActionDefinition AssignmentReadOwn { get; } =
+        new("assignment.read.own", ActionScope.Course, "assignment", false);
 
     public static ActionDefinition AttemptCreate { get; } =
         new("attempt.create", ActionScope.Course, "assignment", false);
