@@ -19,20 +19,21 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-  User[User] -->|Email and password| Login[LoginController]
-  Login --> Verify[ICredentialAuthenticator, IDN-02]
-  Verify -->|Invalid or unavailable| Reject[Generic rejection]
-  Verify -->|Verified account id| Status[LoginAccount status gate, IDN-03]
-  Status -->|Read current status| Accounts[(IAccountRepository)]
-  Status -->|BLOCKED / ARCHIVED| Message[Status-specific 403 response]
-  Status -->|ACTIVE| Issue[ISessionIssuer, IDN-02]
-  Issue -->|Session token| Login
+  User[User] -->|Email and password| Login[AuthController]
+  Login --> UseCase[LoginService, IDN-02]
+  UseCase --> Verify[ICredentialVerifier, IDN-02]
+  Verify -->|Read e-mail, hash and status| Accounts[(identity.accounts)]
+  Verify -->|Invalid| Reject[Generic rejection, 401]
+  Verify -->|Valid, with status| Status[Status check, IDN-03]
+  Status -->|BLOCKED / ARCHIVED| Reject
+  Status -->|ACTIVE| Issue[ISessionCreator, IDN-02]
+  Issue -->|Session cookie| Login
   Reject --> Login
-  Message --> Login
 ```
 
-The API checks status only after credentials are valid. The current credential
-and session adapters fail closed until IDN-02 replaces them.
+The API checks status only after credentials are valid. Blocked and archived
+accounts get the same response as wrong credentials, so the response does not
+reveal the account status; the audit event records the reason.
 
 ## Component DFD requirements
 

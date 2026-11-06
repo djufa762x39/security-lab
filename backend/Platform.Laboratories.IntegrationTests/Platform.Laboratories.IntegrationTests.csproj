@@ -14,6 +14,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Platform.Laboratories.Infrastructure\Platform.Laboratories.Infrastructure.csproj" />
+    <ProjectReference Include="..\Platform.Api\Platform.Api.csproj" />
     <Using Include="NUnit.Framework" />
   </ItemGroup>
 </Project>
