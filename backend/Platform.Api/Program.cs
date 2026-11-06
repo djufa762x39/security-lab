@@ -23,6 +23,8 @@ using Platform.LabVisibility.Contracts;
 using Platform.LabVisibility.Infrastructure.Membership;
 using Platform.Api.Modules.Membership;
 
+using Platform.Membership.Composition;
+
 // Oba modula imaju IAccessDecision, zato koristimo alias.
 using IdentityAccessDecision = Platform.Api.Services.Identity.IAccessDecision;
 using PlatformAccessDecision = Platform.Access.Contracts.IAccessDecision;
@@ -126,6 +128,9 @@ if (kt1Enabled)
 app.Services.RegisterIdentityAccess();
 app.MapAccountEndpoints();
 
+
+// ACC-02-4: autorizacija upisa studenata
+app.Services.RegisterMembershipAccess();
 
 // ACC-02: upis studenta u kurs
 await app.MapMembershipAsync();
