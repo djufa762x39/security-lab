@@ -99,19 +99,18 @@ public class PasswordAndCredentialTests
     }
 
     [Test]
-    public async Task Verifier_UnknownEmail_RunsTheSameFailureUpdate_SoTimingDoesNotReveal()
+    public async Task Verifier_UnknownEmail_RunsTheSameStatements_SoTimingDoesNotReveal()
     {
         var verifier = VerifierWith(null, out var store);
 
         var result = await verifier.VerifyAsync("  Student@Example.COM ", Password);
 
         Assert.That(result, Is.EqualTo(CredentialResult.Invalid));
-        store.Verify(s => s.RecordFailureAsync(
-            "student@example.com", It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Once());
+        VerifyFailurePath(store, "student@example.com");
     }
 
     [Test]
-    public async Task Verifier_LockedAccount_IsRefused_EvenWithTheCorrectPassword_AndTheAttemptIsNotCounted()
+    public async Task Verifier_LockedAccount_IsRefused_EvenWithTheCorrectPassword_AndRunsTheSameStatements()
     {
         var id = Guid.NewGuid();
         var lockoutEnd = DateTimeOffset.UtcNow.AddMinutes(5);
@@ -123,19 +122,33 @@ public class PasswordAndCredentialTests
         Assert.That(result.IsValid, Is.False);
         Assert.That(result.IsLockedOut, Is.True);
         Assert.That(result.AccountId, Is.EqualTo(id));
-        store.Verify(s => s.RecordFailureAsync(
-            It.IsAny<string>(), It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Never());
-        store.Verify(s => s.ClearFailuresAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never());
+        VerifyFailurePath(store, "student@example.com");
     }
 
     [Test]
-    public async Task Verifier_CleanAccount_DoesNotWriteOnSuccess()
+    public async Task Verifier_RefusesACorrectPassword_WhenTheAccountLockedDuringTheCheck()
     {
-        var verifier = VerifierWith(new CredentialRecord(Guid.NewGuid(), AccountStatus.Active, _hasher.Hash(Password)), out var store);
+        var id = Guid.NewGuid();
+        var verifier = VerifierWith(new CredentialRecord(id, AccountStatus.Active, _hasher.Hash(Password)), out var store);
+        store.Setup(s => s.TryClearFailuresAsync(id, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        store.Setup(s => s.LockIfLimitReachedAsync(
+                It.IsAny<string>(), It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(DateTimeOffset.UtcNow.AddMinutes(5));
 
-        await verifier.VerifyAsync("student@example.com", Password);
+        var result = await verifier.VerifyAsync("student@example.com", Password);
 
-        store.Verify(s => s.ClearFailuresAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never());
+        Assert.That(result.IsValid, Is.False);
+        Assert.That(result.IsLockedOut, Is.True);
+    }
+
+    private static void VerifyFailurePath(Mock<ICredentialStore> store, string normalizedEmail)
+    {
+        store.Verify(s => s.ReserveAttemptAsync(
+            normalizedEmail, It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Once());
+        store.Verify(s => s.LockIfLimitReachedAsync(
+            normalizedEmail, It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Once());
+        store.Verify(s => s.TryClearFailuresAsync(It.IsAny<Guid>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Never());
     }
 
     private CredentialVerifier VerifierWith(CredentialRecord? record) => VerifierWith(record, out _);
@@ -146,6 +159,8 @@ public class PasswordAndCredentialTests
         store = new Mock<ICredentialStore>();
         store.Setup(s => s.FindByEmailAsync("student@example.com", It.IsAny<CancellationToken>()))
             .ReturnsAsync(record);
+        store.Setup(s => s.TryClearFailuresAsync(It.IsAny<Guid>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
         return new CredentialVerifier(store.Object, _hasher, Options.Create(new IdentityLockoutOptions()), TimeProvider.System);
     }
 }

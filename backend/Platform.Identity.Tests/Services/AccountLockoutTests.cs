@@ -240,6 +240,91 @@ public sealed class AccountLockoutTests
         Assert.That(_hasher.Verifications, Is.EqualTo(1));
     }
 
+    [Test]
+    public async Task Correct_password_in_flight_when_the_account_locks_is_refused()
+    {
+        var (id, email) = await CreateAccountAsync();
+        using var gate = HoldHashChecks(1);
+
+        var inFlight = Task.Run(() => VerifyAsync(email, Password));
+        gate.WaitUntilFull();
+        await FailAsync(email, MaxAttempts);
+        var lockoutEnd = (await FindAsync(id)).LockoutEnd;
+        gate.Open();
+        var result = await inFlight;
+
+        Assert.That(lockoutEnd, Is.GreaterThan(_clock.GetUtcNow()));
+        Assert.That(result.IsValid, Is.False);
+        Assert.That(result.IsLockedOut, Is.True);
+        Assert.That((await FindAsync(id)).LockoutEnd, Is.EqualTo(lockoutEnd));
+    }
+
+    [Test]
+    public async Task Guesses_over_the_limit_are_refused_while_earlier_guesses_are_still_running()
+    {
+        var (id, email) = await CreateAccountAsync();
+        using var gate = HoldHashChecks(MaxAttempts);
+
+        var running = Enumerable.Range(0, MaxAttempts)
+            .Select(_ => Task.Run(() => VerifyAsync(email, WrongPassword)))
+            .ToArray();
+        gate.WaitUntilFull();
+
+        // No failure has finished yet, so only charging attempts up front can refuse these.
+        var overLimit = await Task.WhenAll(Enumerable.Range(0, 5)
+            .Select(_ => Task.Run(() => VerifyAsync(email, Password))));
+
+        gate.Open();
+        var results = await Task.WhenAll(running);
+
+        Assert.That(overLimit.Select(r => r.IsLockedOut), Is.All.True);
+        Assert.That(overLimit.Concat(results).Select(r => r.IsValid), Is.All.False);
+        Assert.That((await FindAsync(id)).LockoutEnd, Is.GreaterThan(_clock.GetUtcNow()));
+    }
+
+    [Test]
+    public async Task Correct_password_in_flight_below_the_limit_still_logs_in()
+    {
+        var (id, email) = await CreateAccountAsync();
+        using var gate = HoldHashChecks(1);
+
+        var inFlight = Task.Run(() => VerifyAsync(email, Password));
+        gate.WaitUntilFull();
+        await VerifyAsync(email, WrongPassword);
+        gate.Open();
+
+        Assert.That((await inFlight).IsValid, Is.True);
+
+        var account = await FindAsync(id);
+        Assert.That(account.FailedLoginCount, Is.EqualTo(0));
+        Assert.That(account.LockoutEnd, Is.Null);
+    }
+
+    [Test]
+    public async Task Checks_abandoned_midway_still_count_and_do_not_leave_the_account_stuck()
+    {
+        var (id, email) = await CreateAccountAsync();
+
+        _hasher.AbandonNext(MaxAttempts);
+        for (var i = 0; i < MaxAttempts; i++)
+            await Assert.CatchAsync<OperationCanceledException>(() => VerifyAsync(email, WrongPassword));
+
+        Assert.That((await FindAsync(id)).FailedLoginCount, Is.EqualTo(MaxAttempts));
+
+        // Abandoned guesses are not free: the next attempt gets no password check.
+        Assert.That((await VerifyAsync(email, Password)).IsLockedOut, Is.True);
+
+        _clock.Advance(TimeSpan.FromMinutes(LockoutMinutes));
+        Assert.That((await VerifyAsync(email, Password)).IsValid, Is.True);
+    }
+
+    private HashGate HoldHashChecks(int count)
+    {
+        var gate = new HashGate(count, () => _hasher.Gate = null);
+        _hasher.Gate = gate;
+        return gate;
+    }
+
     private static string NewEmail() => $"lockout-{Guid.NewGuid():N}@example.com";
 
     private async Task<(Guid Id, string Email)> CreateAccountAsync()
@@ -286,11 +371,45 @@ public sealed class AccountLockoutTests
         public void Advance(TimeSpan by) => _now += by;
     }
 
+    // Holds the first checks inside Verify, so a test can act while they are in flight.
+    private sealed class HashGate(int holds, Action onDispose) : IDisposable
+    {
+        private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
+
+        private readonly CountdownEvent _entered = new(holds);
+        private readonly ManualResetEventSlim _open = new();
+        private int _remaining = holds;
+
+        public void Pass()
+        {
+            if (Interlocked.Decrement(ref _remaining) < 0)
+                return;
+
+            _entered.Signal();
+            _open.Wait(Timeout);
+        }
+
+        public void WaitUntilFull() => Assert.That(_entered.Wait(Timeout), Is.True);
+
+        public void Open() => _open.Set();
+
+        public void Dispose()
+        {
+            Open();
+            onDispose();
+        }
+    }
+
     // Counts checks, so the hash work on every path is proven without measuring time.
     private sealed class CountingHasher : IPasswordHasher
     {
         private readonly BCryptPasswordHasher _inner = new();
         private int _verifications;
+        private int _abandon;
+
+        public HashGate? Gate { get; set; }
+
+        public void AbandonNext(int count) => Volatile.Write(ref _abandon, count);
 
         public int Verifications => Volatile.Read(ref _verifications);
 
@@ -301,6 +420,11 @@ public sealed class AccountLockoutTests
         public bool Verify(string password, string? passwordHash)
         {
             Interlocked.Increment(ref _verifications);
+            Gate?.Pass();
+
+            if (Volatile.Read(ref _abandon) > 0 && Interlocked.Decrement(ref _abandon) >= 0)
+                throw new OperationCanceledException();
+
             return _inner.Verify(password, passwordHash);
         }
     }
