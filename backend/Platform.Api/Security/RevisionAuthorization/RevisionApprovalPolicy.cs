@@ -5,13 +5,13 @@ using Platform.Access.Domain.Models;
 namespace Platform.Api.Security.RevisionAuthorization;
 
 public sealed class RevisionApprovalPolicy(
-    IRevisionAuthorReader revisionAuthorReader,
+    IRevisionResourceReader revisions,
     IRevisionApprovalPermission approvalPermission) : IAccessPolicy
 {
     public const string Action = "revision.approve";
 
     public string Id => "rev05.revision-approval";
-    public string Version => "v1";
+    public string Version => "v2";
 
     public async ValueTask<bool> EvaluateAsync(
         AccessRequest request,
@@ -35,11 +35,11 @@ public sealed class RevisionApprovalPolicy(
             return false;
         }
 
-        var authorId = await revisionAuthorReader.FindAuthorIdAsync(
-            revisionId,
-            cancellationToken);
+        var revision = await revisions.FindAsync(revisionId, cancellationToken);
 
-        if (authorId is null || authorId == Guid.Empty || authorId == userId)
+        if (revision is null || revision.AuthorId == Guid.Empty ||
+            revision.RequiresIndependentApproval is null ||
+            (revision.RequiresIndependentApproval.Value && revision.AuthorId == userId))
         {
             return false;
         }

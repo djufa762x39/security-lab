@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Platform.Access.Infrastructure.Catalog;
 using Platform.Access.Infrastructure.Policies;
 using Platform.Access.Domain.Enums;
@@ -11,18 +12,18 @@ public static class RevisionAuthorizationRegistration
     public static IServiceCollection AddRevisionAuthorization(
         this IServiceCollection services)
     {
-        services.AddSingleton<IRevisionAuthorReader, RevisionAuthorReader>();
-
-        services.AddSingleton<DenyRevisionPermissions>();
-
-        services.AddSingleton<IRevisionApprovalPermission>(
-            sp => sp.GetRequiredService<DenyRevisionPermissions>());
-
-        services.AddSingleton<IRevisionActionPermission>(
-            sp => sp.GetRequiredService<DenyRevisionPermissions>());
+        services.TryAddSingleton<IRevisionAuthorReader, RevisionAuthorReader>();
+        services.TryAddSingleton<IRevisionResourceReader, RevisionResourceReader>();
+        services.TryAddSingleton<RevisionPermissions>();
+        services.TryAddSingleton<IRevisionApprovalPermission>(
+            sp => sp.GetRequiredService<RevisionPermissions>());
+        services.TryAddSingleton<IRevisionActionPermission>(
+            sp => sp.GetRequiredService<RevisionPermissions>());
 
         services.AddSingleton<RevisionApprovalPolicy>();
         services.AddSingleton<RevisionActionPolicy>();
+
+        services.AddRevisionAuditForwarding();
 
         return services;
     }
@@ -103,5 +104,9 @@ public static class RevisionAuthorizationRegistration
         registry.Register(
             RevisionActions.UnlockAccount,
             services.GetRequiredService<RevisionActionPolicy>());
+
+        foreach (var action in new[] { RevisionActions.Create, RevisionActions.Read,
+                     RevisionActions.Mine, RevisionActions.PendingReviews })
+            registry.Register(action, services.GetRequiredService<RevisionActionPolicy>());
     }
 }

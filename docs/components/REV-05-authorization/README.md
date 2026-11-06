@@ -1,178 +1,128 @@
-﻿# REV-05 — Autorizacija revizija i audit integracija
+# REV-05: autorizacija i trajni audit
 
-## 1. Cilj
+Implementacija zatvara tri primjedbe pregleda commita `6e310e9`: povezuje stvarne
+dozvole i sve pomocne politike, uskladjuje samoodobravanje sa politikom kursa i
+cuva audit stvarnog HTTP toka. Odluke su opisane u [ADR-001](ADR-001.md), a
+rezultati i scenariji u [TEST-EVIDENCE](TEST-EVIDENCE.md).
 
-REV-05 obezbjedjuje eksplicitnu autorizaciju osjetljivih akcija
-nad revizijama laboratorija i korisnickim nalozima.
+## Akcije i provjere
 
-Obuhvacene akcije:
+| Akcija | Resurs za IAccessDecision | Dodatni uslov |
+|---|---|---|
+| revision.create | course sa GUID-om kursa | Eksplicitno pravo create; poslovni tok provjerava laboratoriju i politiku kursa |
+| revision.read | revision sa GUID-om revizije | Eksplicitno read pravo za kurs ucitan iz revizije |
+| revision.mine | revision | Korisnik je autor i ima mine pravo |
+| revision.pending.reviews | revision | Eksplicitno pravo za kurs te revizije |
+| revision.submit | revision | Korisnik je autor i ima submit i read prava |
+| revision.approve | revision | Approve i read prava; autor se odbija samo ako kurs zahtijeva nezavisno odobrenje |
+| revision.return | revision | Return i read prava |
+| account.unlock | null (System akcija) | Potvrdjen aktivni subjekt i IAdminDirectory pravo; Identity provjerava ciljni nalog |
 
-- revision.submit
-- revision.approve
-- revision.return
-- account.unlock
+Nepoznata akcija, nedostajuca politika, neaktivan subjekt, neispravan resurs i
+nedostajuce pravo daju Deny. Nema automatskog odobravanja na osnovu globalne
+administratorske ili saradnicke uloge. Nedostajuca politika objave ne omogucava
+odobravanje. Promjena sadrzaja/verzije i uslovi masine stanja i dalje se provjeravaju
+u ReviewService i domenu pod transakcijskim zakljucavanjem.
 
-Sistem koristi podrazumijevano odbijanje (default deny).
-Nepoznata akcija ili akcija bez registrovane politike ne smije
-automatski dobiti pristup.
+## Pouzdani izvori
 
-## 2. Arhitektura
+- RevisionResourceReader cita AuthorId, CourseId i RequiresIndependentApproval iz
+  serverske baze, ukljucujuci odsustvo politike. Klijent ne odredjuje ove vrijednosti.
+- Program registruje PostgresRevisionCoursePermissionReader. Autoritativni izvor
+  su eksplicitni redovi u `revision_security."CoursePermissions"`: UserId, CourseId,
+  Action, IsActive i opcioni ExpiresAt. Provjera cita aktuelno stanje pri svakom pozivu.
+  Prazan, opozvan, istekao ili nedostupan izvor ne daje pravo i ne prelazi na slabiji izvor.
+- Prava se dodjeljuju serverskom administracijom. Web aplikacija nema javnu rutu za
+  njihovu dodjelu, a njen runtime DB nalog treba da ima samo SELECT na toj tabeli.
+  Nema seed-a testnih korisnika niti automatskog davanja prava svim nastavnicima.
+- Za hostove koji nisu ukljucili persistent izvor ostaje adapter javnog Access
+  IMembershipReader ugovora: aktivno clanstvo istog korisnika i kursa, nastavnik ili
+  saradnik sa imenovanom delegacijom. Produkcioni Program koristi persistent prava.
+- Rute `/api/revisions` autentifikuju se preko postojeceg Identity ISessionManager.
+  Access provider i API resolver koriste potvrdjenu sesiju. Nema razvojnog identiteta
+  kao rezerve za nedostajucu, opozvanu ili MfaPending sesiju. Identity middleware
+  ponovo validira sesiju prije endpointa. Javni Identity IAccountStatusReader dodatno
+  provjerava trenutno stanje naloga: Blocked, Archived i nepoznat nalog ne mogu
+  koristiti ranije izdatu sesiju. Opoziv sesija pri blokadi naloga pripada
+  postojecem Identity ugovoru. Ostale rute koriste svoje postojece providere.
 
-Autorizacija koristi postojeci Platform.Access modul:
+## Samoodobravanje
 
-- IActionCatalog — poznate akcije
-- IAccessPolicyRegistry — registrovane politike
-- IAccessDecision — konacna odluka o pristupu
+RevisionApprovalPolicy v2 i permission adapter prate isto pravilo kao domen:
 
-REV-05 implementira:
+| RequiresIndependentApproval | Autor sa potrebnim pravima | Drugi korisnik sa potrebnim pravima |
+|---|---|---|
+| true | Deny | Allow |
+| false | Allow | Allow |
+| Politika nedostaje | Deny | Deny |
 
-- RevisionActions
-- RevisionApprovalPolicy
-- RevisionActionPolicy
-- RevisionAuthorReader
-- RevisionAuthorizationRegistration
-- DenyRevisionPermissions
+Allow ovdje znaci autorizaciju. Objava i dalje zahtijeva odgovarajuce stanje,
+verziju, hash i validan snapshot. Dozvoljeno samoodobravanje ne daje nedostajuca prava.
 
-Postojeci Platform.Access modul nije mijenjan.
+## Audit i atomarnost
 
-## 3. Bezbjednosna matrica
+AddAuditPersistence registruje stvarni PostgreSQL writer. RevisionAuditForwarder
+cuva postojeci Access audit tok i prosljedjuje odbijene revizijske akcije kroz
+ITrustedAuditWriter. Kratkotrajni scope izbjegava hvatanje scoped writera u singleton
+Access servis. Akter dolazi iz validirane sesije; korelacija iz postojeceg serverskog
+middleware-a. Arbitraran HTTP actor ili correlation header se ne koristi.
 
-| Subjekt | Akcija | Resurs | Odluka / uslov |
-|---|---|---|---|
-| Neautentifikovan korisnik | Sve cetiri akcije | Odgovarajuci resurs | Deny |
-| Blokiran ili arhiviran korisnik | Sve cetiri akcije | Odgovarajuci resurs | Deny |
-| Korisnik bez eksplicitne dozvole | Sve cetiri akcije | Odgovarajuci resurs | Deny |
-| Ovlasteni korisnik | revision.submit | Revision | Allow ako pouzdani izvor potvrdi dozvolu |
-| Ovlasteni korisnik | revision.return | Revision | Allow ako pouzdani izvor potvrdi dozvolu |
-| Ovlasteni korisnik koji nije autor | revision.approve | Revision | Allow ako postoji eksplicitna dozvola |
-| Autor revizije | revision.approve | Sopstvena revizija | Deny |
-| Ovlasteni korisnik | account.unlock | Account | Allow ako pouzdani izvor potvrdi dozvolu |
-| Bilo koji korisnik | Nepoznata akcija | Bilo koji resurs | Deny |
+Poslovni tok upisuje dogadjaje `revision.submitted`, `revision.returned` i
+`revision.approved`. Sadrze aktera, serversko UTC vrijeme, kurs, ID revizije, autora,
+ID operacije i content hash. Objava dodatno sadrzi ID laboratorije i broj objavljene
+verzije. Komentar, snapshot, referentni odgovor, cookie i token nisu audit detalji.
+Audit validator zahtijeva obavezna polja i provjerava njihove formate.
 
-Allow u matrici predstavlja autorizacionu odluku, a ne
-garanciju uspjesnog izvrsavanja poslovne operacije.
+ReviewService poziva javni ITransactionalAuditWriter iz Audit modula sa svojom
+PostgreSQL transakcijom. Audit modul ostaje vlasnik tabele i validacije; API ne
+pristupa njegovim internim tipovima. Stanje, odluka, potvrda idempotentnosti i audit
+insert se potvrde zajedno. Ako audit upis ne uspije, odgovor je 503 audit_unavailable
+i transakcija se ponistava. Odbijanje pristupa ostaje odbijanje i kada ne uspije
+njegov audit, prema postojecem Access ugovoru, uz tehnicki alarm.
 
-## 4. Zabrana samoodobravanja
+EventId je ID poslovne operacije. Ponovljen uspjesan zahtjev sa istim kljucem vraca
+vec sacuvanu potvrdu bez druge objave i drugog audit dogadjaja. I pri ponavljanju se
+ponovo provjeravaju dozvole. Poslovna baza i audit schema moraju biti u istoj bazi
+za ovu transakcijsku integraciju; nema alternativnog audit skladista niti outbox-a.
 
-RevisionApprovalPolicy:
+## Priprema baze i prava
 
-1. Provjerava identitet i aktivno stanje korisnika.
-2. Provjerava akciju i identifikator revizije.
-3. Ucitava AuthorId iz serverskog skladista.
-4. Odbija zahtjev ako je korisnik autor revizije.
-5. Provjerava eksplicitno pravo odobravanja.
+Runtime koristi `ConnectionStrings__Laboratories`. Postojece Identity i Authoring
+konekcije ostaju potrebne za njihove funkcije. Migracije se izvrsavaju eksplicitno
+administratorskim/migracionim nalogom; web host ne migrira produkciju automatski.
 
-AuthorId se ne preuzima iz korisnickog HTTP zahtjeva.
+```powershell
+dotnet tool restore
+dotnet ef database update --project backend/Platform.Laboratories.Infrastructure --context LaboratoriesDbContext
+# Postaviti REVISION_SECURITY_MIGRATION_CONNECTION_STRING na istu fizicku bazu.
+dotnet ef database update --project backend/Platform.Api --context RevisionSecurityDbContext
+# Postaviti AUDIT_MIGRATION_CONNECTION_STRING na istu fizicku bazu.
+dotnet ef database update --project backend/Platform.Audit --context AuditDbContext
+```
 
-Matijin domenski model sadrzi dodatnu provjeru
-CoursePublishPolicy, koja zavisi od
-RequiresIndependentApproval. REV-05 politika samoodobravanje
-odbija bez obzira na tu postavku.
+Novi context ima sopstvenu istoriju migracija u revision_security schemi. Nema
+izmjene postojecih Laboratories migracija ili podataka. Migracioni i runtime nalozi
+moraju biti odvojeni. Runtime treba poslovna prava na laboratories tabelama,
+SELECT na CoursePermissions i SELECT/INSERT na audit.audit_events; ne treba mu
+UPDATE/DELETE/TRUNCATE/DDL nad audit tabelom niti izmjena dozvola. Audit runtime
+ogranicenja provjerava postojeci `scripts/audit/test-postgres.ps1`.
 
-## 5. Tok podataka i granice povjerenja
+Dodjela jednog prava: [provision-permission.sql](provision-permission.sql), sa psql
+parametrima user_id, course_id i action. Skripta se izvrsava samo administrativnim
+nalogom nad izabranom bazom. Dodjeljuju se tacno potrebne akcije, bez wildcard-a.
+Za tipican tok autor dobija create/read/mine/submit, a pregledavac
+read/pending.reviews/approve/return za konkretan kurs. IsActive=false ili ExpiresAt
+ukida pravo pri sljedecoj provjeri. account.unlock se ne dodjeljuje ovom tabelom:
+ono ostaje sistemska Identity dozvola, a stvarna lockout operacija dio vlasnika IDN-05.
 
-Klijent
-  |
-  v
-API / autentifikovani identitet
-  |
-  v
-IAccessDecision
-  |
-  +--> Katalog akcija
-  |
-  +--> Registrovana REV-05 politika
-           |
-           +--> Pouzdani podaci o reviziji
-           |
-           +--> Pouzdani izvor dozvola
-  |
-  v
-Allow / Deny
-  |
-  +--> Audit odluke o pristupu
+## Provjere i granice
 
-API mora pozvati autorizaciju prije izvrsavanja
-zasticene poslovne operacije.
+Pozitivni HTTP test ne zamjenjuje sesije, prava, publication source ili audit writer
+fake servisima: koristi produkcioni host, stvarne PostgreSQL adaptere, validirane
+sesije i testne podatke u izolovanom Docker kontejneru. Provjerava i stvarni upis
+odbijenog pristupa, oba podesavanja politike, opoziv/istek i odbijanje drugog kursa.
+Namjerno nedostupna audit tabela dokazuje rollback, bez fake uspjeha writera.
 
-Identitet korisnika, autor revizije i dozvole predstavljaju
-bezbjednosno znacajne podatke i moraju dolaziti iz
-pouzdanih serverskih izvora.
-
-## 6. Audit
-
-REV-05 ima pripremljene komponente:
-
-- RevisionAuditEventFactory
-- RevisionAccessAuditWriter
-- IRevisionAuditContextProvider
-
-Trenutno je podrzano formiranje dogadjaja access.denied
-za odbijene REV-05 zahtjeve.
-
-Adapter koristi ITrustedAuditWriter i provjerava rezultat
-upisa. Rejected i Unavailable ne smatra uspjehom.
-
-Adapter jos nije aktiviran u produkcionoj DI registraciji,
-jer AddAudit trenutno ne registruje ITrustedAuditWriter,
-a pouzdan AuditContext provider jos nije implementiran.
-
-Audit uspjesno izvrsenih operacija zahtijeva uskladjivanje
-sa katalogom audit dogadjaja i vlasnicima poslovnih tokova.
-
-## 7. Trenutna ogranicenja
-
-DenyRevisionPermissions je privremena fail-closed
-implementacija. Dok se ne poveze pouzdan izvor dozvola,
-sve cetiri REV-05 akcije se odbijaju.
-
-Politike su registrovane u Program.cs, ali stvarni
-poslovni endpointi moraju koristiti IAccessDecision
-prije izvrsavanja operacija.
-
-Potrebna je koordinacija sa vlasnicima Identity, Access,
-Audit i API modula.
-
-## 8. Testiranje
-
-Testovi se nalaze u:
-
-backend/Platform.Tests/RevisionAuthorization
-
-Pokretanje:
-
-dotnet test backend/Platform.Tests/Platform.Tests.csproj --filter "FullyQualifiedName~RevisionAuthorization"
-
-Posljednji provjereni rezultat:
-
-37 testova uspjesno, 0 neuspjesnih.
-
-Testovi pokrivaju osnovne pozitivne i negativne
-slucajeve autorizacije, generisanje audit dogadjaja
-i ponasanje audit adaptera.
-
-Testovi koriste fake izvore dozvola i audit writer.
-Ne dokazuju funkcionalnost stvarnih API endpointa
-niti trajno cuvanje audit dogadjaja.
-
-## 9. Granice odgovornosti
-
-REV-05:
-- Autorizacione politike
-- Eksplicitne akcije i default deny
-- Zabrana samoodobravanja
-- Audit adapter
-- Unit testovi i bezbjednosna dokumentacija
-
-Poslovni API tokovi, domenski model i persistence
-ostaju odgovornost njihovih vlasnika.
-
-## 10. Preostala integracija
-
-- Povezati stvarni izvor eksplicitnih dozvola.
-- Obezbijediti pouzdan audit kontekst.
-- Aktivirati audit adapter nakon registracije Audit servisa.
-- Uskladiti pozive IAccessDecision sa API vlasnikom.
-- Izvrsiti zavrsne provjere i testove.
-
-
+Promjene rjesavaju REV-05 autorizaciju i njenu audit integraciju. Nisu tvrdnja da su
+zavrseni lockout, oporavak lozinke, administrativni interfejs za dodjelu prava ili
+ostali zadaci drugih clanova. Za te operacije postoje navedeni javni ugovori.

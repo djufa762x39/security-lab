@@ -23,6 +23,7 @@ public sealed class RevisionDefaultDenyTests
 
         services.AddAccessControl();
         services.AddRevisionAuthorization();
+        services.AddSingleton<IRevisionResourceReader>(new FakeResourceReader());
 
         // Test koristi pouzdanog fake citaca umjesto baze.
         services.AddSingleton<IRevisionAuthorReader>(
@@ -51,6 +52,7 @@ public sealed class RevisionDefaultDenyTests
 
     services.AddAccessControl();
     services.AddRevisionAuthorization();
+    services.AddSingleton<IRevisionResourceReader>(new FakeResourceReader());
 
     services.AddSingleton<IRevisionAuthorReader>(
     new FakeRevisionAuthorReader(Guid.NewGuid()));
@@ -145,5 +147,11 @@ using var provider = services.BuildServiceProvider();
         {
             return Task.FromResult<Guid?>(authorId);
         }
+    }
+
+    private sealed class FakeResourceReader : IRevisionResourceReader
+    {
+        public Task<RevisionResource?> FindAsync(Guid revisionId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<RevisionResource?>(new RevisionResource(Guid.NewGuid(), Guid.NewGuid()));
     }
 }

@@ -77,6 +77,7 @@ else
 }
 
 builder.Services.AddAudit();
+builder.Services.AddAuditPersistence(builder.Configuration.GetConnectionString("Laboratories"));
 builder.Services.AddAuthoring();
 builder.Services.AddLabVisibility();
 builder.Services.AddIdentityRateLimiting(builder.Configuration);
@@ -87,6 +88,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddLaboratoriesPersistence(
     builder.Configuration.GetConnectionString("Laboratories"));
 builder.Services.AddRevisionReviews();
+builder.Services.AddRevisionSecurityPersistence(builder.Configuration.GetConnectionString("Laboratories"));
 
 builder.Services.AddSingleton<IAccountRepository, InMemoryAccountRepository>(); // TODO: zameniti trajnim repozitorijumom (PostgreSQL)
 builder.Services.AddScoped<ISessionManager, StoreSessionManager>();   // zameniti kad IDN-02 bude gotov
@@ -121,6 +123,7 @@ else
 }
 
 // Kreiranje aplikacije
+builder.Services.AddRevisionRequestIdentity();
 var app = builder.Build();
 
 app.Services.RegisterRevisionPolicies();

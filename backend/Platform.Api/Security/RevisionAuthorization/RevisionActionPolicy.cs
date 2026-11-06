@@ -24,11 +24,20 @@ public sealed class RevisionActionPolicy(
             return false;
         }
 
+        // The public Access catalog forbids resources on system actions.
+        // The Identity use case owns target existence and account-state validation.
+        if (request.Action == RevisionActions.UnlockAccount)
+            return request.Resource is null && await permission.IsAllowedAsync(
+                userId, request.Action, Guid.Empty, cancellationToken);
+
         string expectedResourceType = request.Action switch
         {
+            RevisionActions.Create => "course",
+            RevisionActions.Read => "revision",
+            RevisionActions.Mine => "revision",
+            RevisionActions.PendingReviews => "revision",
             RevisionActions.Submit => "revision",
             RevisionActions.Return => "revision",
-            RevisionActions.UnlockAccount => "account",
             _ => ""
         };
 

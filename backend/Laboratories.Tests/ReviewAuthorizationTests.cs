@@ -14,14 +14,45 @@ using Platform.Api.Models.Identity;
 using Platform.Api.Services.Identity;
 using Platform.Api.Enums.Identity;
 using Platform.Api.Security.RevisionAuthorization;
+using Platform.Identity.Interfaces;
+using Platform.Identity.Models;
 
 namespace Laboratories.Tests;
 
 public sealed class ReviewAuthorizationTests
 {
+    [TestCase(null, HttpStatusCode.Unauthorized)]
+    [TestCase("revoked-session", HttpStatusCode.Unauthorized)]
+    [TestCase("test-session", HttpStatusCode.Forbidden)]
+    public async Task ProductionRevisionRoute_UsesRealSessionAdapter(string? token, HttpStatusCode expected)
+    {
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(host =>
+        {
+            host.UseEnvironment("Production");
+            host.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<ISessionManager>();
+                services.RemoveAll<IRevisionCoursePermissionReader>();
+                services.AddSingleton<ISessionManager, TestSessionManager>();
+                services.AddSingleton<IAccountStatusReader, TestAccountStatusReader>();
+                services.AddSingleton<IRevisionAuthorReader, TestRevisionAuthorReader>();
+                services.AddSingleton<IRevisionResourceReader, TestRevisionResourceReader>();
+            });
+        });
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/revisions/{Guid.NewGuid()}/approve")
+        {
+            Content = JsonContent.Create(new { rowVersion = "2", contentHash = new string('a', 64) })
+        };
+        request.Headers.Add("Idempotency-Key", "session-adapter-test");
+        if (token is not null) request.Headers.Add("Cookie", $"{SessionCookie.Name}={token}");
+        using var response = await client.SendAsync(request);
+        Assert.That(response.StatusCode, Is.EqualTo(expected));
+    }
+
     [TestCase(false, HttpStatusCode.Unauthorized)]
     [TestCase(true, HttpStatusCode.Forbidden)]
-    public async Task Approve_WithoutRegisteredPolicy_DeniesBeforeDatabase(
+    public async Task Approve_WithoutPermission_DeniesBeforeDatabase(
         bool authenticated,
         HttpStatusCode expected)
     {
@@ -34,9 +65,11 @@ public sealed class ReviewAuthorizationTests
                 services.RemoveAll<IRequestSubjectResolver>();
                 services.RemoveAll<IAccessSubjectProvider>();
                 services.RemoveAll<ISessionManager>();
+                services.RemoveAll<IRevisionCoursePermissionReader>();
 
                 services.RemoveAll<IRevisionAuthorReader>();
                 services.AddSingleton<IRevisionAuthorReader, TestRevisionAuthorReader>();
+                services.AddSingleton<IRevisionResourceReader, TestRevisionResourceReader>();
                 var resolver = new TestResolver(authenticated);
 
                 services.AddSingleton<IRequestSubjectResolver>(resolver);
@@ -124,6 +157,12 @@ public sealed class ReviewAuthorizationTests
                 Array.Empty<SessionInfo>());
     }
 
+    private sealed class TestAccountStatusReader : IAccountStatusReader
+    {
+        public Task<AccountSnapshot?> FindAsync(Guid id, CancellationToken cancellationToken = default) =>
+            Task.FromResult<AccountSnapshot?>(new AccountSnapshot(id, Platform.Identity.Enums.AccountStatus.Active));
+    }
+
     private sealed class TestRevisionAuthorReader : IRevisionAuthorReader
     {
     public Task<Guid?> FindAuthorIdAsync(
@@ -133,5 +172,12 @@ public sealed class ReviewAuthorizationTests
         Guid? authorId = Guid.Parse("22222222-2222-2222-2222-222222222222");
         return Task.FromResult(authorId);
     }
+    }
+
+    private sealed class TestRevisionResourceReader : IRevisionResourceReader
+    {
+        public Task<RevisionResource?> FindAsync(Guid revisionId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<RevisionResource?>(new RevisionResource(Guid.NewGuid(),
+                Guid.Parse("22222222-2222-2222-2222-222222222222")));
     }
 }

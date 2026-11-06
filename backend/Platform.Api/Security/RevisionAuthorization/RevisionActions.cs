@@ -12,4 +12,9 @@ public static class RevisionActions
     public const string Return = "revision.return";
 
     public const string UnlockAccount = "account.unlock";
+
+    public static bool IsCourseAction(string action) => action is
+        Create or Read or Mine or PendingReviews or Submit or Approve or Return;
+
+    public static bool IsKnown(string action) => IsCourseAction(action) || action == UnlockAccount;
 }

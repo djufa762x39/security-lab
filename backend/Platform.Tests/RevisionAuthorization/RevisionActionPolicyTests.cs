@@ -18,7 +18,7 @@ public sealed class RevisionActionPolicyTests
         return new AccessRequest(
             new SubjectRef(UserId.ToString(), state),
             action,
-            new ResourceRef(resourceType, ResourceId.ToString()),
+            action == RevisionActions.UnlockAccount ? null : new ResourceRef(resourceType, ResourceId.ToString()),
             "test-correlation");
     }
 

@@ -6,6 +6,29 @@ namespace Platform.Api.Security.RevisionAuthorization;
 
 public static class RevisionAuditEventFactory
 {
+    public static AuditEventDraft CreateCompletedEvent(string action, Guid operationId, Guid revisionId,
+        Guid courseId, Guid authorId, string hash, Guid? laboratoryId, int? number)
+    {
+        var type = action switch
+        {
+            "submit" => AuditEventTypes.RevisionSubmitted,
+            "approve" => AuditEventTypes.RevisionApproved,
+            "return" => AuditEventTypes.RevisionReturned,
+            _ => throw new ArgumentException("Unknown revision operation.", nameof(action))
+        };
+        var details = new Dictionary<string, string>
+        {
+            ["authorId"] = authorId.ToString("D"),
+            ["operationId"] = operationId.ToString("D"),
+            ["contentHash"] = hash
+        };
+        if (laboratoryId is Guid lab) details["laboratoryId"] = lab.ToString("D");
+        if (number is int revisionNumber)
+            details["revisionNumber"] = revisionNumber.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return new AuditEventDraft(type, AuditOutcome.Success, courseId,
+            new AuditResourceRef(AuditResourceTypes.Revision, revisionId.ToString("D")), details, operationId);
+    }
+
     public static AuditEventDraft? CreateDeniedEvent(
         AccessRequest request,
         AccessDecision decision)
@@ -15,11 +38,7 @@ public static class RevisionAuditEventFactory
             return null;
         }
 
-        if (request.Action is not (
-            RevisionActions.Submit or
-            RevisionActions.Approve or
-            RevisionActions.Return or
-            RevisionActions.UnlockAccount))
+        if (!RevisionActions.IsKnown(request.Action))
         {
             return null;
         }

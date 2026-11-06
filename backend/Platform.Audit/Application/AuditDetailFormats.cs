@@ -54,6 +54,9 @@ internal static partial class AuditDetailFormats
             AuditDetailFormat.OutcomeName => OutcomeNames.Contains(value, StringComparer.Ordinal),
             AuditDetailFormat.UtcTimestamp => IsUtcTimestamp(value),
             AuditDetailFormat.Count => CountPattern().IsMatch(value) && int.Parse(value, CultureInfo.InvariantCulture) <= MaxCount,
+            AuditDetailFormat.Sha256 => value.Length == 64 && value.All(ch => ch is >= '0' and <= '9' or >= 'a' and <= 'f'),
+            AuditDetailFormat.RevisionNumber => int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var number)
+                && number > 0 && value == number.ToString(CultureInfo.InvariantCulture),
             _ => false
         };
     }
