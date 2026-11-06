@@ -78,7 +78,7 @@ Trust boundary: everything left of the API is untrusted. The caller identity is 
 
 - **Server-side access checks:**
   - Deny by default: an action that is not registered, or an account that is not active, is denied by the Access module. Only accounts on the author list pass the policy.
-  - No session gives `401`; a signed-in non-author, a blocked or archived account, or a subject id that is not a GUID gives `403`.
+  - No session cookie gives `401` from the IDN-02 session check before this code runs; a request whose caller cannot be identified gives `401` from the endpoint; a signed-in non-author, a blocked or archived account, or a subject id that is not a GUID gives `403`.
   - Outside the Development environment no subject resolver identifies anyone yet, so every request is `401` (fails closed).
   - Inside the use cases, only listing and copying templates are allowed, and only for authors. Creating a blank draft and editing a draft stay denied until their endpoints bring an ownership check.
 - **Input validation and sensitive data:**
@@ -101,19 +101,20 @@ Trust boundary: everything left of the API is untrusted. The caller identity is 
 
 ## How to try it (development)
 
-The Development environment identifies the caller from the configuration key `Identity:DevSubjectId`; `appsettings.Development.json` lists the author account in `Authoring:AuthorAccountIds`. Start the API, then call the endpoints from a second terminal (PowerShell):
+The reliable check is automated: `dotnet test backend/Platform.Authoring.Tests/Platform.Authoring.Tests.csproj --configuration Release` runs the endpoint tests against the real Access module.
+
+A manual call in the Development environment needs two things, because two separate mechanisms are involved:
+
+1. **A valid session cookie** (`SecurityLab.Session`). Since IDN-02 the session check answers `401` to every request without one. Log in as described in [docs/DEVELOPMENT.md](../DEVELOPMENT.md) (section "Development accounts"); this needs the local PostgreSQL service and the seed password.
+2. **The caller identity.** The authoring endpoints still read the caller from the configuration key `Identity:DevSubjectId` (the development subject resolver); a resolver based on the login session is not available yet. Set it before starting the API to an author account listed in `appsettings.Development.json` (`Authoring:AuthorAccountIds`):
 
 ```powershell
 $env:Identity__DevSubjectId = "11111111-1111-1111-1111-111111111111"   # an author
 cd backend/Platform.Api
 dotnet run --urls http://localhost:5080
 ```
-```powershell
-curl.exe -i http://localhost:5080/api/authoring/templates
-$t = "a1000000-0000-4000-8000-000000000001"
-curl.exe -i -X POST "http://localhost:5080/api/authoring/templates/$t/drafts"
-```
-Stop the API (`Ctrl+C`) and restart it with `"22222222-2222-2222-2222-222222222222"` (a student) to see `403`, or with `Remove-Item Env:Identity__DevSubjectId` to see `401`.
+
+With both in place, `GET /api/authoring/templates` returns `200` and `POST /api/authoring/templates/a1000000-0000-4000-8000-000000000001/drafts` returns `201`. A student id (`22222222-2222-2222-2222-222222222222`) gives `403`, and a request without the cookie gives `401`.
 
 ## Evidence of work
 
@@ -122,7 +123,7 @@ Stop the API (`Ctrl+C`) and restart it with `"22222222-2222-2222-2222-2222222222
 - **Tests and results:** 84 NUnit test cases (content validation, draft rules, template copy, use cases, author directory, policy, access check, in-memory store, DI validation, and the endpoint boundary with the real Access module). Record the actual run result and date here after running locally.
 - **Dependencies on other components:**
   - Platform.Access (decision, catalog, policy registry): in use.
-  - Identity (`IRequestSubjectResolver`, real sessions): development subject only; a real login replaces it without changing this component.
+  - Identity (`IRequestSubjectResolver`, session check): the caller still comes from `Identity:DevSubjectId`, independent of the login session. When Identity provides a resolver based on the session, only its registration changes; this component does not.
   - ACC modules (course roles): replace `ConfigAuthorDirectory`.
   - Audit: no authoring events yet.
   - AUT-01 backend: draft read/edit endpoints and the owner policy.

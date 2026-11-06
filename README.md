@@ -84,22 +84,9 @@ If you add a backend module or a test project, add it to the solution so that CI
 
 ## Trying the authoring API
 
-The Development environment identifies the caller from the configuration key `Identity:DevSubjectId`. The account `11111111-1111-1111-1111-111111111111` is listed as an author in `backend/Platform.Api/appsettings.Development.json` (`Authoring:AuthorAccountIds`). In PowerShell:
+The authoring endpoints are covered by automated tests: `dotnet test backend/Platform.Authoring.Tests/Platform.Authoring.Tests.csproj --configuration Release`.
 
-```
-$env:Identity__DevSubjectId = "11111111-1111-1111-1111-111111111111"
-cd backend/Platform.Api
-dotnet run --urls http://localhost:5080
-```
-
-In a second terminal:
-
-```
-curl.exe -i http://localhost:5080/api/authoring/templates
-curl.exe -i -X POST http://localhost:5080/api/authoring/templates/a1000000-0000-4000-8000-000000000001/drafts
-```
-
-The first call lists the templates (`200`), the second creates a draft from one (`201`). Restart with another account id to see `403`, or without the variable to see `401`. Details and the full endpoint contract are in [docs/components/AUT-authoring.md](docs/components/AUT-authoring.md).
+For a manual call in the Development environment two things must be in place. First, a valid session cookie: since IDN-02 every request without one gets `401`, so log in as described in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) (section "Development accounts"). Second, the caller identity: these endpoints still read it from `Identity:DevSubjectId`, which must be set to an author account (`11111111-1111-1111-1111-111111111111` is listed in `backend/Platform.Api/appsettings.Development.json`) before the API starts. A signed-in non-author gets `403`. Details and the full endpoint contract are in [docs/components/AUT-authoring.md](docs/components/AUT-authoring.md).
 
 ## Troubleshooting
 
