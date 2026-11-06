@@ -34,6 +34,7 @@ public class LoginTests
 
     private Mock<ICredentialVerifier> _verifier = null!;
     private Mock<ISessionCreator> _sessions = null!;
+    private Mock<ISessionManager> _sessionManager = null!;
     private Mock<ITrustedAuditWriter> _audit = null!;
     private List<(AuditEventDraft Draft, AuditContext Context)> _events = null!;
     private LoginService _login = null!;
@@ -43,6 +44,12 @@ public class LoginTests
     {
         _verifier = new Mock<ICredentialVerifier>();
         _sessions = new Mock<ISessionCreator>();
+        _sessionManager = new Mock<ISessionManager>();
+        _sessionManager.Setup(manager => manager.RevokeSession(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
         _audit = new Mock<ITrustedAuditWriter>();
         _events = [];
         _audit.Setup(a => a.WriteAsync(
@@ -60,6 +67,7 @@ public class LoginTests
         _login = new LoginService(
             _verifier.Object,
             _sessions.Object,
+            _sessionManager.Object,
             new IdentityAuditProducer(_audit.Object, NullLogger<IdentityAuditProducer>.Instance));
     }
 
@@ -90,6 +98,10 @@ public class LoginTests
         Assert.That(result.Session!.Token, Is.EqualTo(Token));
         _verifier.Verify(v => v.VerifyAsync(Email, password, It.IsAny<CancellationToken>()), Times.Once());
         _sessions.Verify(s => s.CreateAsync(id, AuthenticationLevel.Active, It.IsAny<CancellationToken>()), Times.Once());
+        _sessionManager.Verify(manager => manager.RevokeSession(
+            It.IsAny<Guid>(),
+            It.IsAny<Guid>(),
+            It.IsAny<CancellationToken>()), Times.Never);
         var e = _events.Single();
         Assert.That(e.Draft.Outcome, Is.EqualTo(AuditOutcome.Success));
         Assert.That(e.Context.Actor.Id, Is.EqualTo(id));
@@ -175,7 +187,9 @@ public class LoginTests
     public async Task SuccessfulCredentials_WhenAuditIsUnavailable_DoesNotReturnSession()
     {
         var id = Guid.NewGuid();
+        var handle = Guid.NewGuid();
         GivenCredentials(new CredentialResult(true, id, AccountStatus.Active));
+        GivenSession(new IssuedSession(Token, handle, DateTimeOffset.UtcNow.AddHours(8)));
         _audit.Setup(a => a.WriteAsync(
                 It.IsAny<AuditEventDraft>(),
                 It.IsAny<AuditContext>(),
@@ -189,6 +203,10 @@ public class LoginTests
             Assert.That(result.Outcome, Is.EqualTo(LoginOutcome.Unavailable));
             Assert.That(result.Session, Is.Null);
         }
+        _sessionManager.Verify(manager => manager.RevokeSession(
+            id,
+            handle,
+            CancellationToken.None), Times.Once);
     }
 
     [TestCaseSource(nameof(Passwords))]

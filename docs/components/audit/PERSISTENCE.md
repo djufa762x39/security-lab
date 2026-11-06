@@ -186,6 +186,33 @@ With both test connection variables configured on 2026-11-04, the Audit project 
 **113 tests: 113 passed, 0 failed, 0 skipped**. Eight of these test cases verify the actual
 bootstrapped runtime role. Without the runtime variable, those eight are explicitly skipped.
 
+## API runtime configuration
+
+The API resolves the restricted Audit connection from `ConnectionStrings:Audit`.
+For local PowerShell sessions, set it through `ConnectionStrings__Audit`; for deployed
+environments, use the platform's secret store. Never commit the password or place it in
+command-line arguments. The value must identify the restricted
+`securitylab_audit_runtime` role created by `scripts/audit/bootstrap-runtime.ps1`, not the
+bootstrap or migration account. Runtime startup never applies Audit migrations.
+
+If the setting is absent, invalid, or the Audit database is unavailable, durable Audit
+writes fail closed. In particular, a credential check does not produce a usable login:
+the API revokes the newly created server-side session and returns 503 without exposing a
+token. This is an operational dependency of the shared Identity flow, so the Audit schema,
+runtime grants, and secret must be prepared before enabling that flow.
+
+Example shape (replace the placeholders through a secret prompt or deployment secret):
+
+```powershell
+$env:ConnectionStrings__Audit = 'Host=127.0.0.1;Port=5432;Database=securitylab;Username=securitylab_audit_runtime;Password=<secret>'
+dotnet run --project backend/Platform.Api/Platform.Api.csproj
+Remove-Item Env:ConnectionStrings__Audit
+```
+
+Do not use `AUDIT_MIGRATION_CONNECTION_STRING` as the API connection. That variable is
+reserved for the privileged design-time migration tool. The two PostgreSQL test variables
+documented below are likewise test-only.
+
 ## Running PostgreSQL tests
 
 `PostgresAuditEventStoreTests` uses `AUDIT_TEST_ADMIN_CONNECTION_STRING` to connect to a

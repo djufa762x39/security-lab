@@ -14,6 +14,7 @@ namespace Platform.Api.Services.Identity;
 internal sealed class LoginService(
     ICredentialVerifier credentials,
     ISessionCreator sessions,
+    ISessionManager sessionManager,
     IdentityAuditProducer audit) : ILoginService
 {
     public async Task<LoginResult> ExecuteAsync(
@@ -46,7 +47,14 @@ internal sealed class LoginService(
         var auditResult = await audit.LoginSucceededAsync(
             check.AccountId, correlationId, CancellationToken.None);
         if (!auditResult.IsRecorded)
+        {
+            // The client must never receive a session for a login that could not be
+            // durably audited. Revoke the already-persisted session by its opaque
+            // handle; neither the raw token nor the handle is written to Audit.
+            await sessionManager.RevokeSession(
+                check.AccountId, session.Handle, CancellationToken.None);
             return new LoginResult(LoginOutcome.Unavailable);
+        }
 
         return new LoginResult(LoginOutcome.Success, check.AccountId, session);
     }
