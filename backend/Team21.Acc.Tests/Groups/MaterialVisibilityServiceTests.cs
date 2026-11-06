@@ -323,6 +323,176 @@ public class MaterialVisibilityServiceTests
         AssertDeniedWith(_audit.Denials[0], material: null, _courseId, DenialReason.NotCourseMember, action: null);
     }
 
+    // 16 (V01). Primary: ACC-06. Related: ACC-03 (teacher of the course). Team 21: a teacher sees
+    // every material of an active course, so the group restriction does not apply. The teacher is in
+    // no group, so only the teacher role can grant access.
+    [Test]
+    public async Task CanAccess_TeacherOutsideAllowedGroup_Succeeds()
+    {
+        var teacher = Guid.NewGuid();
+        GivenActiveMemberOfCourse(teacher, CourseRole.Teacher, canReview: false);
+        var material = GivenRule(MaterialVisibility.RestrictedToGroups, _groupA);
+        var service = CreateService(teacher);
+
+        var result = await service.CanAccessAsync(material, MaterialAction.Read);
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(_audit.Denials, Is.Empty);
+    }
+
+    // 17 (V02). Primary: ACC-06. Related: ACC-03, spec role "assistant": only teacher actions the
+    // teacher explicitly delegated. Team 21: the delegated review right (CanReview) gives the teacher's
+    // view of the course. The assistant is in no group, so only CanReview can grant access.
+    [Test]
+    public async Task CanAccess_ReviewingAssistantOutsideAllowedGroup_Succeeds()
+    {
+        var assistant = Guid.NewGuid();
+        GivenActiveMemberOfCourse(assistant, CourseRole.Assistant, canReview: true);
+        var material = GivenRule(MaterialVisibility.RestrictedToGroups, _groupA);
+        var service = CreateService(assistant);
+
+        var result = await service.CanAccessAsync(material, MaterialAction.Read);
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(_audit.Denials, Is.Empty);
+    }
+
+    // 18 (V03). Primary: ACC-06. Related: ACC-08 (a role alone does not bypass the resource rule),
+    // SEC-01. Without delegated review an assistant is held to the group rule like a student. The
+    // assistant is an active member of an active course and belongs to a group, just not an allowed
+    // one, so the group check is the only reason for the denial.
+    [Test]
+    public async Task CanAccess_AssistantWithoutReviewRight_ReturnsNotFound()
+    {
+        var assistant = Guid.NewGuid();
+        GivenActiveMemberOfCourse(assistant, CourseRole.Assistant, canReview: false);
+        _groups.Add(assistant, _courseId, _groupB);
+        var material = GivenRule(MaterialVisibility.RestrictedToGroups, _groupA);
+        var service = CreateService(assistant);
+
+        var result = await service.CanAccessAsync(material, MaterialAction.Read);
+
+        AssertMaterialNotFound(result, material);
+        Assert.That(_audit.Denials, Has.Count.EqualTo(1));
+        AssertDeniedWith(_audit.Denials[0], material, _courseId, DenialReason.NotInGroup, actorId: assistant);
+    }
+
+    // 19 (V04). Primary: ACC-06. Related: ACC-01 (archived course), ACC-03 (a change applies on the
+    // next request). The same service instance first grants access, so the membership and the group
+    // grant are valid and only the archived state can cause the denial; a cached decision would show
+    // up as a second success.
+    [Test]
+    public async Task CanAccess_StudentInAllowedGroupOfArchivedCourse_ReturnsNotFound()
+    {
+        GivenActiveStudentOfCourse(_student);
+        _groups.Add(_student, _courseId, _groupA);
+        var material = GivenRule(MaterialVisibility.RestrictedToGroups, _groupA);
+        var service = CreateService(_student);
+
+        var beforeArchive = await service.CanAccessAsync(material, MaterialAction.Read);
+        _courseStates.Set(_courseId, CourseState.Archived);
+        var afterArchive = await service.CanAccessAsync(material, MaterialAction.Read);
+
+        Assert.That(beforeArchive.IsSuccess, Is.True);
+        AssertMaterialNotFound(afterArchive, material);
+        Assert.That(_audit.Denials, Has.Count.EqualTo(1));
+        AssertDeniedWith(_audit.Denials[0], material, _courseId, DenialReason.CourseArchived);
+    }
+
+    // 20 (V05). Primary: ACC-06. Related: ACC-01 (archiving keeps the history). Team 21: in an archived
+    // course the teacher and a reviewing assistant still see the materials. The material is restricted
+    // to a group the caller is not in, so access needs both the archived-course exception and the
+    // privileged-viewer rule.
+    [TestCase(CourseRole.Teacher, false, TestName = "CanAccess_ArchivedCourse_TeacherRetainsAccess")]
+    [TestCase(CourseRole.Assistant, true, TestName = "CanAccess_ArchivedCourse_ReviewingAssistantRetainsAccess")]
+    public async Task CanAccess_ArchivedCourse_PrivilegedViewerRetainsAccess(CourseRole role, bool canReview)
+    {
+        var member = Guid.NewGuid();
+        GivenActiveMemberOfCourse(member, role, canReview);
+        _courseStates.Set(_courseId, CourseState.Archived);
+        var material = GivenRule(MaterialVisibility.RestrictedToGroups, _groupA);
+        var service = CreateService(member);
+
+        var result = await service.CanAccessAsync(material, MaterialAction.Read);
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(_audit.Denials, Is.Empty);
+    }
+
+    // 21 (V06). Primary: ACC-06 (list view). Related: ACC-01 (archived course), ACC-03 (a change applies
+    // on the next request), SEC-01. The list operation checks the course state on its own, so this
+    // covers that check rather than the one in CanAccess. The first list shows the grant is valid; the
+    // same service instance then answers like for a missing course, so a cached decision would show up.
+    [Test]
+    public async Task FilterVisible_StudentInArchivedCourse_ReturnsNotFound()
+    {
+        GivenActiveStudentOfCourse(_student);
+        _groups.Add(_student, _courseId, _groupA);
+        var material = GivenRule(MaterialVisibility.RestrictedToGroups, _groupA);
+        var service = CreateService(_student);
+
+        var beforeArchive = await service.FilterVisibleAsync(_courseId);
+        _courseStates.Set(_courseId, CourseState.Archived);
+        var afterArchive = await service.FilterVisibleAsync(_courseId);
+
+        Assert.That(beforeArchive.IsSuccess, Is.True);
+        Assert.That(beforeArchive.Value, Is.EquivalentTo(new[] { material }));
+        Assert.That(afterArchive.IsSuccess, Is.False);
+        Assert.That(afterArchive.Value, Is.Null);
+        Assert.That(afterArchive.Error!.Type, Is.EqualTo(ErrorType.NotFound));
+        Assert.That(afterArchive.Error.Message, Is.EqualTo("Course not found."));
+        Assert.That(afterArchive.Error.Message, Does.Not.Contain(_courseId.ToString()));
+        Assert.That(afterArchive.Error.Message, Does.Not.Contain(material.MaterialId.ToString()));
+        Assert.That(_audit.Denials, Has.Count.EqualTo(1));
+        AssertDeniedWith(_audit.Denials[0], material: null, _courseId, DenialReason.CourseArchived, action: null);
+    }
+
+    // 22 (V07). Primary: ACC-06. Related: ACC-01 (archived course). Only the teacher and a reviewing
+    // assistant keep access to an archived course. The assistant is in the allowed group, so the
+    // first request succeeds and only the archived state can cause the denial, not the group rule.
+    [Test]
+    public async Task CanAccess_AssistantWithoutReviewRight_ArchivedCourse_ReturnsNotFound()
+    {
+        var assistant = Guid.NewGuid();
+        GivenActiveMemberOfCourse(assistant, CourseRole.Assistant, canReview: false);
+        _groups.Add(assistant, _courseId, _groupA);
+        var material = GivenRule(MaterialVisibility.RestrictedToGroups, _groupA);
+        var service = CreateService(assistant);
+
+        var beforeArchive = await service.CanAccessAsync(material, MaterialAction.Read);
+        _courseStates.Set(_courseId, CourseState.Archived);
+        var afterArchive = await service.CanAccessAsync(material, MaterialAction.Read);
+
+        Assert.That(beforeArchive.IsSuccess, Is.True);
+        AssertMaterialNotFound(afterArchive, material);
+        Assert.That(_audit.Denials, Has.Count.EqualTo(1));
+        AssertDeniedWith(_audit.Denials[0], material, _courseId, DenialReason.CourseArchived, actorId: assistant);
+    }
+
+    // 23 (V08). Primary: ACC-06 (list view). Team 21: the teacher and a reviewing assistant see every
+    // material of the course in the list. The caller is in no group, so only the list operation's
+    // privileged-viewer rule can put the restricted material in the list. A material of another
+    // course must not appear.
+    [TestCase(CourseRole.Teacher, false, TestName = "FilterVisible_Teacher_SeesRestrictedMaterial")]
+    [TestCase(CourseRole.Assistant, true, TestName = "FilterVisible_ReviewingAssistant_SeesRestrictedMaterial")]
+    public async Task FilterVisible_PrivilegedViewer_SeesRestrictedMaterial(CourseRole role, bool canReview)
+    {
+        var member = Guid.NewGuid();
+        var otherCourse = Guid.NewGuid();
+        _courseStates.Set(otherCourse, CourseState.Active);
+        GivenActiveMemberOfCourse(member, role, canReview);
+        var restricted = GivenRule(MaterialVisibility.RestrictedToGroups, _groupA);
+        var foreign = GivenRuleInCourse(otherCourse, MaterialVisibility.CourseWide);
+        var service = CreateService(member);
+
+        var result = await service.FilterVisibleAsync(_courseId);
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.Value, Is.EquivalentTo(new[] { restricted }));
+        Assert.That(result.Value, Does.Not.Contain(foreign));
+        Assert.That(_audit.Denials, Is.Empty);
+    }
+
     private MaterialVisibilityService CreateService(Guid? userId, IMaterialAccessRuleReader? rules = null) =>
         new(
             new StubCurrentActor(userId),
@@ -335,10 +505,13 @@ public class MaterialVisibilityServiceTests
             _audit,
             new FixedTimeProvider(Now));
 
-    private void GivenActiveStudentOfCourse(Guid userId)
+    private void GivenActiveStudentOfCourse(Guid userId) =>
+        GivenActiveMemberOfCourse(userId, CourseRole.Student, canReview: false);
+
+    private void GivenActiveMemberOfCourse(Guid userId, CourseRole role, bool canReview)
     {
         _accounts.Set(userId, AccountStatus.Active);
-        _courseMembers.Set(userId, new CourseMembership(_courseId, CourseRole.Student, Active: true, CanReview: false));
+        _courseMembers.Set(userId, new CourseMembership(_courseId, role, Active: true, CanReview: canReview));
     }
 
     private MaterialRef GivenRule(MaterialVisibility visibility, params Guid[] allowedGroups) =>
@@ -359,14 +532,15 @@ public class MaterialVisibilityServiceTests
         Assert.That(result.Error.Message, Does.Not.Contain(material.MaterialId.ToString()));
     }
 
-    // material and action are null when a course's material list was denied
+    // material and action are null when a course's material list was denied; the actor is the
+    // student unless given
     private void AssertDeniedWith(
         VisibilityDenial denial, MaterialRef? material, Guid? courseId, DenialReason reason,
-        MaterialAction? action = MaterialAction.Read)
+        MaterialAction? action = MaterialAction.Read, Guid? actorId = null)
     {
         Assert.Multiple(() =>
         {
-            Assert.That(denial.ActorId, Is.EqualTo(_student));
+            Assert.That(denial.ActorId, Is.EqualTo(actorId ?? _student));
             Assert.That(denial.CourseId, Is.EqualTo(courseId));
             Assert.That(denial.Material, Is.EqualTo(material));
             Assert.That(denial.Action, Is.EqualTo(action));
