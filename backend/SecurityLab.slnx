@@ -4,6 +4,7 @@
   <Project Path="Platform.Access.Tests/Platform.Access.Tests.csproj" />
   <Project Path="Platform.Api/Platform.Api.csproj" />
   <Project Path="Platform.Audit/Platform.Audit.csproj" />
+  <Project Path="Platform.AssignmentOverview.Tests/Platform.AssignmentOverview.Tests.csproj" />
   <Project Path="Platform.AssignmentOverview/Platform.AssignmentOverview.csproj" />
   <Project Path="Platform.Assignments/Platform.Assignments.csproj" />
   <Project Path="Platform.Audit.Tests/Platform.Audit.Tests.csproj" />
