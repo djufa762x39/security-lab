@@ -3,6 +3,7 @@ using NUnit.Framework;
 using Platform.Assignments.Application;
 using Platform.Assignments.Contracts;
 using Platform.Assignments.Domain.Models;
+using Platform.Assignments.Domain.Enums;
 
 namespace Platform.Tests.Assignments;
 
@@ -18,7 +19,8 @@ public class StartAttemptServiceTests
             "revision-1",
             null,
             DateTimeOffset.UtcNow.AddDays(1),
-            2);
+            2,
+            scope: AssignmentScope.Course);
 
         var repository = new FakeAssignmentRepository(assignment);
         var attemptStore = new FakeAttemptStore(2);
@@ -46,7 +48,8 @@ public class StartAttemptServiceTests
             "revision-1",
             null,
             DateTimeOffset.UtcNow.AddDays(1),
-            3);
+            3,
+            scope: AssignmentScope.Course);
 
         var repository = new FakeAssignmentRepository(assignment);
         var attemptStore = new FakeAttemptStore(1);
@@ -72,7 +75,8 @@ public class StartAttemptServiceTests
             "revision-1",
             null,
             DateTimeOffset.UtcNow.AddDays(1),
-            3);
+            3,
+            scope: AssignmentScope.Course);
 
         var repository = new FakeAssignmentRepository(assignment);
         var attemptStore = new FakeAttemptStore(0);
@@ -100,7 +104,8 @@ public class StartAttemptServiceTests
             "revision-1",
             null,
             DateTimeOffset.UtcNow.AddDays(-1),
-            3);
+            3,
+            scope: AssignmentScope.Course);
 
         var repository = new FakeAssignmentRepository(assignment);
         var attemptStore = new FakeAttemptStore(0);
@@ -128,7 +133,8 @@ public class StartAttemptServiceTests
             "revision-1",
             null,
             DateTimeOffset.UtcNow.AddDays(1),
-            3);
+            3,
+            scope: AssignmentScope.Course);
 
         assignment.Archive();
 
@@ -158,7 +164,8 @@ public class StartAttemptServiceTests
             "revision-1",
             null,
             DateTimeOffset.UtcNow.AddDays(1),
-            1);
+            1,
+            scope: AssignmentScope.Course);
 
         var repository = new FakeAssignmentRepository(assignment);
         var attemptStore = new FakeAttemptStore(0);
@@ -188,7 +195,8 @@ public class StartAttemptServiceTests
             "revision-1",
             null,
             DateTimeOffset.UtcNow.AddDays(1),
-            3);
+            3,
+            scope: AssignmentScope.Course);
 
         var repository = new FakeAssignmentRepository(assignment);
         var attemptStore = new FakeAttemptStore(0);

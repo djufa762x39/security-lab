@@ -33,7 +33,8 @@ public sealed class AssignmentTests
                 "revision-1",
                 Start,
                 Due,
-                0),
+                0,
+                scope: AssignmentScope.Course),
             Throws.TypeOf<ArgumentOutOfRangeException>());
     }
 
@@ -47,7 +48,8 @@ public sealed class AssignmentTests
                 "revision-1",
                 Due.AddMinutes(1),
                 Due,
-                2),
+                2,
+                scope: AssignmentScope.Course),
             Throws.TypeOf<ArgumentException>());
     }
 
@@ -71,7 +73,8 @@ public sealed class AssignmentTests
             Start,
             Due,
             2,
-            allowStartAfterDeadline: true);
+            allowStartAfterDeadline: true,
+            scope: AssignmentScope.Course);
 
         var availability = assignment.GetAvailability(Due.AddSeconds(1));
 
@@ -84,5 +87,6 @@ public sealed class AssignmentTests
         "revision-1",
         Start,
         Due,
-        maxAttempts: 2);
+        maxAttempts: 2,
+        scope: AssignmentScope.Course);
 }
