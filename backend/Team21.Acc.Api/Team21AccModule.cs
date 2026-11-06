@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Team21.Acc.Api.Courses;
 using Team21.Acc.Api.Groups;
@@ -35,6 +36,8 @@ public static class Team21AccModule
             services.AddScoped<ICurrentActor, AnonymousCurrentActor>();
 
         services.AddScoped<ICorrelationContext, HttpCorrelationContext>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<IAuditTrail, LoggingAuditTrail>();
 
         var connectionString = builder.Configuration.GetConnectionString(TeamDbContextRegistration.ConnectionStringName);
 
