@@ -1,8 +1,11 @@
+
 using Team21.Acc.Core.Courses;
 
 namespace Team21.Acc.Infrastructure.Courses.Authorization;
 
-/// <summary>Used outside Development until real roles exist. Nobody may create or archive.</summary>
+/// <summary>
+/// Denies course operations until real authorization is integrated.
+/// </summary>
 public sealed class DenyAllCourseAuthorization : ICourseAuthorization
 {
     public Task<bool> CanCreateAsync(
@@ -13,6 +16,14 @@ public sealed class DenyAllCourseAuthorization : ICourseAuthorization
     }
 
     public Task<bool> CanArchiveAsync(
+        Guid userId,
+        Guid courseId,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(false);
+    }
+
+    public Task<bool> CanViewAsync(
         Guid userId,
         Guid courseId,
         CancellationToken cancellationToken = default)
