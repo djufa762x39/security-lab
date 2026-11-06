@@ -125,12 +125,9 @@ else
 // Kreiranje aplikacije
 var app = builder.Build();
 app.UseRouting();
-app.UseAccessControl();
 
 // AUD-01/AUD-04 (S-10): correlation ID za svaki zahtev; mora biti prvi middleware
 app.UseCorrelationContext();
-
-app.UseRouting();
 app.UseAccessControl();
 
 // Identity Rate Limiting

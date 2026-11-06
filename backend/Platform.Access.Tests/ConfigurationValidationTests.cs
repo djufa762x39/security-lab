@@ -115,14 +115,16 @@ public class ConfigurationValidationTests
     }
 
     [Test]
-    public void ACC05_Composition_RejectsSingletonPolicyRegistration()
+    public void ACC05_Composition_AcceptsSingletonPolicyRegistration()
     {
         var services = new ServiceCollection();
         services.AddSingleton<RegisteredPolicy>();
 
+        Assert.DoesNotThrow(
+            () => services.AddAccessPolicy<RegisteredPolicy>("audit.events.read"));
         Assert.That(
-            () => services.AddAccessPolicy<RegisteredPolicy>("audit.events.read"),
-            Throws.InstanceOf<InvalidOperationException>());
+            services.Count(descriptor => descriptor.ServiceType == typeof(RegisteredPolicy)),
+            Is.EqualTo(1));
     }
 
     [Test]
@@ -134,10 +136,13 @@ public class ConfigurationValidationTests
         services.AddAccessControl();
         services.AddAccessPolicy<ScopedDependencyPolicy>("audit.events.read");
 
-        Assert.That(
+        var exception = Assert.Throws<AggregateException>(
             () => services.BuildServiceProvider(
-                new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true }),
-            Throws.InstanceOf<InvalidOperationException>());
+                new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true }));
+
+        Assert.That(
+            exception!.Flatten().InnerExceptions,
+            Has.Some.InstanceOf<InvalidOperationException>());
     }
 
     [Test]
