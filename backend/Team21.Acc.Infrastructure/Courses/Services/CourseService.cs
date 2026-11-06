@@ -15,15 +15,18 @@ public sealed class CourseService : ICourseService
     private readonly ICoursesDbContext _context;
     private readonly ICurrentActor _actor;
     private readonly ICourseAuthorization _authorization;
+    private readonly IAuditTrail _audit;
 
     public CourseService(
         ICoursesDbContext context,
         ICurrentActor actor,
-        ICourseAuthorization authorization)
+        ICourseAuthorization authorization,
+        IAuditTrail audit)
     {
         _context = context;
         _actor = actor;
         _authorization = authorization;
+        _audit = audit;
     }
 
     public async Task<Result<CourseDto>> CreateAsync(
@@ -39,6 +42,7 @@ public sealed class CourseService : ICourseService
 
         if (!await _authorization.CanCreateAsync(userId, cancellationToken))
         {
+            await _audit.RecordAsync("course.create", Guid.Empty, AuditOutcome.Denied, cancellationToken);
             return Error.Forbidden("Not allowed to create courses.");
         }
 
@@ -86,6 +90,8 @@ public sealed class CourseService : ICourseService
             return Error.Conflict("Course code already exists.");
         }
 
+        await _audit.RecordAsync("course.create", course.Id, AuditOutcome.Success, cancellationToken);
+
         return new CourseDto(
             course.Id,
             course.Code,
@@ -112,6 +118,7 @@ public sealed class CourseService : ICourseService
         if (!await _authorization.CanArchiveAsync(
                 userId, courseId, cancellationToken))
         {
+            await _audit.RecordAsync("course.archive", courseId, AuditOutcome.Denied, cancellationToken);
             return Error.NotFound("Course not found.");
         }
 
@@ -137,6 +144,8 @@ public sealed class CourseService : ICourseService
             return Error.Conflict(
                 "Course was modified concurrently. Please retry.");
         }
+
+        await _audit.RecordAsync("course.archive", course.Id, AuditOutcome.Success, cancellationToken);
 
         return Result.Success();
     }

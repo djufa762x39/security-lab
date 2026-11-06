@@ -280,7 +280,8 @@ private CourseService CreateService(
     return new CourseService(
         _db,
         new TestActor(actorId),
-        new TestAuthorization(allowed, visibleCourseId));
+        new TestAuthorization(allowed, visibleCourseId),
+        new TestAuditTrail());
 }
 
 
@@ -421,6 +422,12 @@ public async Task Archive_UserWithoutPermission_ReturnsNotFound()
         Assert.That(saved.ArchivedBy, Is.Null);
     });
 }
+
+    private sealed class TestAuditTrail : IAuditTrail
+    {
+        public Task RecordAsync(string action, Guid resourceId, AuditOutcome outcome, CancellationToken ct = default) =>
+            Task.CompletedTask;
+    }
 
     private sealed class TestActor(Guid? userId) : ICurrentActor
     {
