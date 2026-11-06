@@ -140,4 +140,88 @@ public sealed class CourseService : ICourseService
 
         return Result.Success();
     }
+    public async Task<Result<CourseDto>> GetCourseAsync(
+        Guid courseId,
+        CancellationToken cancellationToken = default)
+    {
+        // 1. Authentication
+        if (!_actor.IsAuthenticated ||
+            _actor.UserId is not Guid userId ||
+            userId == Guid.Empty)
+        {
+            return Error.Unauthorized("Sign in first.");
+        }
+
+        // 2. Authorization
+        // Do not reveal whether a forbidden course exists.
+        if (!await _authorization.CanViewAsync(
+                userId, courseId, cancellationToken))
+        {
+            return Error.NotFound("Course not found.");
+        }
+
+        // 3. Read the course
+        var course = await _context.Courses
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                c => c.Id == courseId,
+                cancellationToken);
+
+        if (course is null)
+            return Error.NotFound("Course not found.");
+
+        // 4. Return DTO
+        return new CourseDto(
+            course.Id,
+            course.Code,
+            course.Name,
+            course.Description,
+            course.Status.ToString(),
+            course.CreatedAt,
+            course.ArchivedAt
+        );
+    }
+
+
+    public async Task<Result<IReadOnlyList<CourseDto>>> GetCoursesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        // 1. Authentication
+        if (!_actor.IsAuthenticated ||
+            _actor.UserId is not Guid userId ||
+            userId == Guid.Empty)
+        {
+            return Error.Unauthorized("Sign in first.");
+        }
+
+        // 2. Read courses sorted by code
+        var courses = await _context.Courses
+            .AsNoTracking()
+            .OrderBy(course => course.Code)
+            .ToListAsync(cancellationToken);
+
+        // 3. Include only courses the caller is allowed to view
+        var visibleCourses = new List<CourseDto>();
+
+        foreach (var course in courses)
+        {
+            if (!await _authorization.CanViewAsync(
+                    userId, course.Id, cancellationToken))
+            {
+                continue;
+            }
+
+            visibleCourses.Add(new CourseDto(
+                course.Id,
+                course.Code,
+                course.Name,
+                course.Description,
+                course.Status.ToString(),
+                course.CreatedAt,
+                course.ArchivedAt
+            ));
+        }
+
+        return Result<IReadOnlyList<CourseDto>>.Success(visibleCourses);
+    }
 }

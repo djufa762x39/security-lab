@@ -95,15 +95,56 @@ Without the connection string the api still starts. Only our endpoints fail.
 
 ## Calling our endpoints in Development
 
-No real login yet. Send the user id in a header. Once ACC-01 has endpoints a call looks like this:
+Until real authentication is integrated, the API supports the
+`X-Test-User` header in the Development environment.
+
+Shared development manager ID:
+
+`00000000-0000-0000-0000-000000000001`
+
+### List courses
 
 ```bash
-curl -H "X-Test-User: 10000000-0000-0000-0000-000000000001" http://localhost:5080/api/courses
+curl -i \
+  -H "X-Test-User: 00000000-0000-0000-0000-000000000001" \
+  http://localhost:5080/api/courses
 ```
 
-No header, a bad guid or two headers means nobody is signed in. Outside Development the header is ignored.
+Returns `200 OK` with a JSON array of `CourseDto` objects,
+sorted by course code.
 
-The header only tells a service who is calling. Each service checks `actor.IsAuthenticated` itself and returns `Error.Unauthorized` when it's false.
+Only courses the current user is authorized to view are returned.
+Archived courses remain readable with `status: "Archived"`.
+
+### Get a single course
+
+Replace `<course-id>` with an existing course GUID.
+
+```bash
+curl -i \
+  -H "X-Test-User: 00000000-0000-0000-0000-000000000001" \
+  http://localhost:5080/api/courses/<course-id>
+```
+
+Responses:
+
+- `200 OK` — the course exists and the user may view it.
+- `401 Unauthorized` — no valid identity was provided.
+- `404 Not Found` — the course does not exist or access is denied.
+
+Both missing and forbidden courses return the same
+`Course not found.` message to avoid revealing resource existence.
+
+### Development authorization
+
+- Any authenticated development user may view courses.
+- Only the shared development manager may create or archive courses.
+- An invalid, missing, or ambiguous `X-Test-User` header does not authenticate a user.
+- The header is ignored outside Development.
+- Outside Development, course permissions currently use a deny-all fallback until real authorization is integrated.
+
+This header is only a development test mechanism and must not
+be treated as production authentication.
 
 ## Adding a table
 
@@ -185,13 +226,13 @@ The error message goes to the client as written, keep ids and database details o
 
 Only the `X-Test-User` header exists so far. The rest are planned: whoever first needs one writes the interface and its fake next to their code, registered in Development only.
 
-| Fake | Stands in for | Owner | Status |
-|---|---|---|---|
-| `X-Test-User` header | Login and sessions | IDN teams | done |
-| Account status | Blocked / active accounts | IDN-03 team | planned |
+| Fake                       | Stands in for                     | Owner                 | Status  |
+| -------------------------- | --------------------------------- | --------------------- | ------- |
+| `X-Test-User` header       | Login and sessions                | IDN teams             | done    |
+| Account status             | Blocked / active accounts         | IDN-03 team           | planned |
 | Course membership and role | Enrollment and teacher assignment | ACC-02 / ACC-03 teams | planned |
-| Material catalog | Labs and assignments | LAB / ASN teams | planned |
-| Audit writer | Audit log storage | AUD team | planned |
+| Material catalog           | Labs and assignments              | LAB / ASN teams       | planned |
+| Audit writer               | Audit log storage                 | AUD team              | planned |
 
 A fake is a test double, not an integration. Member 9 replaces them once the other teams have endpoints.
 

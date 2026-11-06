@@ -15,6 +15,12 @@ public static class CourseEndpoints
     {
         var group = app.MapGroup("/api/courses");
 
+         group.MapGet("", GetCourses)
+            .WithName("GetCourses");
+
+        group.MapGet("/{id:guid}", GetCourse)
+            .WithName("GetCourse");
+
         group.MapPost("", CreateCourse)
             .WithName("CreateCourse");
 
@@ -48,4 +54,28 @@ public static class CourseEndpoints
 
         return result.ToHttpResult();
     }
+
+
+private static async Task<IResult> GetCourses(
+    ICourseService courseService,
+    CancellationToken cancellationToken)
+{
+    var result = await courseService.GetCoursesAsync(
+        cancellationToken);
+
+    return result.ToHttpResult();
+}
+
+private static async Task<IResult> GetCourse(
+    Guid id,
+    ICourseService courseService,
+    CancellationToken cancellationToken)
+{
+    var result = await courseService.GetCourseAsync(
+        id,
+        cancellationToken);
+
+    return result.ToHttpResult();
+}
+
 }
