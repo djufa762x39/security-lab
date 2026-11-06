@@ -22,19 +22,22 @@ public class GroupService : IGroupService
     private readonly ICourseMembershipReader _membershipReader;
     private readonly IAccountStatusReader _accountStatusReader;
     private readonly ICourseStateReader _courseStates;
+    private readonly IAuditTrail _audit;
 
     public GroupService(
         IGroupsDbContext context,
         ICurrentActor actor,
         ICourseMembershipReader membershipReader,
         IAccountStatusReader accountStatusReader,
-        ICourseStateReader courseStates)
+        ICourseStateReader courseStates,
+        IAuditTrail audit)
     {
         _context = context;
         _actor = actor;
         _membershipReader = membershipReader;
         _accountStatusReader = accountStatusReader;
         _courseStates = courseStates;
+        _audit = audit;
     }
 
     public async Task<Result<GroupDto>> CreateGroupAsync(
@@ -44,7 +47,7 @@ public class GroupService : IGroupService
     {
         var accessError = await CheckTeacherAccessAsync(courseId, ct);
         if (accessError is not null)
-            return accessError;
+            return await DeniedAsync("group.create", courseId, accessError, ct);
 
         if (string.IsNullOrWhiteSpace(name))
             return Error.Validation("Group name is required.");
@@ -88,6 +91,8 @@ public class GroupService : IGroupService
         {
             return Error.Conflict("A group with this name already exists in the course.");
         }
+
+        await _audit.RecordAsync("group.create", group.Id, AuditOutcome.Success, ct);
 
         return Result<GroupDto>.Success(ToDto(group.Id, group.CourseId, group.Name, group.Status));
     }
@@ -172,7 +177,7 @@ public class GroupService : IGroupService
     {
         var accessError = await CheckTeacherAccessAsync(courseId, ct);
         if (accessError is not null)
-            return accessError;
+            return await DeniedAsync("group.member.add", groupId, accessError, ct);
 
         if (groupId == Guid.Empty)
             return Error.Validation("Invalid group ID.");
@@ -230,6 +235,8 @@ public class GroupService : IGroupService
             return Error.Conflict("Student is already a member of this group.");
         }
 
+        await _audit.RecordAsync("group.member.add", groupId, AuditOutcome.Success, ct);
+
         return Result<GroupMemberDto>.Success(
             new GroupMemberDto(member.Id, member.GroupId, member.UserId, member.CreatedAt));
     }
@@ -242,7 +249,7 @@ public class GroupService : IGroupService
     {
         var accessError = await CheckTeacherAccessAsync(courseId, ct);
         if (accessError is not null)
-            return accessError;
+            return await DeniedAsync("group.member.remove", groupId, accessError, ct);
 
         if (groupId == Guid.Empty)
             return Error.Validation("Invalid group ID.");
@@ -277,6 +284,8 @@ public class GroupService : IGroupService
         member.UpdatedBy = _actor.UserId.Value;
 
         await _context.SaveChangesAsync(ct);
+
+        await _audit.RecordAsync("group.member.remove", groupId, AuditOutcome.Success, ct);
 
         return Result.Success();
     }
@@ -314,6 +323,15 @@ public class GroupService : IGroupService
         }
 
         return null;
+    }
+
+    // Anonymous calls have no actor to record, a denial of a signed-in caller is audited
+    private async Task<Error> DeniedAsync(string action, Guid resourceId, Error error, CancellationToken ct)
+    {
+        if (error.Type == ErrorType.NotFound)
+            await _audit.RecordAsync(action, resourceId, AuditOutcome.Denied, ct);
+
+        return error;
     }
 
     private static GroupDto ToDto(Guid id, Guid courseId, string name, GroupStatus status) =>
