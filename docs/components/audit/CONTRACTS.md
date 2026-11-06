@@ -191,7 +191,7 @@ type allows. The checks are done by the internal `AuditDraftValidator` in
 | `oldStatus`, `newStatus` | one of `active`, `blocked`, `archived` |
 | `oldRole`, `newRole` | one of `none`, `student`, `teacher`, `assistant` |
 | `action`, `filterType` | action or event type: `^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)+$`, at most 64 characters (same rule as `ActionId` in `Platform.Access`) |
-| `denialReason` | one of `unauthenticated`, `account_not_active`, `unknown_action`, `no_policy`, `policy_error` |
+| `denialReason` | one of `unauthenticated`, `account_not_active`, `unknown_action`, `no_policy`, `policy_denied`, `policy_error` |
 | `policyId` | `^[a-z][a-z0-9_.-]{0,63}$` |
 | `policyVersion` | `^v[0-9]{1,4}(\.[0-9]{1,4}){0,2}$` |
 | `delegationId` | UUID |

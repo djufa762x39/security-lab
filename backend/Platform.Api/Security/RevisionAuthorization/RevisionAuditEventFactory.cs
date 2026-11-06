@@ -73,6 +73,7 @@ public static class RevisionAuditEventFactory
         AccessDenialReason.AccountNotActive => "account_not_active",
         AccessDenialReason.UnknownAction => "unknown_action",
         AccessDenialReason.NoPolicy => "no_policy",
+        AccessDenialReason.PolicyDenied => "policy_denied",
         AccessDenialReason.PolicyError => "policy_error",
         _ => "policy_error"
     };

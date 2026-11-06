@@ -123,6 +123,10 @@ sesije i testne podatke u izolovanom Docker kontejneru. Provjerava i stvarni upi
 odbijenog pristupa, oba podesavanja politike, opoziv/istek i odbijanje drugog kursa.
 Namjerno nedostupna audit tabela dokazuje rollback, bez fake uspjeha writera.
 
+Ocekivano odbijanje politike se cuva kao `policy_denied`; greska pri provjeri
+politike ostaje `policy_error`. Oba koda su dozvoljena audit ugovorom. Postojeci
+test opozvane dozvole provjerava tacnu sacuvanu vrijednost i jedan denial dogadjaj.
+
 Promjene rjesavaju REV-05 autorizaciju i njenu audit integraciju. Nisu tvrdnja da su
 zavrseni lockout, oporavak lozinke, administrativni interfejs za dodjelu prava ili
 ostali zadaci drugih clanova. Za te operacije postoje navedeni javni ugovori.

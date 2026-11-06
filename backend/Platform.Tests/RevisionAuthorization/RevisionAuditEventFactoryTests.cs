@@ -49,6 +49,18 @@ public sealed class RevisionAuditEventFactoryTests
         Assert.That(result, Is.Null);
     }
 
+    [TestCase(AccessDenialReason.PolicyDenied, "policy_denied")]
+    [TestCase(AccessDenialReason.PolicyError, "policy_error")]
+    public void PolicyDenialAndEvaluationError_KeepDistinctReasonCodes(AccessDenialReason reason, string expected)
+    {
+        var request = CreateRequest(RevisionActions.Read);
+        var draft = RevisionAuditEventFactory.CreateDeniedEvent(request,
+            AccessDecision.Deny(reason, request.CorrelationId));
+
+        Assert.That(draft, Is.Not.Null);
+        Assert.That(draft!.Details!["denialReason"], Is.EqualTo(expected));
+    }
+
     [Test]
     public void UnknownAction_DoesNotCreateRevisionAuditEvent()
     {

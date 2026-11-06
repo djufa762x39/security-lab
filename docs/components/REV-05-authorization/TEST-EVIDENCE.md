@@ -1,8 +1,9 @@
 # REV-05: testovi i dokaz po formatu 8.1
 
 Datum: 2026-11-06, Europe/Sarajevo.
-Verzija: codex/rev05-completion, osnova 6e310e9 i izmjene identifikovane u
-SOURCE-SHA256.txt (SHA-256 UTF-8 izvornog koda sa LF zavrsecima redova).
+Verzija pune kampanje ispod: commit 83dbd3e. Naknadna audit dopuna je zasebno
+evidentirana na kraju dokumenta. SOURCE-SHA256.txt identifikuje trenutno stanje
+izvornog koda (osnova 6e310e9; SHA-256 UTF-8 koda sa LF zavrsecima redova).
 Ovo su lokalni rezultati; nisu tvrdnja o novom GitHub CI izvrsavanju.
 
 ## Izvrsavanje
@@ -93,3 +94,29 @@ Ovi testovi dokazuju REV-05 tok i njegovu integraciju. Ne proglasavaju zavrsenim
 ostale vlasnicke zadatke poput Identity lockout implementacije ili upravljackog
 interfejsa za dodjelu prava. Za instalaciju su obavezne dokumentovane migracije i
 eksplicitna dodjela minimalnih prava; u produkciji se ne registruju testni adapteri.
+
+## Dopuna pregleda: policy_denied (2026-11-06)
+
+Ocekivano odbijanje (`PolicyDenied`) sada se mapira u `policy_denied`, dok
+`PolicyError` ostaje `policy_error`. Audit validator prihvata oba koda. Dopuna
+ne mijenja odluke o pristupu, javne HTTP statuse, schemu baze ili stare audit zapise.
+
+Postojeci RevokedCourseGrant_DeniesNextHttpRead_AndPersistsDenial sada cita
+details.denialReason iz stvarne baze i zahtijeva `policy_denied`, uz isti potvrdjeni
+akter i serversku korelaciju. Provjera da je dogadjaj jedinstven ostaje ukljucena.
+Prije ispravke test je pao sa stvarnom vrijednoscu `policy_error`; poslije prolazi.
+Prvi pokusaj pokretanja bio je blokiran nepokrenutim Docker-om; nakon pokretanja
+Docker-a potvrden je opisani pad na pogresnoj vrijednosti.
+
+Zasebna provjera ove dopune (ne pribraja se prethodnoj punoj kampanji):
+
+| Provjera | Proslo | Palo | Preskoceno |
+|---|---:|---:|---:|
+| RevisionAuthorization | 83 | 0 | 0 |
+| AuditDraftValidatorTests i AuditEventCatalogTests | 72 | 0 | 0 |
+| Postojeci PostgreSQL/HTTP test opozvane dozvole | 1 | 0 | 0 |
+
+Rezultati: TestResults/policy-denied-review/revision-authorization-after.trx,
+audit-contract-after.trx i policy-denied-after.trx. Regresioni padovi su u
+reason-mapping-before.trx i policy-denied-before.trx. Naknadna puna kampanja nije
+ponavljana; ova promjena je provjerena navedenim ciljanim testovima.

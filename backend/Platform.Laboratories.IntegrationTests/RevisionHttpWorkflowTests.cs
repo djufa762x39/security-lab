@@ -183,9 +183,12 @@ public sealed class RevisionHttpWorkflowTests
         var correlation = denied.Headers.GetValues("X-Correlation-ID").Single();
         await using var connection = new NpgsqlConnection(database.GetConnectionString());
         await connection.OpenAsync();
-        await using var sql = new NpgsqlCommand("SELECT count(*) FROM audit.audit_events WHERE event_type = 'access.denied' AND actor_id = @actor AND correlation_id = @correlation", connection);
+        await using var sql = new NpgsqlCommand("SELECT details->>'denialReason' FROM audit.audit_events WHERE event_type = 'access.denied' AND actor_id = @actor AND correlation_id = @correlation", connection);
         sql.Parameters.AddWithValue("actor", reviewer); sql.Parameters.AddWithValue("correlation", correlation);
-        Assert.That(Convert.ToInt32(await sql.ExecuteScalarAsync()), Is.EqualTo(1));
+        await using var audit = await sql.ExecuteReaderAsync();
+        Assert.That(await audit.ReadAsync(), Is.True, "The denial must be persisted.");
+        Assert.That(audit.GetString(0), Is.EqualTo("policy_denied"));
+        Assert.That(await audit.ReadAsync(), Is.False, "The decision must produce exactly one denial event.");
     }
 
     [Test]

@@ -12,7 +12,7 @@ internal static partial class AuditDetailFormats
     private static readonly string[] AccountStatuses = ["active", "blocked", "archived"];
     private static readonly string[] CourseRoles = ["none", "student", "teacher", "assistant"];
     private static readonly string[] AccessDenialReasons =
-        ["unauthenticated", "account_not_active", "unknown_action", "no_policy", "policy_error"];
+        ["unauthenticated", "account_not_active", "unknown_action", "no_policy", "policy_denied", "policy_error"];
     private static readonly string[] OutcomeNames = ["success", "denied", "failure"];
 
     [GeneratedRegex(@"^[a-z][a-z0-9_]{0,31}$", RegexOptions.CultureInvariant)]
