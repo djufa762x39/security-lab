@@ -1,0 +1,71 @@
+﻿using NUnit.Framework;
+using Platform.Authoring.Domain;
+
+namespace Platform.Authoring.Tests.Domain;
+
+[TestFixture]
+public class LabContentStepTests
+{
+    [Test]
+    public void Create_with_valid_steps_succeeds()
+    {
+        var steps = new[]
+        {
+            LabStep.Create(1, "Step One", "Do this first."),
+            LabStep.Create(2, "Step Two", "Do this second.")
+        };
+
+        var content = LabContent.Create("Lab", "Goal", LabType.AccessControl, steps);
+
+        Assert.That(content.Steps.Count, Is.EqualTo(2));
+        Assert.That(content.Steps[0].SequenceOrder, Is.EqualTo(1));
+        Assert.That(content.Steps[1].SequenceOrder, Is.EqualTo(2));
+        Assert.That(content.Steps[0].Title, Is.EqualTo("Step One"));
+    }
+
+    [Test]
+    public void Steps_with_gapped_sequence_are_rejected()
+    {
+        var steps = new[]
+        {
+            LabStep.Create(1, "Step One", "Instruction"),
+            LabStep.Create(3, "Step Three", "Instruction") // Missing 2
+        };
+
+        var ex = Assert.Throws<DomainRuleException>(() =>
+        {
+            LabContent.Create("Lab", "Goal", LabType.AccessControl, steps);
+        });
+
+        Assert.That(ex.Code, Is.EqualTo(AuthoringErrorCodes.InvalidStepSequence));
+    }
+
+    [Test]
+    public void Steps_with_duplicate_sequence_are_rejected()
+    {
+        var steps = new[]
+        {
+            LabStep.Create(1, "Step One", "Instruction"),
+            LabStep.Create(1, "Step Duplicate", "Instruction") // Duplicate 1
+        };
+
+        var ex = Assert.Throws<DomainRuleException>(() =>
+        {
+            LabContent.Create("Lab", "Goal", LabType.AccessControl, steps);
+        });
+
+        Assert.That(ex.Code, Is.EqualTo(AuthoringErrorCodes.InvalidStepSequence));
+    }
+
+    [TestCase(0)]
+    [TestCase(-1)]
+    public void Step_sequence_must_start_from_positive_integer(int invalidOrder)
+    {
+        var ex = Assert.Throws<DomainRuleException>(() =>
+        {
+            LabStep.Create(invalidOrder, "Title", "Instruction");
+        });
+
+        Assert.That(ex.Code, Is.EqualTo(AuthoringErrorCodes.InvalidStepSequence));
+    }
+}
