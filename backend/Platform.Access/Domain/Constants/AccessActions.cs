@@ -23,7 +23,8 @@ public static class AccessActions
                 "account.status.change",
                 "system.config.manage",
                 "results.sensitive.read",
-                "evaluation.task.process"
+                "evaluation.task.process",
+                "audit.events.read"
             ],
             StringComparer.Ordinal);
 
@@ -44,7 +45,8 @@ public static class AccessActions
         AccountStatusChange,
         SystemConfigManage,
         ResultsSensitiveRead,
-        EvaluationTaskProcess
+        EvaluationTaskProcess,
+        AuditEventsRead
     ];
 
     public static ActionDefinition PublicInfoRead { get; } =
@@ -94,4 +96,7 @@ public static class AccessActions
 
     public static ActionDefinition EvaluationTaskProcess { get; } =
         new("evaluation.task.process", ActionScope.System, null, false);
+
+    public static ActionDefinition AuditEventsRead { get; } =
+        new("audit.events.read", ActionScope.Course, "course", false);
 }

@@ -32,6 +32,11 @@ using PlatformAccessDecision = Platform.Access.Contracts.IAccessDecision;
 using LabVisibilityCourseRole = Platform.LabVisibility.Contracts.CourseRole;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseDefaultServiceProvider(options =>
+{
+    options.ValidateScopes = true;
+    options.ValidateOnBuild = true;
+});
 
 if (builder.Environment.IsDevelopment())
 {
