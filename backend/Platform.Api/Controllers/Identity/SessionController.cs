@@ -25,4 +25,23 @@ public class SessionController(IIdentityContext identity, ISessionManager sessio
 
         return Ok(sessions);
     }
+
+    [HttpDelete("{handle:guid}")]
+    public async Task<IActionResult> RevokeSession(Guid handle, CancellationToken ct)
+    {
+        var caller = _identity.Current;
+
+        if (caller == null || !caller.IsAuthenticated || caller.UserId == null)
+            return Unauthorized(new { code = "unauthenticated" });
+
+        var revoked = await _sessionManager.RevokeSession(caller.UserId.Value, handle, ct);
+
+        Response.Headers.CacheControl = "no-store";
+
+        // Use the same response for unknown and foreign handles to avoid disclosing ownership.
+        if (!revoked)
+            return NotFound(new { code = "session_not_found" });
+
+        return NoContent();
+    }
 }
