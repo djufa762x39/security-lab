@@ -8,7 +8,7 @@ export type Person = { id: string; displayName: string }
 
 export type RevisionSummary = {
   id: string
-  labId: string
+  labId: string | null
   labTitle: string
   courseId: string
   courseName: string
@@ -16,7 +16,7 @@ export type RevisionSummary = {
   revisionNumber: number | null
   author: Person
   submittedAt: string | null
-  updatedAt: string
+  updatedAt: string | null
 }
 
 export type Decision = {
@@ -30,6 +30,12 @@ export type Decision = {
 }
 
 export type RevisionDetail = RevisionSummary & {
+  preview?: {
+    type: string | null
+    goal: string | null
+    events: ({ id: string | null; timestamp: string | null; message: string | null } | null)[] | null
+    question: string | null
+  } | null
   contentHash: string
   rowVersion: string
   policy: { requiresSeparateApprover: boolean }

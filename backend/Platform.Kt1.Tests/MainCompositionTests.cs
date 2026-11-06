@@ -6,7 +6,6 @@ using Microsoft.Extensions.Options;
 using NUnit.Framework;
 using Platform.Api.Modules.Kt1;
 using MainAccountRepository = Platform.Api.Interfaces.Identity.IAccountRepository;
-using MainAccountStatus = Platform.Identity.Enums.AccountStatus;
 
 namespace Platform.Kt1.Tests;
 
@@ -30,11 +29,12 @@ public class MainCompositionTests
         Assert.That((await client.PutAsJsonAsync(path, new { status = "BLOCKED", reason = "Integration check" })).StatusCode,
             Is.EqualTo(HttpStatusCode.Unauthorized));
         Assert.That(repository.Find(MainTarget)!.Status, Is.EqualTo(initialStatus));
-        // Keep main's explicitly configured Development stub and controller functional.
+        // IDN-02 replaced the Development X-Stub-User identity stub with the server-side session:
+        // the header alone no longer authenticates the identity-module administrator.
         client.DefaultRequestHeaders.Add("X-Stub-User", MainAdmin.ToString());
         Assert.That((await client.PutAsJsonAsync(path, new { status = "BLOCKED", reason = "Integration check" })).StatusCode,
-            Is.EqualTo(HttpStatusCode.OK));
-        Assert.That(repository.Find(MainTarget)!.Status, Is.EqualTo(MainAccountStatus.Blocked));
+            Is.EqualTo(HttpStatusCode.Unauthorized));
+        Assert.That(repository.Find(MainTarget)!.Status, Is.EqualTo(initialStatus));
         Assert.That(factory.Services.GetRequiredService<DemoStore>().FindAccount(DemoStore.Ana).Value!.IsActive, Is.True);
     }
 
