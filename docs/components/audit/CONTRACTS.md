@@ -168,7 +168,6 @@ with `EventIdConflict` and never replaces the stored record.
 | `auth.logout` | Identity (IDN-02) | Success | `User` | forbidden | none | none |
 | `auth.login.throttled` | Identity (IDN-05) | Denied | `Anonymous` | forbidden | none | none |
 | `account.status.changed` | Identity (IDN-03), Admin (ADM-01) | Success, Denied, Failure | `User` or `Anonymous` (Denied, not logged in) | forbidden | `Account` (required) | `oldStatus`, `newStatus`, `reasonCode` |
-| `account.lockout.cleared` | Identity (IDN-05), administrator unlock | Success, Denied, Failure | `User` or `Anonymous` (Denied, not logged in) | forbidden | `Account` (required) | `reasonCode` |
 | `course.member.role.changed` | Memberships (ACC-03) | Success, Denied, Failure | `User` or `Anonymous` (Denied) | required | `Account` (required) | `oldRole`, `newRole`, `reasonCode` |
 | `course.delegation.granted` | Memberships (ACC-07) | Success, Denied, Failure | `User` or `Anonymous` (Denied) | required | `Account` (required) | `action`, `delegationId`, `reasonCode` |
 | `course.delegation.revoked` | Memberships (ACC-07) | Success, Denied, Failure | `User` or `Anonymous` (Denied) | required | `Account` (required) | `action`, `delegationId`, `reasonCode` |
