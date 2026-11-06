@@ -174,6 +174,11 @@ if (app.Environment.IsDevelopment())
     var membership = app.Services.GetRequiredService<InMemoryCourseMembership>();
     membership.Set(demoCourse, Guid.Parse("11111111-1111-1111-1111-111111111111"), LabVisibilityCourseRole.Teacher);
     membership.Set(demoCourse, Guid.Parse("22222222-2222-2222-2222-222222222222"), LabVisibilityCourseRole.Student);
+
+    // LAB-03 drugi demo kurs: 3333 je student samo ovde, ne na prvom kursu.
+    // Primer: X-Test-User: 11111111-1111-1111-1111-111111111111:Teacher pravi laboratoriju na prvom kursu.
+    var secondDemoCourse = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    membership.Set(secondDemoCourse, Guid.Parse("33333333-3333-3333-3333-333333333333"), LabVisibilityCourseRole.Student);
 }
 
 // Health endpoint
