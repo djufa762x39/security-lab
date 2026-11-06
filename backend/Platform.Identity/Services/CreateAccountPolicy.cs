@@ -13,6 +13,12 @@ public sealed class CreateAccountPolicy(IConfiguration configuration) : IAccessP
 
     public ValueTask<bool> EvaluateAsync(
         AccessRequest request,
-        CancellationToken cancellationToken = default) =>
-        ValueTask.FromResult(AdminAccounts.IsAdministrator(configuration, request.Subject));
+        CancellationToken cancellationToken = default)
+    {
+        var admins = configuration.GetSection("Identity:AdminAccountIds").Get<string[]>() ?? [];
+        var allowed = request.Subject is not null
+            && admins.Contains(request.Subject.Id, StringComparer.Ordinal);
+
+        return ValueTask.FromResult(allowed);
+    }
 }

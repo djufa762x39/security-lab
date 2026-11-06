@@ -240,47 +240,6 @@ public sealed class AccountLockoutTests
         Assert.That(_hasher.Verifications, Is.EqualTo(1));
     }
 
-    [Test]
-    public async Task Unlock_clears_lockout_and_counter_so_the_correct_password_works()
-    {
-        var (id, email) = await CreateAccountAsync();
-        await FailAsync(email, MaxAttempts);
-
-        var outcome = await UnlockAsync(id);
-
-        Assert.That(outcome, Is.EqualTo(UnlockOutcome.Unlocked));
-        var account = await FindAsync(id);
-        Assert.That(account.LockoutEnd, Is.Null);
-        Assert.That(account.FailedLoginCount, Is.EqualTo(0));
-        Assert.That((await VerifyAsync(email, Password)).IsValid, Is.True);
-    }
-
-    [Test]
-    public async Task Unlock_of_an_account_that_is_not_locked_resets_the_counter_and_says_so()
-    {
-        var (id, email) = await CreateAccountAsync();
-        await VerifyAsync(email, WrongPassword);
-
-        Assert.That(await UnlockAsync(id), Is.EqualTo(UnlockOutcome.NotLocked));
-        Assert.That((await FindAsync(id)).FailedLoginCount, Is.EqualTo(0));
-    }
-
-    [Test]
-    public async Task Unlock_of_an_expired_lockout_is_not_locked()
-    {
-        var (id, email) = await CreateAccountAsync();
-        await FailAsync(email, MaxAttempts);
-        _clock.Advance(TimeSpan.FromMinutes(LockoutMinutes).Add(TimeSpan.FromSeconds(1)));
-
-        Assert.That(await UnlockAsync(id), Is.EqualTo(UnlockOutcome.NotLocked));
-    }
-
-    [Test]
-    public async Task Unlock_of_an_unknown_account_is_not_found()
-    {
-        Assert.That(await UnlockAsync(Guid.NewGuid()), Is.EqualTo(UnlockOutcome.NotFound));
-    }
-
     private static string NewEmail() => $"lockout-{Guid.NewGuid():N}@example.com";
 
     private async Task<(Guid Id, string Email)> CreateAccountAsync()
@@ -309,12 +268,6 @@ public sealed class AccountLockoutTests
     {
         using var scope = _provider.CreateScope();
         return await scope.ServiceProvider.GetRequiredService<ICredentialVerifier>().VerifyAsync(email, password);
-    }
-
-    private async Task<UnlockOutcome> UnlockAsync(Guid id)
-    {
-        using var scope = _provider.CreateScope();
-        return await scope.ServiceProvider.GetRequiredService<IAccountLockoutAdministration>().UnlockAsync(id);
     }
 
     private async Task<UserAccount> FindAsync(Guid id)

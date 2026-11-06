@@ -12,7 +12,6 @@ public static class AuditEventTypes
     public const string AuthLogout = "auth.logout";
     public const string AuthLoginThrottled = "auth.login.throttled";
     public const string AccountStatusChanged = "account.status.changed";
-    public const string AccountLockoutCleared = "account.lockout.cleared";
     public const string CourseMemberRoleChanged = "course.member.role.changed";
     public const string CourseDelegationGranted = "course.delegation.granted";
     public const string CourseDelegationRevoked = "course.delegation.revoked";

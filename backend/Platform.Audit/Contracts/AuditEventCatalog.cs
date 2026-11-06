@@ -69,14 +69,6 @@ public static class AuditEventCatalog
                 ("reasonCode", ReasonCode))),
 
         new AuditEventSchema(
-            AuditEventTypes.AccountLockoutCleared,
-            PrivilegedChange,
-            AuditPresence.Forbidden,
-            AuditPresence.Required,
-            AuditResourceTypes.Account,
-            Fields(("reasonCode", ReasonCode))),
-
-        new AuditEventSchema(
             AuditEventTypes.CourseMemberRoleChanged,
             PrivilegedChange,
             AuditPresence.Required,

@@ -11,15 +11,11 @@ public static class IdentityAccessRegistration
     public static IServiceProvider RegisterIdentityAccess(this IServiceProvider services)
     {
         var configuration = services.GetRequiredService<IConfiguration>();
-        var catalog = services.GetRequiredService<InMemoryActionCatalog>();
-        var policies = services.GetRequiredService<InMemoryAccessPolicyRegistry>();
 
-        catalog.Register(CreateAccountPolicy.ActionId);
-        policies.Register(CreateAccountPolicy.ActionId, new CreateAccountPolicy(configuration));
-
-        // IDN-05: administratorsko otključavanje naloga
-        catalog.Register(UnlockAccountPolicy.ActionId);
-        policies.Register(UnlockAccountPolicy.ActionId, new UnlockAccountPolicy(configuration));
+        services.GetRequiredService<InMemoryActionCatalog>()
+            .Register(CreateAccountPolicy.ActionId);
+        services.GetRequiredService<InMemoryAccessPolicyRegistry>()
+            .Register(CreateAccountPolicy.ActionId, new CreateAccountPolicy(configuration));
 
         return services;
     }

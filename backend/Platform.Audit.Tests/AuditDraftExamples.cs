@@ -41,10 +41,6 @@ internal static class AuditDraftExamples
         yield return (StatusChange(), UserContext);
 
         yield return (
-            new AuditEventDraft(AuditEventTypes.AccountLockoutCleared, AuditOutcome.Success, Resource: TargetAccount),
-            UserContext);
-
-        yield return (
             new AuditEventDraft(
                 AuditEventTypes.CourseMemberRoleChanged,
                 AuditOutcome.Success,
