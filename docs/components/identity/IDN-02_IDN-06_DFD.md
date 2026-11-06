@@ -55,7 +55,7 @@ flowchart LR
   E1 <-->|"F5 logout request / 204, cookie cleared"| P4
   E1 -.-|"F14 QR scan and typed code, out-of-band"| E2
 
-  P1 <-->|"F6 verify password, read status"| D1
+  P1 <-->|"F6 reserve attempt atomically, read hash and status, write failed_login_count and lockout_end, reset on success - no password sent, hash stays in P1"| D1
   P2 <-->|"F7 read TOTP secret, attempts, last used step"| D1
   P5 <-->|"F8 read MFA state, write TOTP secret"| D1
 
@@ -116,7 +116,7 @@ Process numbers follow the team work plan (P5 is listed after P2 only for layout
 
 | ID | Store | Content | Status |
 |-|-|-|-|
-| D1 | `identity.accounts` (`PlatformIdentityDbContext`, entity `UserAccount`) | `id`, `email` (unique, lower-case), `status` (`Active`, `Blocked`, `Archived`), `role` (`Student`, `Teacher`, `Administrator`), `password_hash` (BCrypt, nullable), `failed_login_count`, `lockout_end` (IDN-05). MFA columns planned (names pending US-12) | implemented. Read by login (`EfCredentialStore`), written by the seeder (P6) and by the lockout (IDN-05). Migrations `InitialIdentity`, `AddAccountPasswordHash`, `AddAccountRole`, `AddAccountLockout` |
+| D1 | `identity.accounts` (`PlatformIdentityDbContext`, entity `UserAccount`) | `id`, `email` (unique, lower-case), `status` (`Active`, `Blocked`, `Archived`), `role` (`Student`, `Teacher`, `Administrator`), `password_hash` (BCrypt, nullable), `failed_login_count`, `lockout_end` (IDN-05). MFA columns planned (names pending US-12) | implemented. Read and written by login (F6, `EfCredentialStore`, the writes touch only `failed_login_count` and `lockout_end`), written by the seeder (P6). Migrations `InitialIdentity`, `AddAccountPasswordHash`, `AddAccountRole`, `AddAccountLockout` |
 | D2 | `identity.sessions` (entity `Session`) | `id`, `user_id` (FK to D1, cascade), `token_hash` (SHA-256, unique, never the token), `session_handle` (public, unique), `auth_level` (`MfaPending` or `Active`), `created_at`, `expires_at`, `last_activity_at`, `revoked_at` (concurrency token) | implemented (migration `AddSessions`), accessed through `ISessionStore` and `SessionManager` |
 | D3 | Audit log | actor, action, target, time, outcome, correlation ID, detail | `LoggerAuditWriter` writes to the application log. A real store is owned by the AUD team |
 | D4 | `InMemoryAccountRepository` | `UserAccount` objects for IDN-03, seeded at startup in Development (admin, student, other) | temporary, lost on restart, **not the same data as D1** |
@@ -131,7 +131,7 @@ Process numbers follow the team work plan (P5 is listed after P2 only for layout
 | F3 | E1 <-> P5 | Enroll request. `otpauth://` URI shown once. Confirmation code | `POST /api/auth/mfa/enroll`, `.../enroll/confirm` (proposed) | none | planned |
 | F4 | E1 <-> P3 | Cookie on every request. `401` without reason, or the normal response. Endpoints with `[AllowAnonymous]` skip the check. No CSRF token yet (US-15), `SameSite=Strict` is the only layer | any protected endpoint, e.g. `GET /api/auth/me`, `PUT /api/admin/accounts/{id}/status`, `POST /api/admin/accounts` | none | implemented |
 | F5 | E1 <-> P4 | Logout request with the cookie. `204` and the cleared cookie. Always the same answer | `POST /api/auth/logout` (`[AllowAnonymous]`) | none | implemented |
-| F6 | P1 <-> D1 | E-mail normalized, hash checked with BCrypt (also for unknown e-mails, dummy hash), status read. Only `Active` continues | `ICredentialVerifier`, `ICredentialStore` (`EfCredentialStore`), `IPasswordHasher` | `identity.accounts` | implemented for password and status, MFA state planned |
+| F6 | P1 <-> D1 | E-mail normalized. In order: (1) `ReserveAttemptAsync` charges the attempt in one atomic `UPDATE` before the hash check, and an attempt that finds the limit already charged writes `lockout_end` and restarts `failed_login_count`. (2) `FindByEmailAsync` reads id, status, `password_hash`, `failed_login_count` and `lockout_end`. (3) The hash is checked with BCrypt inside P1 (also for unknown e-mails and locked accounts, dummy hash when there is none). (4) A correct password on an unlocked account calls `TryClearFailuresAsync`, one atomic `UPDATE` that resets `failed_login_count`, clears `lockout_end` and refuses the login if the account locked during the hash. (5) Every other attempt calls `LockIfLimitReachedAsync`, which writes `lockout_end` and restarts the counter at the limit, then reads `lockout_end` back. Locked accounts and unknown e-mails change no row. The reset in (4) also runs for blocked and archived accounts, but `LoginService` lets only `Active` continue, so it gives no access (accepted by the IDN-02 owner). No secrets leave: only the normalized e-mail, the account id and the counter and lockout values go to D1, the password never does, and the hash is read but never written, returned or logged. The counter and `lockout_end` are never returned to E1, a locked account gets the same `401` as in F1 | `ICredentialVerifier`, `ICredentialStore` (`EfCredentialStore`: `ReserveAttemptAsync`, `FindByEmailAsync`, `TryClearFailuresAsync`, `LockIfLimitReachedAsync`), `IPasswordHasher` | `identity.accounts` | implemented for password, status and lockout, MFA state planned |
 | F7 | P2 <-> D1 | TOTP secret read, attempt counter and last used step read and updated | MFA service | `identity.accounts` (MFA columns) | planned |
 | F8 | P5 <-> D1 | MFA state read, TOTP secret written after confirmation. Existing secret never overwritten | MFA service | `identity.accounts` (MFA columns) | planned |
 | F9 | P1 -> D2 | New session with a fresh random token and handle (session fixation protection), 8 hours lifetime, level always `Active` until MFA exists | `ISessionCreator` -> `StoreSessionCreator` -> `ISessionStore.CreateAsync` | `identity.sessions` | implemented |
@@ -163,7 +163,9 @@ The phone (E2) is outside all boundaries. The TOTP secret would leave the server
 | Scenario | Flow | Expected result |
 |-|-|-|
 | Wrong password, unknown account, account without password | F1 | Same `401 invalid_credentials`, no session, audit event `failure` |
-| Blocked or archived account in `identity.accounts` | F1 | Same `401`, no session, audit event `denied` with the real reason |
+| Blocked or archived account in `identity.accounts` | F1, F6 | Same `401`, no session, audit event `denied` with the real reason. A correct password still resets the counter in F6, which gives no access |
+| Locked account, also with the correct password | F1, F6 | Same `401`, no session, audit event `failure` with detail `account locked`. The attempt changes no row, so it does not extend the lockout |
+| Parallel attempts on one account | F6 | Each attempt is charged by one atomic `UPDATE`, so a burst cannot exceed the limit. A correct password that finishes after the lock is refused by `TryClearFailuresAsync` |
 | Empty or too long e-mail or password | F1 | `400 invalid_request`, no database read |
 | Session cannot be stored (database error) | F1, F9 | `503 login_unavailable`, no cookie (fails closed) |
 | Old cookie after logout, expired, revoked or unknown token, no cookie | F4 | `401` without the reason (IDN-02 criterion) |
@@ -184,7 +186,8 @@ The phone (E2) is outside all boundaries. The TOTP secret would leave the server
 | Password | F1 only | HTTPS only, BCrypt check (work factor 12, SHA-384 pre-hash), never logged or stored in plain text. Seed password only in `.env` or user-secrets (F17) |
 | Session token | cookie, F1, F4, F5 | Generated with a cryptographically secure generator. Only its SHA-256 hash is stored in D2. Never in a response body, `IIdentityContext` or logs |
 | `SessionHandle` | F12, F15, F16 | Public identifier, not a secret, safe to list and to put in the `auth.logout` audit event |
-| Password hash | D1, F6 | Read only inside `CredentialVerifier`, never returned, never logged |
+| Password hash | D1, F6 | Read only inside `CredentialVerifier`, never written by login, never returned, never logged |
+| `failed_login_count`, `lockout_end` | D1, F6 | Not secret, but they reveal account state. Never returned to E1 and never put in an audit event, which carries only the account id and the detail `account locked` |
 | TOTP secret | F3 once, D1 | Planned: shown once at enrollment, stored protected (US-22), never logged or returned again |
 | TOTP code | F2, F3 | Planned: never logged. Replay and guessing limited |
 | CSRF token | F4 | Planned (US-15) |
