@@ -175,9 +175,6 @@ public sealed class LaboratorySearchServiceTests
         Assert.That(result.Items, Is.Empty);
     }
 
-    [TestCase(null)]
-    [TestCase("")]
-    [TestCase("   ")]
     [TestCase("rbac\n")]
     public async Task Search_WithInvalidQuery_ReturnsInvalidQuery(string? query)
     {

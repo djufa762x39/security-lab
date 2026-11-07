@@ -195,14 +195,11 @@ public sealed class LaboratorySearchHttpTests
         Assert.That(result.Items, Has.Count.EqualTo(expected));
     }
 
-    [TestCase("")]
-    [TestCase("?q=")]
-    [TestCase("?q=%20%20%20")]
     [TestCase("?q=rbac%0Aadmin")]
     [TestCase("?q=%00")]
     [TestCase("?q=a&q=b")]
     [TestCase("?query=rbac")]
-    public async Task Search_WithMissingBlankOrInvalidQuery_Returns400WithoutInternalDetails(string queryString)
+    public async Task Search_WithInvalidQuery_Returns400WithoutInternalDetails(string queryString)
     {
         using var factory = new SearchHostFactory("Development");
         using var client = factory.CreateClient();
@@ -300,7 +297,7 @@ public sealed class LaboratorySearchHttpTests
     }
 
     [TestCase("?q=rbac", HttpStatusCode.OK)]
-    [TestCase("?q=", HttpStatusCode.BadRequest)]
+    [TestCase("?q=", HttpStatusCode.OK)]
     public async Task Search_ResponseIsNeverCached(string queryString, HttpStatusCode expectedStatus)
     {
         using var factory = new SearchHostFactory("Development");

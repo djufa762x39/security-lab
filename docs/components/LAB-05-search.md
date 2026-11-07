@@ -1,4 +1,4 @@
-# Komponenta projekta: LAB-05, pretraga laboratorija po nazivu
+# Komponenta projekta: LAB-05, pretraga i filtriranje laboratorija
 
 **Tim:** 19
 
@@ -21,7 +21,8 @@ Zajednički zahtevi koje deo pokriva: SEC-01 (serverska autorizacija, nema IDOR-
   - Poređenje ne razlikuje velika i mala slova, kvačice (`sifr` nalazi „Šifrovanje”, `kljuc` nalazi „ključevi”, `đ` = `d`) ni višestruke razmake. Upit se traži kao podniz naziva (deo naziva), a ne kao šablon: `%`, `*` i `' OR '1'='1` su običan tekst.
   - Redosled: prvo nazivi koji počinju upitom, zatim abecedno; najviše 50 rezultata (`truncated: true` kad ih ima više).
   - Frontend: panel „Pretraga laboratorija” (oznaka LAB-05) u `LabsSection`, ispod forme za kreiranje i prikaza.
-- **Šta ovaj deo NE radi:** ne uvodi filtere po osobinama (tip, težina, oznake) i dodatne filtere; to su naredne priče iz LAB-05. Ne menja ko sme da vidi koju laboratoriju: koristi postojeće pravilo vidljivosti i postojeću politiku čitanja. Ne menja skladište (`ILaboratoryRepository`, `Platform.LaboratoryPersistence`) ni Identity/Access module drugih timova.
+- **Proširenje LAB-05:** kombinovanje postojeće težine, tipa i oznaka, uklanjanje pojedinačnih izbora i reset svih filtera opisani su u [LAB-05-filtering.md](LAB-05-filtering.md). Tekst naziva je sada opcion: prazan upit vraća dostupne laboratorije koje zadovoljavaju izabrane filtere, a bez filtera sve dostupne laboratorije, uz isti limit rezultata.
+- **Granica odgovornosti:** LAB-02 definiše i čuva osobine; LAB-05 ih samo čita preko postojećeg `ILaboratoryMetadataStore.GetAsync`. Ne menja model, enum vrednosti, validaciju, skladište ni migracije LAB-02, niti pravila Identity/Access modula. Raniji primeri i rezultati testova u ovom dokumentu opisuju prethodne faze pretrage po nazivu; aktuelni ugovor za opcioni naziv i filtere je u povezanom dokumentu.
 - **Ugovori sa drugim delovima:**
 
 | Veza | Svrha | Stanje |
@@ -238,6 +239,6 @@ Provera je izvršena 5. novembra 2026. nad lokalnim izmenama, .NET SDK 10.0.301 
 
 ## Sledeći koraci
 
-- Filtriranje po osobinama i dodatni filteri (naredne LAB-05 priče) mogu da prošire isti endpoint novim parametrima i isti servis, uz isto pravilo: prvo prava, pa poređenje.
+- Kombinovanje i uklanjanje postojećih filtera proširuje isti endpoint i servis; detalji su u [LAB-05-filtering.md](LAB-05-filtering.md). Novi kriterijumi i definisanje osobina nisu deo ovog proširenja.
 - Proširenje `LaboratoryVisibility` kad LAB-03/ACC obezbede kurs, članstvo i objavljene revizije (student tada vidi objavljene laboratorije svog kursa).
 - Dogovor sa timom za skladište oko pretrage u bazi i sa Identity timom oko rate limit politike za pretragu (SEC-04).

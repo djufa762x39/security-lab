@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { LABS_BASE_PATH, searchLabs, TEST_USER_HEADER } from '../../api/labs'
+import { getLabFilterOptions, LABS_BASE_PATH, searchLabs, TEST_USER_HEADER } from '../../api/labs'
 
 const teacher = { id: 'marko', role: 'Teacher' } as const
 
@@ -53,7 +53,7 @@ describe('LAB-05 searchLabs', () => {
     const outcome = await searchLabs('x', teacher)
 
     expect(outcome.kind).toBe('invalid')
-    expect(outcome.kind === 'invalid' && outcome.messages[0]).toContain('Unesite naziv ili deo naziva')
+    expect(outcome.kind === 'invalid' && outcome.messages[0]).toContain('Proverite naziv i izabrane filtere')
     expect(JSON.stringify(outcome)).not.toContain('internal detail')
   })
 
@@ -73,5 +73,44 @@ describe('LAB-05 searchLabs', () => {
     const outcome = await searchLabs('rbac', teacher)
     expect(outcome.kind === 'ok' && outcome.items.map(i => i.id)).toEqual([LAB.id])
     expect(outcome.kind === 'ok' && outcome.truncated).toBe(true)
+  })
+
+  it('šalje sve kriterijume odvojeno i bez dodavanja parametara kroz oznake', async () => {
+    const fetchMock = reply(200, { items: [], truncated: false })
+    vi.stubGlobal('fetch', fetchMock)
+    await searchLabs('', teacher, { difficulty: 'Easy', type: 'AccessControl', tags: ['security', 'x&type=LogAnalysis'] })
+
+    const params = new URL(fetchMock.mock.calls[0][0], 'http://localhost').searchParams
+    expect(params.getAll('q')).toEqual([''])
+    expect(params.getAll('difficulty')).toEqual(['Easy'])
+    expect(params.getAll('type')).toEqual(['AccessControl'])
+    expect(params.getAll('tag')).toEqual(['security', 'x&type=LogAnalysis'])
+    expect(fetchMock.mock.calls[0][1].cache).toBe('no-store')
+  })
+
+  it('učitava postojeće filtere sa servera bez keširanja', async () => {
+    const options = { difficulties: ['Easy'], types: ['AccessControl'], tags: ['security'], metadataAvailable: true }
+    const fetchMock = reply(200, options)
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(await getLabFilterOptions(teacher)).toEqual({ kind: 'ok', options })
+    expect(fetchMock.mock.calls[0][0]).toBe(`${LABS_BASE_PATH}/search/filters`)
+    expect(fetchMock.mock.calls[0][1].cache).toBe('no-store')
+    expect(fetchMock.mock.calls[0][1].headers[TEST_USER_HEADER]).toBe('marko:Teacher')
+  })
+
+  it.each([
+    { difficulties: ['Easy'], types: [], tags: [5], metadataAvailable: true },
+    { difficulties: 'Easy', types: [], tags: [], metadataAvailable: true },
+    { difficulties: [], types: [], tags: [], metadataAvailable: 'true' },
+    { difficulties: [], types: [], tags: [''], metadataAvailable: true },
+  ])('odbija neispravan oblik opcija filtera', async options => {
+    vi.stubGlobal('fetch', reply(200, options))
+    expect((await getLabFilterOptions(teacher)).kind).toBe('error')
+  })
+
+  it('nedostupni filteri imaju poseban ishod bez internih poruka', async () => {
+    vi.stubGlobal('fetch', reply(503, { code: 'FILTERS_UNAVAILABLE', message: 'connection-string-secret', traceId: 'request-5' }))
+    expect(await searchLabs('', teacher, { difficulty: 'Easy' })).toEqual({ kind: 'filtersUnavailable', requestId: 'request-5' })
   })
 })

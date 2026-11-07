@@ -1,23 +1,36 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import LabSearch from './LabSearch'
 
 const teacher = { id: 'marko', role: 'Teacher' } as const
 const student = { id: 'ana', role: 'Student' } as const
+const OPTIONS = { difficulties: ['Easy', 'Medium', 'Hard'], types: ['AccessControl', 'LogAnalysis'], tags: ['security', 'access'], metadataAvailable: true }
 
 function lab(id: string, title: string) {
   return { id, title, status: 'Draft', createdAt: '2026-11-04T10:00:00+00:00' }
 }
 
-function serverReturns(status: number, body: unknown) {
-  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status }))
+function json(status: number, body: unknown) {
+  return new Response(JSON.stringify(body), { status })
+}
+
+function serverReturns(status: number, body: unknown, options = OPTIONS) {
+  const fetchMock = vi.fn(async (url: string) => url.endsWith('/search/filters') ? json(200, options) : json(status, body))
   vi.stubGlobal('fetch', fetchMock)
   return fetchMock
 }
 
 function search(text: string) {
   fireEvent.change(screen.getByLabelText('Naziv ili deo naziva'), { target: { value: text } })
-  fireEvent.submit(screen.getByRole('button', { name: 'Pretraži' }))
+  fireEvent.submit(screen.getByRole('search'))
+}
+
+async function chooseFilters() {
+  await screen.findByRole('option', { name: 'Laka' })
+  fireEvent.change(screen.getByLabelText('Težina'), { target: { value: 'Easy' } })
+  fireEvent.change(screen.getByLabelText('Tip'), { target: { value: 'AccessControl' } })
+  fireEvent.click(screen.getByRole('checkbox', { name: 'security' }))
+  fireEvent.click(screen.getByRole('checkbox', { name: 'access' }))
 }
 
 afterEach(() => {
@@ -48,16 +61,15 @@ describe('LAB-05 pretraga laboratorija', () => {
     expect(screen.queryByRole('list')).toBeNull()
   })
 
-  it('prazan upit se ne šalje serveru', () => {
-    const fetchMock = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
+  it('prazan naziv prikazuje sve dostupne laboratorije', async () => {
+    const fetchMock = serverReturns(200, { items: [lab('id-all', 'Analiza logova')], truncated: false })
     render(<LabSearch user={teacher} />)
 
     search('   ')
 
-    expect(fetchMock).not.toHaveBeenCalled()
-    expect(screen.getByRole('alert').textContent).toContain('Unesite naziv')
-    expect(screen.getByLabelText('Naziv ili deo naziva').getAttribute('aria-invalid')).toBe('true')
+    expect(await screen.findByText('Analiza logova', { selector: '.labs-search-title' })).toBeTruthy()
+    const searchCall = fetchMock.mock.calls.find(([url]) => url.includes('/search?'))!
+    expect(new URL(searchCall[0], 'http://localhost').searchParams.get('q')).toBe('   ')
   })
 
   it('HTML u nazivu se prikazuje kao tekst, a ne kao element', async () => {
@@ -104,10 +116,165 @@ describe('LAB-05 pretraga laboratorija', () => {
   })
 
   it('pristupačnost: forma je označena kao pretraga, polje ima label i ograničenje dužine', () => {
+    serverReturns(200, { items: [], truncated: false })
     render(<LabSearch user={teacher} />)
     expect(screen.getByRole('search')).toBeTruthy()
     const input = screen.getByRole('searchbox', { name: 'Naziv ili deo naziva' })
     expect(input.getAttribute('aria-describedby')).toBe('labs-search-hint')
     expect(input.getAttribute('maxlength')).toBe('200')
+    expect(input.hasAttribute('required')).toBe(false)
+  })
+
+  it('kombinuje težinu, tip i više postojećih oznaka bez obaveznog naziva', async () => {
+    const fetchMock = serverReturns(200, { items: [lab('id-match', 'Dostupna vežba')], truncated: false })
+    render(<LabSearch user={teacher} />)
+    await chooseFilters()
+
+    fireEvent.submit(screen.getByRole('search'))
+
+    expect(await screen.findByText('Dostupna vežba')).toBeTruthy()
+    const params = new URL(fetchMock.mock.calls.find(([url]) => url.includes('/search?'))![0], 'http://localhost').searchParams
+    expect(params.get('q')).toBe('')
+    expect(params.get('difficulty')).toBe('Easy')
+    expect(params.get('type')).toBe('AccessControl')
+    expect(params.getAll('tag')).toEqual(['security', 'access'])
+    expect(screen.getByRole('button', { name: 'Ukloni oznaku: security' })).toBeTruthy()
+    expect(screen.queryByRole('textbox', { name: /oznaka/i })).toBeNull()
+  })
+
+  it.each([
+    ['Ukloni filter težine: Laka', null, 'AccessControl', ['security', 'access']],
+    ['Ukloni filter tipa: Kontrola pristupa', 'Easy', null, ['security', 'access']],
+    ['Ukloni oznaku: security', 'Easy', 'AccessControl', ['access']],
+  ] as const)('dugme %s odmah osvežava rezultate uz ostale filtere', async (button, difficulty, type, tags) => {
+    const fetchMock = serverReturns(200, { items: [lab('id-broader', 'Prošireni rezultat')], truncated: false })
+    render(<LabSearch user={teacher} />)
+    await chooseFilters()
+    fireEvent.change(screen.getByLabelText('Naziv ili deo naziva'), { target: { value: 'kontrola' } })
+
+    fireEvent.click(screen.getByRole('button', { name: button }))
+
+    expect(await screen.findByText('Prošireni rezultat')).toBeTruthy()
+    const params = new URL(fetchMock.mock.calls.find(([url]) => url.includes('/search?'))![0], 'http://localhost').searchParams
+    expect(params.get('q')).toBe('kontrola')
+    expect(params.get('difficulty')).toBe(difficulty)
+    expect(params.get('type')).toBe(type)
+    expect(params.getAll('tag')).toEqual(tags)
+    expect(screen.queryByRole('button', { name: button })).toBeNull()
+  })
+
+  it('resetuje sve filtere, zadržava naziv i prikazuje proširene rezultate', async () => {
+    const fetchMock = serverReturns(200, { items: [lab('id-1', 'RBAC početni')], truncated: false })
+    render(<LabSearch user={teacher} />)
+    await chooseFilters()
+    search('rbac')
+    await screen.findByText('RBAC početni')
+    fetchMock.mockImplementation(async (url: string) => url.endsWith('/search/filters') ? json(200, OPTIONS)
+      : json(200, { items: [lab('id-1', 'RBAC početni'), lab('id-2', 'RBAC napredni')], truncated: false }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resetuj sve filtere' }))
+
+    expect(await screen.findByText('RBAC napredni')).toBeTruthy()
+    const lastSearch = fetchMock.mock.calls.filter(([url]) => url.includes('/search?')).at(-1)!
+    expect(lastSearch[0]).toBe('/api/laboratories/search?q=rbac')
+    expect((screen.getByLabelText('Naziv ili deo naziva') as HTMLInputElement).value).toBe('rbac')
+    expect((screen.getByLabelText('Težina') as HTMLSelectElement).value).toBe('')
+    expect((screen.getByLabelText('Tip') as HTMLSelectElement).value).toBe('')
+    expect(screen.getAllByRole('checkbox').every(input => !(input as HTMLInputElement).checked)).toBe(true)
+    expect(screen.queryByRole('button', { name: /Ukloni/ })).toBeNull()
+  })
+
+  it('promena kriterijuma uklanja stare rezultate dok se ne primeni nova pretraga', async () => {
+    serverReturns(200, { items: [lab('id-old', 'Prethodna vežba')], truncated: false })
+    render(<LabSearch user={teacher} />)
+    search('vežba')
+    await screen.findByText('Prethodna vežba')
+    await screen.findByRole('option', { name: 'Laka' })
+
+    fireEvent.change(screen.getByLabelText('Težina'), { target: { value: 'Easy' } })
+
+    expect(screen.queryByText('Prethodna vežba')).toBeNull()
+  })
+
+  it('zakašnela pretraga ne prepisuje rezultat resetovanja', async () => {
+    let resolveOld!: (response: Response) => void
+    let searches = 0
+    vi.stubGlobal('fetch', vi.fn((url: string) => {
+      if (url.endsWith('/search/filters')) return Promise.resolve(json(200, OPTIONS))
+      searches += 1
+      return searches === 1 ? new Promise<Response>(resolve => { resolveOld = resolve })
+        : Promise.resolve(json(200, { items: [lab('id-new', 'Posle resetovanja')], truncated: false }))
+    }))
+    render(<LabSearch user={teacher} />)
+    await chooseFilters()
+    search('rbac')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resetuj sve filtere' }))
+    await screen.findByText('Posle resetovanja')
+    await act(async () => { resolveOld(json(200, { items: [lab('id-old', 'Zakašneli rezultat')], truncated: false })) })
+
+    expect(screen.queryByText('Zakašneli rezultat')).toBeNull()
+    expect(screen.getByText('Posle resetovanja')).toBeTruthy()
+  })
+
+  it('promena korisnika odmah briše stare oznake, izbore i zakašnjele odgovore', async () => {
+    let resolveOld!: (response: Response) => void
+    vi.stubGlobal('fetch', vi.fn((url: string, init: RequestInit) => {
+      const currentTeacher = (init.headers as Record<string, string>)['X-Test-User'] === 'marko:Teacher'
+      if (url.endsWith('/search/filters')) return Promise.resolve(json(200, currentTeacher ? OPTIONS : { ...OPTIONS, tags: ['student-tag'] }))
+      return new Promise<Response>(resolve => { resolveOld = resolve })
+    }))
+    const { rerender } = render(<LabSearch user={teacher} />)
+    await chooseFilters()
+    search('rbac')
+
+    rerender(<LabSearch user={student} />)
+
+    expect(screen.queryByRole('checkbox', { name: 'security' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Ukloni/ })).toBeNull()
+    expect((screen.getByLabelText('Naziv ili deo naziva') as HTMLInputElement).value).toBe('')
+    await screen.findByRole('checkbox', { name: 'student-tag' })
+    await act(async () => { resolveOld(json(200, { items: [lab('private', 'Markov privatni rezultat')], truncated: false })) })
+    expect(screen.queryByText('Markov privatni rezultat')).toBeNull()
+  })
+
+  it('nedostupni metapodaci onemogućuju filtere, ali pretraga po nazivu radi', async () => {
+    serverReturns(200, { items: [lab('id-1', 'Analiza logova')], truncated: false }, { ...OPTIONS, tags: [], metadataAvailable: false })
+    render(<LabSearch user={teacher} />)
+    await screen.findByText(/Filteri po osobinama trenutno nisu dostupni/)
+
+    expect(screen.getByRole('group', { name: 'Filteri po osobinama' }).hasAttribute('disabled')).toBe(true)
+    search('log')
+    expect(await screen.findByText('Analiza logova', { selector: '.labs-search-title' })).toBeTruthy()
+  })
+
+  it('neuspešno učitavanje filtera može da se ponovi', async () => {
+    let attempts = 0
+    vi.stubGlobal('fetch', vi.fn(async () => ++attempts === 1 ? json(503, {}) : json(200, OPTIONS)))
+    render(<LabSearch user={teacher} />)
+    await screen.findByText('Dostupni filteri nisu učitani.')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Učitaj filtere ponovo' }))
+
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'security' })).toBeTruthy())
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('isključivanje oznake ili izbor svih težina odmah proširuje pretragu', async () => {
+    const fetchMock = serverReturns(200, { items: [lab('id-1', 'Dostupna vežba')], truncated: false })
+    render(<LabSearch user={teacher} />)
+    await chooseFilters()
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'security' }))
+    await screen.findByText('Dostupna vežba')
+    fireEvent.change(screen.getByLabelText('Težina'), { target: { value: '' } })
+    await screen.findByText('Dostupna vežba')
+
+    const searches = fetchMock.mock.calls.filter(([url]) => url.includes('/search?'))
+    expect(searches).toHaveLength(2)
+    const params = new URL(searches.at(-1)![0], 'http://localhost').searchParams
+    expect(params.has('difficulty')).toBe(false)
+    expect(params.get('type')).toBe('AccessControl')
+    expect(params.getAll('tag')).toEqual(['access'])
   })
 })

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Primitives;
 using Platform.Api.Modules.Laboratories.Application;
 using Platform.Api.Modules.Laboratories.Domain;
+using Platform.LabMetadata;
 
 namespace Platform.Api.Modules.Laboratories.Api;
 
@@ -49,21 +50,41 @@ public static class LaboratoriesEndpoints
         {
             http.Response.Headers.CacheControl = "no-store";
 
-            StringValues query = http.Request.Query[SearchQueryParameter];
-            if (query.Count != 1)
+            IQueryCollection parameters = http.Request.Query;
+            StringValues query = parameters[SearchQueryParameter];
+            if (parameters.Keys.Any(key => key is not (SearchQueryParameter or "difficulty" or "type" or "tag"))
+                || query.Count > 1
+                || !TryReadEnum<LaboratoryDifficulty>(parameters["difficulty"], out var difficulty)
+                || !TryReadEnum<LaboratoryType>(parameters["type"], out var type))
             {
                 return InvalidQuery();
             }
 
-            LabSearchResult result = await service.SearchAsync(query[0], caller, http.RequestAborted);
+            var filters = new LabSearchFilters(difficulty, type,
+                parameters["tag"].Select(tag => tag ?? string.Empty).ToArray());
+            LabSearchResult result = await service.SearchAsync(
+                query.Count == 0 ? null : query[0], caller, http.RequestAborted, filters);
             return result.Status switch
             {
                 LabSearchStatus.Ok => Results.Ok(new LaboratorySearchResponse(
                     result.Items.Select(ToSearchItem).ToList(), result.Truncated)),
                 LabSearchStatus.InvalidQuery => InvalidQuery(),
                 LabSearchStatus.Unauthenticated => Results.Problem(statusCode: StatusCodes.Status401Unauthorized, title: "Unauthenticated"),
+                LabSearchStatus.FiltersUnavailable => Results.Json(
+                    new ApiErrorResponse(LabErrorCodes.FiltersUnavailable, "Laboratory filters are currently unavailable."),
+                    statusCode: StatusCodes.Status503ServiceUnavailable),
                 _ => Results.Problem(statusCode: StatusCodes.Status500InternalServerError, title: "Unexpected error"),
             };
+        }).RequireLabAccess(LabActions.Search);
+
+        group.MapGet("/search/filters", async (HttpContext http, [FromServices] LaboratorySearchService service, [FromServices] IIdentityContext caller) =>
+        {
+            http.Response.Headers.CacheControl = "no-store";
+            LabSearchFilterOptions options = await service.GetFilterOptionsAsync(caller, http.RequestAborted);
+            return options.Status == LabSearchStatus.Ok
+                ? Results.Ok(new LaboratorySearchFiltersResponse(
+                    options.Difficulties, options.Types, options.Tags, options.MetadataAvailable))
+                : Results.Problem(statusCode: StatusCodes.Status401Unauthorized, title: "Unauthenticated");
         }).RequireLabAccess(LabActions.Search);
 
         // POST /api/laboratories  ->  201 Created + Location + telo sa serverskim Id-em
@@ -133,7 +154,18 @@ public static class LaboratoriesEndpoints
     private static IResult InvalidQuery() =>
         Results.BadRequest(new ApiErrorResponse(
             LabErrorCodes.InvalidQuery,
-            $"Search text (q) is required, must not exceed {LabTitleSearch.MaxQueryLength} characters and must not contain control characters."));
+            $"Search text (q) must not exceed {LabTitleSearch.MaxQueryLength} characters or contain control characters; filter values must be valid."));
+
+    private static bool TryReadEnum<T>(StringValues values, out T? value) where T : struct, Enum
+    {
+        value = null;
+        if (values.Count == 0) return true;
+        if (values.Count != 1 || values[0] is not string text) return false;
+        text = text.Trim();
+        if (!Enum.GetNames<T>().Contains(text, StringComparer.OrdinalIgnoreCase)) return false;
+        value = Enum.Parse<T>(text, ignoreCase: true);
+        return true;
+    }
 
     // Telo se cita rucno (ne kroz automatsko vezivanje parametara) da bi:
     //  - provera prava (filter) bila pre parsiranja nepouzdanog unosa,
