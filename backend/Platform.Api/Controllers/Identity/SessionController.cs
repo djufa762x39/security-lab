@@ -1,9 +1,11 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Platform.Access.AspNet;
 using Platform.Api.Interfaces.Identity;
 using Platform.Api.Services.Identity;
 
 namespace Platform.Api.Controllers.Identity;
 
+[DelegatedAuthorization]
 [ApiController]
 [Route("api/auth/sessions")]
 public class SessionController(IIdentityContext identity, ISessionManager sessionManager) : ControllerBase
