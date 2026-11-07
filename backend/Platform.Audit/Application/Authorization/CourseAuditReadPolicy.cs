@@ -1,21 +1,15 @@
 using Platform.Access.Contracts;
 using Platform.Access.Domain.Enums;
 using Platform.Access.Domain.Models;
-using Platform.Audit.Contracts;
-using Platform.Identity.Contracts;
-using Platform.Identity.Domain.Enums;
 
 namespace Platform.Audit.Application.Authorization;
 
 /// <summary>
-/// S-08: course-scoped authorization for AUD-06. Tested through the existing Access
-/// contract; host registration waits for the Team 3 composition/lifetime agreement.
-/// The request subject must have been resolved by a trusted server adapter, not a body/header.
+/// S-08: singleton-safe policy registered through the public Access composition hook.
+/// Subject state comes from the trusted server-created AccessRequest. The membership
+/// provider must return current effective grants, excluding expired/revoked delegations.
 /// </summary>
-internal sealed class CourseAuditReadPolicy(
-    IIdentityContext identity,
-    ICourseAuditMembershipReader memberships,
-    TimeProvider clock) : IAccessPolicy
+internal sealed class CourseAuditReadPolicy(IMembershipReader memberships) : IAccessPolicy
 {
     public const string ActionId = "audit.events.read";
 
@@ -33,47 +27,36 @@ internal sealed class CourseAuditReadPolicy(
             || request.Subject is not { State: AccountState.Active } subject
             || !Guid.TryParse(subject.Id, out var accountId)
             || accountId == Guid.Empty
-            || request.Resource is not { Type: AuditResourceTypes.Course } resource
-            || !Guid.TryParse(resource.Id, out var courseId)
-            || courseId == Guid.Empty)
+            || request.Resource is not { Type: "course" } resource
+            || !Guid.TryParseExact(resource.Id, "D", out var courseId)
+            || courseId == Guid.Empty
+            || resource.Id != courseId.ToString("D"))
         {
             return false;
         }
 
         try
         {
-            // Look up current account state even if the request still says Active.
-            // IIdentityContext here is the existing account lookup, not HTTP authentication.
-            var account = await identity.FindByIdAsync(accountId, cancellationToken);
+            // No caller state or rights cache in this singleton. The owner of this
+            // Access contract resolves account/course membership and grant freshness.
+            var membership = await memberships.GetAsync(accountId, courseId, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            if (account is not { Status: AccountStatus.Active } || account.Id != accountId)
-                return false;
-
-            // Fetch on every decision: a revoked membership/grant cannot survive in a policy cache.
-            var membership = await memberships.FindAsync(accountId, courseId, cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
-            if (membership is not { IsActive: true }
+            if (membership is not { Status: MembershipStatus.Active }
                 || membership.AccountId != accountId
                 || membership.CourseId != courseId)
             {
                 return false;
             }
 
-            if (membership.Role == CourseAuditRole.Teacher)
+            if (membership.Role == CourseRole.Teacher)
                 return true;
 
-            if (membership.Role != CourseAuditRole.Assistant || membership.Delegations is null)
+            if (membership.Role != CourseRole.Assistant || membership.DelegatedActions is null)
                 return false;
 
-            var now = clock.GetUtcNow();
-            return membership.Delegations.Any(grant =>
-                grant is not null
-                && grant.AccountId == accountId
-                && grant.CourseId == courseId
-                && grant.Action == ActionId
-                && grant.RevokedAt is null
-                && grant.ValidFrom <= now
-                && now < grant.ExpiresAt);
+            // Do not inherit a provider collection's potentially case-insensitive comparer.
+            return membership.DelegatedActions.Any(action =>
+                string.Equals(action, ActionId, StringComparison.Ordinal));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

@@ -9,7 +9,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Platform.Access/Platform.Access.csproj" />
-    <ProjectReference Include="../Platform.Identity/Platform.Identity.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Platform.Audit.Tests" />
