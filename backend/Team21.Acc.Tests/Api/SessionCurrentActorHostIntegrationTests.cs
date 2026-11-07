@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Platform.Api.Enums.Identity;
 using Platform.Api.Interfaces.Identity;
 using Platform.Api.Middleware;
 using Platform.Api.Modules.Team21.Integration;
@@ -209,6 +210,98 @@ public class SessionCurrentActorHostIntegrationTests
         }
     }
 
+    [TestCase(AccountStatus.Blocked, "groups")]
+    [TestCase(AccountStatus.Inactive, "groups")]
+    [TestCase(AccountStatus.Blocked, "group")]
+    [TestCase(AccountStatus.Inactive, "group")]
+    [TestCase(AccountStatus.Blocked, "members")]
+    [TestCase(AccountStatus.Inactive, "members")]
+    [TestCase(AccountStatus.Blocked, "materials")]
+    [TestCase(AccountStatus.Inactive, "materials")]
+    [TestCase(AccountStatus.Blocked, "material")]
+    [TestCase(AccountStatus.Inactive, "material")]
+    public async Task AccountStatus_ChangesAreEnforcedOnNextRequestDespiteValidSession(
+        AccountStatus deniedStatus, string resource)
+    {
+        var isMaterial = resource is "materials" or "material";
+        var userId = isMaterial ? _world.StudentA : _world.Teacher;
+        var token = isMaterial ? SessionWorld.StudentAToken : SessionWorld.TeacherToken;
+        var path = resource switch
+        {
+            "groups" => GroupsPath,
+            "group" => GroupsPath + _world.GroupId,
+            "members" => GroupsPath + $"{_world.GroupId}/members",
+            "materials" => $"/api/courses/{_world.CourseId}/materials",
+            "material" => $"/api/materials/assignment/{_world.MaterialId}",
+            _ => throw new ArgumentOutOfRangeException(nameof(resource))
+        };
+        var protectedValue = resource switch
+        {
+            "members" => _world.StudentA.ToString(),
+            "materials" or "material" => _world.MaterialId.ToString(),
+            _ => "Private group"
+        };
+
+        using var activeRequest = Request(HttpMethod.Get, path, token);
+        using var active = await _client.SendAsync(activeRequest);
+        Assert.That(active.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(await active.Content.ReadAsStringAsync(), Does.Contain(protectedValue));
+
+        // Only the test reader changes. The IDN account, session and membership stay unchanged.
+        _world.SetAccountStatus(userId, deniedStatus);
+        await AssertSessionIsStillActive(token, userId);
+        using var deniedRequest = Request(HttpMethod.Get, path, token);
+        using var denied = await _client.SendAsync(deniedRequest);
+
+        Assert.That(denied.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
+        await AssertNoProtectedResourceData(denied);
+
+        _world.SetAccountStatus(userId, AccountStatus.Active);
+        using var restoredRequest = Request(HttpMethod.Get, path, token);
+        using var restored = await _client.SendAsync(restoredRequest);
+        Assert.That(restored.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(await restored.Content.ReadAsStringAsync(), Does.Contain(protectedValue));
+    }
+
+    [TestCase(AccountStatus.Blocked)]
+    [TestCase(AccountStatus.Inactive)]
+    public async Task AccountStatus_NonActiveTeacherCannotCreateGroup(AccountStatus status)
+    {
+        _world.SetAccountStatus(_world.Teacher, status);
+        await AssertSessionIsStillActive(SessionWorld.TeacherToken, _world.Teacher);
+        using var request = Request(HttpMethod.Post, GroupsPath, SessionWorld.TeacherToken);
+        request.Content = JsonContent.Create(new { name = "Status-denied group" });
+
+        using var response = await _client.SendAsync(request);
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
+        await AssertNoProtectedResourceData(response);
+        await using var db = new GroupsDbContext(_world.GroupOptions);
+        Assert.That(await db.Groups.CountAsync(), Is.EqualTo(2));
+        Assert.That(await db.Groups.AnyAsync(group => group.Name == "Status-denied group"), Is.False);
+    }
+
+    private async Task AssertSessionIsStillActive(string token, Guid userId)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var session = await scope.ServiceProvider.GetRequiredService<ISessionManager>().ValidateAsync(token);
+        Assert.That(session, Is.Not.Null);
+        Assert.That(session!.UserId, Is.EqualTo(userId));
+        Assert.That(session.Level, Is.EqualTo(AuthenticationLevel.Active));
+    }
+
+    private async Task AssertNoProtectedResourceData(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        foreach (var value in new[]
+        {
+            "Private group", "Other group", _world.CourseId.ToString(), _world.OtherCourseId.ToString(),
+            _world.GroupId.ToString(), _world.OtherGroupId.ToString(), _world.MaterialId.ToString(),
+            _world.StudentA.ToString(), _world.Teacher.ToString()
+        })
+            Assert.That(body, Does.Not.Contain(value));
+    }
+
     [TestCase("/api/courses/{course}/groups/", null, HttpStatusCode.Unauthorized)]
     [TestCase("/api/courses/{course}/groups/", "unknown", HttpStatusCode.Unauthorized)]
     [TestCase("/api/courses/{course}/groups/", SessionWorld.TeacherToken, HttpStatusCode.OK)]
@@ -295,6 +388,9 @@ public class SessionCurrentActorHostIntegrationTests
 
     private sealed class SessionWorld : IAccountStatusReader, ICourseMembershipReader, ICourseStateReader
     {
+        // Controlled Team 21 status input only; this is not an authoritative IDN repository.
+        private readonly Dictionary<Guid, AccountStatus> _accountStatuses = new();
+
         public const string TeacherToken = "synthetic-teacher-session";
         public const string OtherTeacherToken = "synthetic-other-teacher-session";
         public const string StudentAToken = "synthetic-student-a-session";
@@ -323,7 +419,10 @@ public class SessionCurrentActorHostIntegrationTests
             await using (var db = new PlatformIdentityDbContext(IdentityOptions))
             {
                 foreach (var user in new[] { Teacher, OtherTeacher, StudentA, StudentB })
+                {
                     db.Accounts.Add(new UserAccount(user, $"{user:N}@example.invalid"));
+                    _accountStatuses[user] = AccountStatus.Active;
+                }
                 foreach (var (token, user) in new[]
                 {
                     (TeacherToken, Teacher), (OtherTeacherToken, OtherTeacher),
@@ -360,9 +459,10 @@ public class SessionCurrentActorHostIntegrationTests
             await groups.SaveChangesAsync();
         }
 
+        public void SetAccountStatus(Guid accountId, AccountStatus status) => _accountStatuses[accountId] = status;
+
         public Task<AccountStatus> GetStatusAsync(Guid accountId, CancellationToken ct = default) =>
-            Task.FromResult(new[] { Teacher, OtherTeacher, StudentA, StudentB }.Contains(accountId)
-                ? AccountStatus.Active : AccountStatus.Inactive);
+            Task.FromResult(_accountStatuses.GetValueOrDefault(accountId, AccountStatus.Inactive));
 
         public Task<CourseMembership?> FindAsync(Guid accountId, Guid courseId, CancellationToken ct = default)
         {
