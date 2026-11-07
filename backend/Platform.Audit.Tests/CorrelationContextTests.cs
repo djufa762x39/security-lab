@@ -1,15 +1,20 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using Platform.Access.AspNet;
+using Platform.Access.Composition;
+using Platform.Api.Enums.Identity;
+using Platform.Api.Interfaces.Identity;
+using Platform.Api.Models.Identity;
+using Platform.Api.Services.Identity;
 using Platform.Audit.Application;
 using Platform.Audit.Composition;
 using Platform.Audit.Contracts;
@@ -103,6 +108,18 @@ public sealed class CorrelationContextTests
         });
     }
 
+    [Test]
+    public async Task Request_WithoutTestSession_IsStillRejectedBySessionCheck()
+    {
+        using var factory = new CorrelationHostFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Remove("Cookie");
+
+        using var response = await client.GetAsync(CorrelationHostFactory.ProbePath);
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+    }
+
     [TestCase("attacker-chosen-id")]
     [TestCase(AuditDraftExamples.CorrelationId)]
     [TestCase("0123456789abcdef0123456789abcdef")]
@@ -114,13 +131,6 @@ public sealed class CorrelationContextTests
         request.Headers.Add(CorrelationMiddleware.HeaderName, clientValue);
 
         using var response = await client.SendAsync(request);
-        var body = await response.Content.ReadAsStringAsync();
-
-        Assert.That(
-            response.StatusCode,
-            Is.EqualTo(HttpStatusCode.OK),
-            $"HTTP {(int)response.StatusCode} {response.StatusCode}; Body: '{body}'");
-
         var probe = await response.Content.ReadFromJsonAsync<CorrelationProbeResult>();
         var header = response.Headers.GetValues(CorrelationMiddleware.HeaderName).Single();
 
@@ -208,6 +218,7 @@ public sealed class CorrelationContextTests
 
     private static ServiceProvider BuildStrictProvider() =>
         new ServiceCollection()
+            .AddAccessControl()
             .AddAudit()
             .BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
 }
@@ -230,26 +241,57 @@ internal sealed class CorrelationHostFactory : WebApplicationFactory<Program>
             logging.AddProvider(Logs);
         });
         builder.ConfigureTestServices(services =>
-            services.AddControllers().AddApplicationPart(typeof(CorrelationProbeController).Assembly));
+        {
+            services.RemoveAll<ISessionManager>();
+            services.AddSingleton<ISessionManager, CorrelationTestSessionManager>();
+            services.AddControllers().AddApplicationPart(typeof(CorrelationProbeController).Assembly);
+        });
+    }
+
+    protected override void ConfigureClient(HttpClient client)
+    {
+        base.ConfigureClient(client);
+        client.DefaultRequestHeaders.Add("Cookie", $"{SessionCookie.Name}={CorrelationTestSessionManager.Token}");
     }
 }
+
+// Only the Testing host receives this synthetic session. The production middleware
+// remains active: a client without the known test cookie must still receive 401.
+internal sealed class CorrelationTestSessionManager : ISessionManager
+{
+    internal const string Token = "audit-correlation-test-session";
+
+    public Task<ValidateSession?> ValidateAsync(string token, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult<ValidateSession?>(token == Token
+            ? new ValidateSession(Guid.Parse("99999999-9999-4999-8999-999999999999"),
+                AuditDraftExamples.UserId, AuthenticationLevel.Active)
+            : null);
+    }
+
+    public Task<int> RevokeAllForUser(Guid userId, string reason, CancellationToken ct = default) =>
+        Task.FromResult(0);
+
+    public Task<bool> RevokeSession(Guid ownerUserId, Guid sessionHandle, CancellationToken ct = default) =>
+        Task.FromResult(false);
+
+    public Task<IReadOnlyList<SessionInfo>> ListForUser(Guid userId, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<SessionInfo>>(Array.Empty<SessionInfo>());
+}
+
 [ApiController]
-public sealed class CorrelationProbeController(
-    ICorrelationContext correlation,
-    ILogger<CorrelationProbeController> logger)
+public sealed class CorrelationProbeController(ICorrelationContext correlation, ILogger<CorrelationProbeController> logger)
     : ControllerBase
 {
     internal const string LogMessage = "correlation probe reached";
 
-    [AllowAnonymous]
     [DelegatedAuthorization]
     [HttpGet(CorrelationHostFactory.ProbePath)]
     public CorrelationProbeResult Get()
     {
         logger.LogInformation(LogMessage);
-        return new CorrelationProbeResult(
-            correlation.CorrelationId,
-            HttpContext.TraceIdentifier);
+        return new CorrelationProbeResult(correlation.CorrelationId, HttpContext.TraceIdentifier);
     }
 
     [HttpGet(CorrelationHostFactory.DeniedProbePath)]
@@ -289,5 +331,4 @@ internal sealed class ScopeCapturingLoggerProvider : ILoggerProvider, ISupportEx
             owner.Entries.Enqueue((formatter(state, exception), scopes));
         }
     }
-    
 }

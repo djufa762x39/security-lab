@@ -1,3 +1,4 @@
+
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
@@ -8,45 +9,77 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Platform.Access.AspNet;
 using Platform.Access.Domain.Enums;
 using Platform.Access.Domain.Models;
-using Platform.Api.Enums.Identity;
 using Platform.Api.Interfaces.Identity;
 using Platform.Api.Models.Identity;
 using Platform.Api.Services.Identity;
+using Platform.Api.Enums.Identity;
+using Platform.Api.Security.RevisionAuthorization;
+using Platform.Identity.Interfaces;
+using Platform.Identity.Models;
 
 namespace Laboratories.Tests;
 
 public sealed class ReviewAuthorizationTests
 {
-    private static readonly Guid UserId =
-        Guid.Parse("11111111-1111-1111-1111-111111111111");
-
-    private const string TestToken = "review-authorization-test-session";
+    [TestCase(null, HttpStatusCode.Unauthorized)]
+    [TestCase("revoked-session", HttpStatusCode.Unauthorized)]
+    [TestCase("test-session", HttpStatusCode.Forbidden)]
+    public async Task ProductionRevisionRoute_UsesRealSessionAdapter(string? token, HttpStatusCode expected)
+    {
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(host =>
+        {
+            host.UseEnvironment("Production");
+            host.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<ISessionManager>();
+                services.RemoveAll<IRevisionCoursePermissionReader>();
+                services.AddSingleton<ISessionManager, TestSessionManager>();
+                services.AddSingleton<IAccountStatusReader, TestAccountStatusReader>();
+                services.AddSingleton<IRevisionAuthorReader, TestRevisionAuthorReader>();
+                services.AddSingleton<IRevisionResourceReader, TestRevisionResourceReader>();
+            });
+        });
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/revisions/{Guid.NewGuid()}/approve")
+        {
+            Content = JsonContent.Create(new { rowVersion = "2", contentHash = new string('a', 64) })
+        };
+        request.Headers.Add("Idempotency-Key", "session-adapter-test");
+        if (token is not null) request.Headers.Add("Cookie", $"{SessionCookie.Name}={token}");
+        using var response = await client.SendAsync(request);
+        Assert.That(response.StatusCode, Is.EqualTo(expected));
+    }
 
     [TestCase(false, HttpStatusCode.Unauthorized)]
     [TestCase(true, HttpStatusCode.Forbidden)]
-    public async Task Approve_WithoutRegisteredPolicy_DeniesBeforeDatabase(
+    public async Task Approve_WithoutPermission_DeniesBeforeDatabase(
         bool authenticated,
         HttpStatusCode expected)
     {
-        using var factory = new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(host =>
-            {
-                host.UseEnvironment("Production");
-                host.ConfigureTestServices(services =>
-                {
-                    services.RemoveAll<IRequestSubjectResolver>();
-                    services.RemoveAll<IAccessSubjectProvider>();
-                    services.RemoveAll<ISessionManager>();
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(host =>
+        {
+            host.UseEnvironment("Production");
 
-                    var resolver = new TestResolver(authenticated);
-                    services.AddSingleton<IRequestSubjectResolver>(resolver);
-                    services.AddSingleton<IAccessSubjectProvider>(resolver);
-                    services.AddSingleton<ISessionManager>(
-                        new TestSessionManager(authenticated));
-                });
+            host.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IRequestSubjectResolver>();
+                services.RemoveAll<IAccessSubjectProvider>();
+                services.RemoveAll<ISessionManager>();
+                services.RemoveAll<IRevisionCoursePermissionReader>();
+
+                services.RemoveAll<IRevisionAuthorReader>();
+                services.AddSingleton<IRevisionAuthorReader, TestRevisionAuthorReader>();
+                services.AddSingleton<IRevisionResourceReader, TestRevisionResourceReader>();
+                var resolver = new TestResolver(authenticated);
+
+                services.AddSingleton<IRequestSubjectResolver>(resolver);
+                services.AddSingleton<IAccessSubjectProvider>(resolver);
+                services.AddSingleton<ISessionManager, TestSessionManager>();
             });
+        });
 
         using var client = factory.CreateClient();
+
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
             $"/api/revisions/{Guid.NewGuid()}/approve")
@@ -64,16 +97,12 @@ public sealed class ReviewAuthorizationTests
         {
             request.Headers.Add(
                 "Cookie",
-                $"{SessionCookie.Name}={TestToken}");
+                $"{SessionCookie.Name}=test-session");
         }
 
         using var response = await client.SendAsync(request);
-        var body = await response.Content.ReadAsStringAsync();
 
-        Assert.That(
-            response.StatusCode,
-            Is.EqualTo(expected),
-            $"HTTP {(int)response.StatusCode}; Body: '{body}'");
+        Assert.That(response.StatusCode, Is.EqualTo(expected));
     }
 
     private sealed class TestResolver(bool authenticated)
@@ -82,7 +111,9 @@ public sealed class ReviewAuthorizationTests
         public SubjectRef? Resolve(
             Microsoft.AspNetCore.Http.HttpContext context) =>
             authenticated
-                ? new SubjectRef(UserId.ToString(), AccountState.Active)
+                ? new SubjectRef(
+                    "11111111-1111-1111-1111-111111111111",
+                    AccountState.Active)
                 : null;
 
         public ValueTask<SubjectRef?> GetSubjectAsync(
@@ -91,20 +122,18 @@ public sealed class ReviewAuthorizationTests
             ValueTask.FromResult(Resolve(context));
     }
 
-    private sealed class TestSessionManager(bool authenticated)
-        : ISessionManager
+    private sealed class TestSessionManager : ISessionManager
     {
         public Task<ValidateSession?> ValidateAsync(
             string token,
             CancellationToken ct = default)
         {
-            ValidateSession? session =
-                authenticated && token == TestToken
-                    ? new ValidateSession(
-                        Guid.Parse("22222222-2222-2222-2222-222222222222"),
-                        UserId,
-                        AuthenticationLevel.Active)
-                    : null;
+            ValidateSession? session = token == "test-session"
+                ? new ValidateSession(
+                    Guid.NewGuid(),
+                    Guid.Parse("11111111-1111-1111-1111-111111111111"),
+                    AuthenticationLevel.Active)
+                : null;
 
             return Task.FromResult(session);
         }
@@ -113,17 +142,42 @@ public sealed class ReviewAuthorizationTests
             Guid userId,
             string reason,
             CancellationToken ct = default) =>
-            throw new NotSupportedException();
+            Task.FromResult(0);
 
         public Task<bool> RevokeSession(
             Guid ownerUserId,
             Guid sessionHandle,
             CancellationToken ct = default) =>
-            throw new NotSupportedException();
+            Task.FromResult(false);
 
         public Task<IReadOnlyList<SessionInfo>> ListForUser(
             Guid userId,
             CancellationToken ct = default) =>
-            throw new NotSupportedException();
+            Task.FromResult<IReadOnlyList<SessionInfo>>(
+                Array.Empty<SessionInfo>());
+    }
+
+    private sealed class TestAccountStatusReader : IAccountStatusReader
+    {
+        public Task<AccountSnapshot?> FindAsync(Guid id, CancellationToken cancellationToken = default) =>
+            Task.FromResult<AccountSnapshot?>(new AccountSnapshot(id, Platform.Identity.Enums.AccountStatus.Active));
+    }
+
+    private sealed class TestRevisionAuthorReader : IRevisionAuthorReader
+    {
+    public Task<Guid?> FindAuthorIdAsync(
+        Guid revisionId,
+        CancellationToken cancellationToken = default)
+    {
+        Guid? authorId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        return Task.FromResult(authorId);
+    }
+    }
+
+    private sealed class TestRevisionResourceReader : IRevisionResourceReader
+    {
+        public Task<RevisionResource?> FindAsync(Guid revisionId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<RevisionResource?>(new RevisionResource(Guid.NewGuid(),
+                Guid.Parse("22222222-2222-2222-2222-222222222222")));
     }
 }
