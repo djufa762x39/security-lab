@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -14,6 +13,7 @@ using Platform.Audit.Application;
 using Platform.Audit.Composition;
 using Platform.Audit.Contracts;
 using Platform.Audit.Correlation;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Platform.Audit.Tests;
 
@@ -233,9 +233,8 @@ public sealed class CorrelationProbeController(ICorrelationContext correlation, 
 {
     internal const string LogMessage = "correlation probe reached";
 
-    // AllowAnonymous: the IDN-02 session check is skipped too, as for the ACC-05 check.
-    [AllowAnonymous]
     [DelegatedAuthorization]
+    [AllowAnonymous]
     [HttpGet(CorrelationHostFactory.ProbePath)]
     public CorrelationProbeResult Get()
     {

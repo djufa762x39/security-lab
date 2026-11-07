@@ -29,6 +29,7 @@ public static class IdentityModule
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
         services.AddScoped<ICredentialStore, EfCredentialStore>();
+        services.AddScoped<IAccountStatusReader, EfAccountStatusReader>();
         services.AddScoped<ICredentialVerifier, CredentialVerifier>();
         services.AddScoped<ISessionStore, SessionStore>();
 
