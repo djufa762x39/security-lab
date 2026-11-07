@@ -29,9 +29,38 @@ Ugovor trenutno obuhvata:
 - `IActionCatalog`, `IAccessPolicyRegistry` i `IAccessAuditWriter` — granice za buduće adaptere.
 - `IResourceOwnershipResolver` — server-side granica za potvrdu vlasništva resursa.
 
-`IActionCatalog` izlaže tipizovane `ActionDefinition` zapise. Početni katalog sadrži
-akcije iz matrice ACC-05, uključujući scope (`Public`, `System` ili `Course`),
-tip resursa i oznaku privilegovane akcije.
+`IActionCatalog` izlaže tipizovane `ActionDefinition` zapise.
+
+### Trenutni katalog akcija
+
+| Akcija | Scope | Tip resursa | Privilegovana |
+|---|---|---|---|
+| `public.info.read` | `Public` | — | Ne |
+| `public.catalog.read` | `Public` | — | Ne |
+| `lab.read` | `Course` | `laboratory` | Ne |
+| `lab.draft.manage` | `Course` | `laboratory` | Ne |
+| `lab.revision.publish` | `Course` | `laboratory` | Da |
+| `lab.criteria.hidden.read` | `Course` | `laboratory` | Ne |
+| `assignment.manage` | `Course` | `assignment` | Ne |
+| `assignment.read.own` | `Course` | `assignment` | Ne |
+| `course.read` | `Authenticated` | — | Ne |
+| `course.create` | `Authenticated` | — | Da |
+| `course.archive` | `Authenticated` | — | Da |
+| `group.read` | `Authenticated` | — | Ne |
+| `group.create` | `Authenticated` | — | Da |
+| `group.member.add` | `Authenticated` | — | Da |
+| `group.member.remove` | `Authenticated` | — | Da |
+| `material.read` | `Authenticated` | — | Ne |
+| `attempt.create` | `Course` | `assignment` | Ne |
+| `attempt.read` | `Course` | `attempt` | Ne |
+| `attempt.submit` | `Course` | `attempt` | Ne |
+| `attempt.read.course` | `Course` | `attempt` | Ne |
+| `attempt.review` | `Course` | `attempt` | Da |
+| `account.status.change` | `System` | — | Da |
+| `system.config.manage` | `System` | — | Da |
+| `results.sensitive.read` | `Course` | `attempt` | Da |
+| `evaluation.task.process` | `System` | — | Ne |
+| `audit.events.read` | `Course` | `course` | Ne |
 
 ## Pravilo registracije akcija
 

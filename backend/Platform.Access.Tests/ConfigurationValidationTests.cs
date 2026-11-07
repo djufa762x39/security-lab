@@ -74,6 +74,37 @@ public class ConfigurationValidationTests
             false)));
     }
 
+    [TestCase("course.read", false)]
+    [TestCase("course.create", true)]
+    [TestCase("course.archive", true)]
+    [TestCase("group.read", false)]
+    [TestCase("group.create", true)]
+    [TestCase("group.member.add", true)]
+    [TestCase("group.member.remove", true)]
+    [TestCase("material.read", false)]
+    public void ACC05_ApprovedAuthenticatedActions_HaveExpectedScopeAndPrivilege(
+        string action,
+        bool privileged)
+    {
+        var catalog = new InMemoryActionCatalog();
+
+        Assert.That(catalog.TryGet(action, out var definition), Is.True);
+        Assert.That(definition, Is.EqualTo(new ActionDefinition(
+            action,
+            ActionScope.Authenticated,
+            null,
+            privileged)));
+    }
+
+    [Test]
+    public void ACC05_UnknownAction_RemainsAbsentFromCatalog()
+    {
+        var catalog = new InMemoryActionCatalog();
+
+        Assert.That(catalog.Contains("course.read.unknown"), Is.False);
+        Assert.That(catalog.TryGet("course.read.unknown", out _), Is.False);
+    }
+
     [Test]
     public async Task ACC05_Composition_RegistersAdditionalActionAndPolicyBeforeBuild()
     {
