@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Team21.Acc.Api.Access;
 using Team21.Acc.Api.Courses;
 using Team21.Acc.Api.Groups;
 using Team21.Acc.Api.Services;
@@ -47,6 +48,7 @@ public static class Team21AccModule
         services.AddTeamDbContext<GroupsDbContext>(connectionString, GroupsDbContext.SchemaName);
         services.AddScoped<IGroupsDbContext>(provider => provider.GetRequiredService<GroupsDbContext>());
 
+        services.AddTeam21AccessPolicies();
         services.AddCourses();
         services.AddGroups();
 
