@@ -40,6 +40,7 @@ public sealed class LaboratorySearchService(
             return LabSearchResult.Unauthenticated;
         }
 
+        // An empty title is a catalog search, needed for filters-only searches and reset.
         if ((query?.Any(char.IsControl) ?? false)
             || !(filters ?? new LabSearchFilters()).TryNormalize(out LabSearchFilters normalizedFilters))
         {
@@ -64,6 +65,7 @@ public sealed class LaboratorySearchService(
         foreach (Laboratory laboratory in laboratories)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            // Authorize before reading metadata, matching filters or counting results.
             if (!CanRead(caller, callerId.Value, laboratory)) continue;
             string folded = LabTitleSearch.Fold(laboratory.Title);
             if (!folded.Contains(key, StringComparison.Ordinal)) continue;
@@ -99,30 +101,14 @@ public sealed class LaboratorySearchService(
         return LabSearchResult.Ok(matches, truncated);
     }
 
-    public async Task<LabSearchFilterOptions> GetFilterOptionsAsync(
-        IIdentityContext caller, CancellationToken cancellationToken)
+    public LabSearchFilterOptions GetFilterOptions(IIdentityContext caller)
     {
-        Guid? callerId = CallerId.From(caller);
-        if (callerId is null)
-            return new(LabSearchStatus.Unauthenticated, [], [], [], false);
+        if (CallerId.From(caller) is null)
+            return new(LabSearchStatus.Unauthenticated, [], [], false);
 
-        string[] difficulties = Enum.GetNames<LaboratoryDifficulty>();
-        string[] types = Enum.GetNames<LaboratoryType>();
-        if (metadataStore is null)
-            return new(LabSearchStatus.Ok, difficulties, types, [], false);
-
-        var tags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (Laboratory laboratory in await repository.ListAsync(cancellationToken))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (!CanRead(caller, callerId.Value, laboratory)) continue;
-            LaboratoryMetadata? metadata = await metadataStore.GetAsync(laboratory.Id, cancellationToken);
-            if (metadata is not null)
-                tags.UnionWith(metadata.Tags.Where(tag => !string.IsNullOrWhiteSpace(tag) && !tag.Any(char.IsControl)));
-        }
-
-        return new(LabSearchStatus.Ok, difficulties, types,
-            tags.Order(StringComparer.OrdinalIgnoreCase).ToArray(), true);
+        // Ovo su javne enum vrednosti, bez metapodataka konkretnih laboratorija.
+        return new(LabSearchStatus.Ok, Enum.GetNames<LaboratoryDifficulty>(),
+            Enum.GetNames<LaboratoryType>(), metadataStore is not null);
     }
 
     private bool CanRead(IIdentityContext caller, Guid callerId, Laboratory laboratory) =>
