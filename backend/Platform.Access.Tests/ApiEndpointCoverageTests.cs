@@ -28,6 +28,7 @@ public class ApiEndpointCoverageTests
         "/api/auth/login",
         "/api/auth/logout",
         "/api/auth/me",
+        "/api/me/assignments",
         "/api/authoring/templates",
         "/api/authoring/templates/{templateId:guid}/drafts",
         "/api/laboratories/",
