@@ -222,6 +222,19 @@ group.MapGet("/{id:guid}", async (Guid id, ICourseService courses, CancellationT
 
 The error message goes to the client as written, keep ids and database details out of it. Access is checked in the service on every request, hiding a button in the frontend doesn't count.
 
+## Access control (ACC-05)
+
+Main denies every route without access metadata, so each of our routes names an action from the central catalog:
+
+```csharp
+group.MapGet("/{id:guid}", GetCourse)
+    .RequireAccess(AccessActions.CourseRead.Id);
+```
+
+The policies in `Team21.Acc.Api/Access` only check for an active account. Who may do what in a course or a group is still decided in our services.
+
+In Development, `/api/courses` and `/api/materials` skip the session check in `SessionCheckMiddleware` so `X-Test-User` keeps working.
+
 ## What is faked
 
 Whoever first needs one writes the interface and its fake next to their code, registered in Development only. Outside Development the readers that stand in for other teams deny everyone.
