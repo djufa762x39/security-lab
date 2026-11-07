@@ -40,7 +40,6 @@ public class SessionController(IIdentityContext identity, ISessionManager sessio
 
         Response.Headers.CacheControl = "no-store";
 
-        // Use the same response for unknown and foreign handles to avoid disclosing ownership.
         if (!revoked)
             return NotFound(new { code = "session_not_found" });
 

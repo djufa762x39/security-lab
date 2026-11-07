@@ -1,8 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using NUnit.Framework;
+using System.Security.Cryptography;
+using System.Text;
+using Platform.Api.Enums.Identity;
 using Platform.Api.Models.Identity;
 using Platform.Api.Services.Identity;
 using Platform.Identity.Entities;
+using Platform.Identity.Enums;
 using Platform.Identity.Persistence;
 
 namespace Platform.Identity.Tests.Services;
@@ -12,6 +16,43 @@ namespace Platform.Identity.Tests.Services;
 [Category("IDN-07")]
 public class SessionManagerTests
 {
+    [Test]
+    public async Task RevokeSession_RevokesOnlyOwnedSession_RejectsItsToken()
+    {
+        var ownerUserId = Guid.NewGuid();
+        var otherUserId = Guid.NewGuid();
+        const string revokedToken = "token-to-revoke";
+        const string otherOwnerToken = "other-session-same-owner";
+        const string foreignToken = "token-owned-by-someone-else";
+        var revokedHandle = Guid.NewGuid();
+        var otherHandle = Guid.NewGuid();
+        var foreignHandle = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+
+        var options = new DbContextOptionsBuilder<PlatformIdentityDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var db = new PlatformIdentityDbContext(options);
+        db.Sessions.AddRange(
+            new Session(Guid.NewGuid(), ownerUserId, TokenHash(revokedToken), revokedHandle,
+                AuthLevel.Active, now, now.AddHours(8)),
+            new Session(Guid.NewGuid(), ownerUserId, TokenHash(otherOwnerToken), otherHandle,
+                AuthLevel.Active, now, now.AddHours(8)),
+            new Session(Guid.NewGuid(), otherUserId, TokenHash(foreignToken), foreignHandle,
+                AuthLevel.Active, now, now.AddHours(8)));
+        await db.SaveChangesAsync();
+
+        var manager = new SessionManager(db);
+
+        Assert.That(await manager.RevokeSession(ownerUserId, revokedHandle), Is.True);
+        Assert.That(await manager.RevokeSession(ownerUserId, foreignHandle), Is.False);
+
+        Assert.That(await manager.ValidateAsync(revokedToken), Is.Null);
+        Assert.That(await manager.ValidateAsync(otherOwnerToken), Is.Not.Null);
+        Assert.That(await manager.ValidateAsync(foreignToken), Is.Not.Null);
+    }
+
     [Test]
     public async Task ListForUser_ReturnsOnlyUnrevokedUnexpiredSessionsForRequestedUser()
     {
@@ -172,4 +213,7 @@ public class SessionManagerTests
         Guid.NewGuid().ToByteArray()
             .Concat(Guid.NewGuid().ToByteArray())
             .ToArray();
+
+    private static byte[] TokenHash(string token) =>
+        SHA256.HashData(Encoding.UTF8.GetBytes(token));
 }

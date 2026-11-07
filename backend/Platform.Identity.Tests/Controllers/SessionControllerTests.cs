@@ -163,6 +163,113 @@ public class SessionControllerTests
             Times.Never);
     }
 
+    [Test]
+    public async Task RevokeSession_OwnedSession_Returns204AndUsesCallerId()
+    {
+        var userId = Guid.NewGuid();
+        var sessionHandle = Guid.NewGuid();
+        using var cancellation = new CancellationTokenSource();
+        var cancellationToken = cancellation.Token;
+
+        CallerIs(new CallerIdentity(
+            true,
+            userId,
+            AuthenticationLevel.Active,
+            Guid.NewGuid()));
+
+        _sessionManager
+            .Setup(s => s.RevokeSession(userId, sessionHandle, cancellationToken))
+            .ReturnsAsync(true);
+
+        var result = await _controller.RevokeSession(sessionHandle, cancellationToken);
+
+        Assert.That(result, Is.InstanceOf<NoContentResult>());
+        _sessionManager.Verify(
+            s => s.RevokeSession(userId, sessionHandle, cancellationToken),
+            Times.Once);
+        Assert.That(
+            _controller.Response.Headers.CacheControl.ToString(),
+            Is.EqualTo("no-store"));
+    }
+
+    [Test]
+    public async Task RevokeSession_UnknownOrForeignHandle_ReturnsSame404()
+    {
+        var userId = Guid.NewGuid();
+        var sessionHandle = Guid.NewGuid();
+
+        CallerIs(new CallerIdentity(
+            true,
+            userId,
+            AuthenticationLevel.Active,
+            Guid.NewGuid()));
+
+        _sessionManager
+            .Setup(s => s.RevokeSession(
+                userId,
+                sessionHandle,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var result = await _controller.RevokeSession(sessionHandle, CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<NotFoundObjectResult>());
+        var notFound = (NotFoundObjectResult)result;
+        Assert.That(
+            notFound.Value!.GetType().GetProperty("code")!.GetValue(notFound.Value),
+            Is.EqualTo("session_not_found"));
+
+        _sessionManager.Verify(
+            s => s.RevokeSession(userId, sessionHandle, CancellationToken.None),
+            Times.Once);
+        Assert.That(
+            _controller.Response.Headers.CacheControl.ToString(),
+            Is.EqualTo("no-store"));
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task RevokeSession_UnauthenticatedCaller_Returns401WithoutCallingManager(bool hasUserId)
+    {
+        CallerIs(new CallerIdentity(
+            false,
+            hasUserId ? Guid.NewGuid() : null,
+            AuthenticationLevel.MfaPending,
+            Guid.NewGuid()));
+
+        var result = await _controller.RevokeSession(Guid.NewGuid(), CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<UnauthorizedObjectResult>());
+        AssertUnauthenticated((UnauthorizedObjectResult)result);
+        _sessionManager.Verify(
+            s => s.RevokeSession(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Test]
+    public async Task RevokeSession_AuthenticatedCallerWithoutUserId_Returns401WithoutCallingManager()
+    {
+        CallerIs(new CallerIdentity(
+            true,
+            null,
+            AuthenticationLevel.Active,
+            Guid.NewGuid()));
+
+        var result = await _controller.RevokeSession(Guid.NewGuid(), CancellationToken.None);
+
+        Assert.That(result, Is.InstanceOf<UnauthorizedObjectResult>());
+        AssertUnauthenticated((UnauthorizedObjectResult)result);
+        _sessionManager.Verify(
+            s => s.RevokeSession(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     private void CallerIs(CallerIdentity? caller) =>
         _identity.Setup(i => i.Current).Returns(caller);
 
