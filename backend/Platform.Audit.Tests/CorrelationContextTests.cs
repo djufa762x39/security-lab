@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -113,6 +114,13 @@ public sealed class CorrelationContextTests
         request.Headers.Add(CorrelationMiddleware.HeaderName, clientValue);
 
         using var response = await client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.That(
+            response.StatusCode,
+            Is.EqualTo(HttpStatusCode.OK),
+            $"HTTP {(int)response.StatusCode} {response.StatusCode}; Body: '{body}'");
+
         var probe = await response.Content.ReadFromJsonAsync<CorrelationProbeResult>();
         var header = response.Headers.GetValues(CorrelationMiddleware.HeaderName).Single();
 
@@ -225,19 +233,23 @@ internal sealed class CorrelationHostFactory : WebApplicationFactory<Program>
             services.AddControllers().AddApplicationPart(typeof(CorrelationProbeController).Assembly));
     }
 }
-
 [ApiController]
-public sealed class CorrelationProbeController(ICorrelationContext correlation, ILogger<CorrelationProbeController> logger)
+public sealed class CorrelationProbeController(
+    ICorrelationContext correlation,
+    ILogger<CorrelationProbeController> logger)
     : ControllerBase
 {
     internal const string LogMessage = "correlation probe reached";
 
+    [AllowAnonymous]
     [DelegatedAuthorization]
     [HttpGet(CorrelationHostFactory.ProbePath)]
     public CorrelationProbeResult Get()
     {
         logger.LogInformation(LogMessage);
-        return new CorrelationProbeResult(correlation.CorrelationId, HttpContext.TraceIdentifier);
+        return new CorrelationProbeResult(
+            correlation.CorrelationId,
+            HttpContext.TraceIdentifier);
     }
 
     [HttpGet(CorrelationHostFactory.DeniedProbePath)]
@@ -277,4 +289,5 @@ internal sealed class ScopeCapturingLoggerProvider : ILoggerProvider, ISupportEx
             owner.Entries.Enqueue((formatter(state, exception), scopes));
         }
     }
+    
 }
