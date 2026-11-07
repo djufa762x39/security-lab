@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Platform.Access.AspNet;
+using Platform.Access.Domain.Constants;
 using Team21.Acc.Api.Extensions;
 using Team21.Acc.Core.Groups.Interfaces;
 
@@ -14,16 +15,21 @@ public static class GroupEndpoints
 {
     public static IEndpointRouteBuilder MapGroupEndpoints(this IEndpointRouteBuilder app)
     {
-        // Access is decided in the service, ACC-05 only has to let the call reach it
-        var group = app.MapGroup("/api/courses/{courseId:guid}/groups")
-            .DelegatesToLegacyAuthorization();
+        // ACC-05 checks for an active account, the service decides the rest
+        var group = app.MapGroup("/api/courses/{courseId:guid}/groups");
 
-        group.MapGet("/", GetGroupsAsync);
-        group.MapPost("/", CreateGroupAsync);
-        group.MapGet("/{groupId:guid}", GetGroupAsync);
-        group.MapGet("/{groupId:guid}/members", GetMembersAsync);
-        group.MapPost("/{groupId:guid}/members", AddMemberAsync);
-        group.MapDelete("/{groupId:guid}/members/{userId:guid}", RemoveMemberAsync);
+        group.MapGet("/", GetGroupsAsync)
+            .RequireAccess(AccessActions.GroupRead.Id);
+        group.MapPost("/", CreateGroupAsync)
+            .RequireAccess(AccessActions.GroupCreate.Id);
+        group.MapGet("/{groupId:guid}", GetGroupAsync)
+            .RequireAccess(AccessActions.GroupRead.Id);
+        group.MapGet("/{groupId:guid}/members", GetMembersAsync)
+            .RequireAccess(AccessActions.GroupRead.Id);
+        group.MapPost("/{groupId:guid}/members", AddMemberAsync)
+            .RequireAccess(AccessActions.GroupMemberAdd.Id);
+        group.MapDelete("/{groupId:guid}/members/{userId:guid}", RemoveMemberAsync)
+            .RequireAccess(AccessActions.GroupMemberRemove.Id);
 
         return app;
     }
