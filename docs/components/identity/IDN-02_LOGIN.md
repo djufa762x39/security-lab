@@ -46,7 +46,7 @@ To create a hash for a seed user or a test: `new BCryptPasswordHasher().Hash(pas
 
 ## Known limitations
 
-- No attempt limiting (IDN-05) and no CSRF token (US-15) yet. `Login` has a comment where the limiter would be called.
+- No CSRF token (US-15) yet. Per-account lockout (IDN-05) is in `CredentialVerifier`, see [IDN-05 lockout](IDN-05-lockout.md).
 - No MFA: every successful login is `Active` until an MFA policy (IDN-06, US-12) exists.
 - No registration (IDN-01): accounts exist only through seeding or direct database work.
 - The login does not revoke a session that was sent with the request.
