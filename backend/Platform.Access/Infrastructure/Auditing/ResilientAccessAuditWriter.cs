@@ -62,23 +62,17 @@ internal sealed partial class ResilientAccessAuditWriter(
     {
         try
         {
-            var rawCorrelationId = request?.CorrelationId;
-            var correlationId =
-                string.IsNullOrEmpty(rawCorrelationId) ? AccessAuditRecord.NoValue
-                : AuditIdentifier.IsValid(rawCorrelationId, options.MaxValueLength) ? rawCorrelationId
-                : AccessAuditRecord.Invalid;
-            var type = AuditValueSanitizer.Clean(exceptionType, options.MaxValueLength);
-
-            LogAuditFailure(
-                logger,
-                reason,
-                type.Length == 0 ? AccessAuditRecord.NoValue : type,
-                correlationId);
+            LogAuditFailure(logger, reason, SafeOrNoValue(exceptionType), SafeOrNoValue(request?.CorrelationId));
         }
         catch (Exception)
         {
         }
     }
+
+    private string SafeOrNoValue(string? value) =>
+        string.IsNullOrEmpty(value) ? AccessAuditRecord.NoValue
+        : AuditIdentifier.IsValid(value, options.MaxValueLength) ? value
+        : AccessAuditRecord.Invalid;
 
     [LoggerMessage(
         EventId = 6103,
