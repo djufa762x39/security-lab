@@ -18,7 +18,9 @@
 ## Component architecture
 
 ```mermaid
+%%{init: {"theme": "dark", "themeVariables": {"lineColor": "#7c8ba1"}}}%%
 flowchart LR
+  classDef default fill:#1e293b,stroke:#94a3b8,color:#f8fafc
   subgraph FE["Tim 16: ASN-02 frontend (Strahinja)"]
     PAGE["MyAssignmentsPage<br/>/my-assignments"]
     CLIENT["getMyAssignments()<br/>myAssignments.ts"]
@@ -38,15 +40,19 @@ flowchart LR
   API -->|student iz sesije| SES
   API -->|IMyAssignmentsService| SVC
 
-  style FE fill:#eaf2fb,stroke:#315d8a,stroke-width:2px
+  style FE fill:#0f172a,stroke:#60a5fa,stroke-width:3px,color:#f8fafc
+  style PAGE fill:#1e3a8a,stroke:#93c5fd,color:#ffffff
+  style CLIENT fill:#1e3a8a,stroke:#93c5fd,color:#ffffff
 ```
 
-Istaknuti blok je moj deo. Kutija sa duplim ivicama je zajednički HTTP klijent frontenda. Stranica zavisi samo od `getMyAssignments()`, pa se u testovima zamenjuje lažnim serverom (`setFetcher`). Klijent proverava oblik odgovora i zadržava samo dokumentovana polja; pogrešan oblik se prikazuje kao greška, a ne kao prazna lista.
+Blok sa plavim okvirom je moj deo. Kutija sa duplim ivicama je zajednički HTTP klijent frontenda. Stranica zavisi samo od `getMyAssignments()`, pa se u testovima zamenjuje lažnim serverom (`setFetcher`). Klijent proverava oblik odgovora i zadržava samo dokumentovana polja; pogrešan oblik se prikazuje kao greška, a ne kao prazna lista.
 
 ## Data flow diagram
 
 ```mermaid
+%%{init: {"theme": "dark", "themeVariables": {"lineColor": "#7c8ba1"}}}%%
 flowchart LR
+  classDef default fill:#1e293b,stroke:#94a3b8,color:#f8fafc
   subgraph CLIENT["Granica poverenja: klijent (browser), nepouzdano"]
     S["Student"]
     P1["P1 Prikaz liste<br/>MyAssignmentsPage"]
@@ -70,8 +76,8 @@ flowchart LR
   P2 -->|"(8) JSON lista ili 401"| P1
   P1 -->|"(9) tabela ili poruka o grešci"| S
 
-  style CLIENT fill:#fdf1f1,stroke:#b54747,stroke-dasharray:5 5
-  style SERVER fill:#eef7f0,stroke:#2f7a45
+  style CLIENT fill:#2a0f12,stroke:#f87171,stroke-width:2px,stroke-dasharray:6 4,color:#fecaca
+  style SERVER fill:#0b2414,stroke:#4ade80,stroke-width:2px,color:#bbf7d0
 ```
 
 Browser je izvan granice poverenja: korisnik može da menja kod stranice i zahteve. Zato klijent ne šalje ID studenta (nema `?studentId=`), ne filtrira dodele i ne odlučuje da li je rok prošao (OPS-09); sve to radi server (koraci 3 do 7). `ProtectedRoute` je samo pogodnost za korisnika, a podatke štiti 401 sa servera.
