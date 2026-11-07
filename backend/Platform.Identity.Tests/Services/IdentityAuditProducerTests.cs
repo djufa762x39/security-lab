@@ -58,7 +58,11 @@ public sealed class IdentityAuditProducerTests
         var writer = new RecordingWriter();
         var producer = CreateProducer(writer);
 
-        await producer.LoginFailedAsync("account_blocked", CorrelationId, ActorId);
+        await producer.LoginFailedAsync(
+            "account_blocked",
+            CorrelationId,
+            ActorId,
+            actorConfirmed: true);
 
         var write = writer.Single();
         using (Assert.EnterMultipleScope())
@@ -67,6 +71,25 @@ public sealed class IdentityAuditProducerTests
             Assert.That(write.Draft.Resource!.Id, Is.EqualTo(ActorId.ToString()));
             Assert.That(Serialized(write), Does.Not.Contain("email").And.Not.Contain("password"));
         }
+    }
+
+    [Test]
+    public async Task LockedAccount_UsesAnonymousActorAndConfirmedAccountTarget()
+    {
+        var writer = new RecordingWriter();
+        var producer = CreateProducer(writer);
+
+        await producer.LoginFailedAsync("account_locked", CorrelationId, ActorId);
+
+        var write = writer.Single();
+        Assert.Multiple(() =>
+        {
+            Assert.That(write.Context.Actor, Is.EqualTo(AuditActor.Anonymous));
+            Assert.That(write.Draft.Resource, Is.EqualTo(
+                new AuditResourceRef(AuditResourceTypes.Account, ActorId.ToString())));
+            Assert.That(write.Draft.Details, Is.EquivalentTo(
+                new Dictionary<string, string> { ["reasonCode"] = "account_locked" }));
+        });
     }
 
     [Test]

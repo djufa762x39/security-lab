@@ -23,8 +23,18 @@ internal sealed class LoginService(
         if (!IsAcceptable(email, password))
             return await FailAsync(LoginOutcome.InvalidRequest, "invalid_request", correlationId, null, ct);
 
-        // IDN-05 (attempt limiting) is not part of this story. It would be called here, before the check.
         var check = await credentials.VerifyAsync(email!, password!, ct);
+
+        // IDN-05: a locked account gets the same answer as a wrong password; only the audit event differs.
+        // The caller is not proven to own the account, so it is the target and not the actor.
+        if (check.IsLockedOut)
+            return await FailAsync(
+                LoginOutcome.InvalidCredentials,
+                "account_locked",
+                correlationId,
+                check.AccountId,
+                ct);
+
         if (!check.IsValid)
             return await FailAsync(LoginOutcome.InvalidCredentials, "invalid_credentials", correlationId, null, ct);
 
@@ -34,13 +44,19 @@ internal sealed class LoginService(
                 check.Status == AccountStatus.Blocked ? "account_blocked" : "account_archived",
                 correlationId,
                 check.AccountId,
-                ct);
+                ct,
+                actorConfirmed: true);
 
         // MFA (IDN-06) is not implemented yet: until an MFA policy exists every login is Active.
         var session = await sessions.CreateAsync(check.AccountId, AuthenticationLevel.Active, ct);
         if (session is null)
             return await FailAsync(
-                LoginOutcome.Unavailable, "session_unavailable", correlationId, check.AccountId, ct);
+                LoginOutcome.Unavailable,
+                "session_unavailable",
+                correlationId,
+                check.AccountId,
+                ct,
+                actorConfirmed: true);
 
         // The session has already been persisted. A disconnected client must not cancel
         // the evidence write for an action that has taken effect.
@@ -68,10 +84,15 @@ internal sealed class LoginService(
         string reasonCode,
         string correlationId,
         Guid? confirmedUserId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool actorConfirmed = false)
     {
         await audit.LoginFailedAsync(
-            reasonCode, correlationId, confirmedUserId, cancellationToken);
+            reasonCode,
+            correlationId,
+            confirmedUserId,
+            cancellationToken,
+            actorConfirmed);
         return new LoginResult(outcome);
     }
 }

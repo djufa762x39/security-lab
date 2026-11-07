@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Platform.Audit.Application;
 using Platform.Audit.Contracts;
 using Platform.Audit.Correlation;
@@ -42,6 +43,10 @@ public static class AuditServiceCollectionExtensions
         services.AddScoped<AuditWriter>();
         services.AddScoped<IAuditWriter>(provider => provider.GetRequiredService<AuditWriter>());
         services.AddScoped<ITrustedAuditWriter>(provider => provider.GetRequiredService<AuditWriter>());
+        // Transactional producers (for example REV-05) supply the caller-owned
+        // PostgreSQL transaction, so this registration is independent of the
+        // regular Audit connection string above.
+        services.TryAddSingleton<ITransactionalAuditWriter, PostgresTransactionalAuditWriter>();
 
         return services;
     }

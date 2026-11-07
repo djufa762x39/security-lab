@@ -8,10 +8,12 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Platform.Api.Enums.Identity;
 using Platform.Api.Services.Identity;
 using Platform.Audit.Contracts;
 using Platform.Audit.Infrastructure.Persistence;
+using Platform.Identity;
 using Platform.Identity.Entities;
 using Platform.Identity.Enums;
 using Platform.Identity.Persistence;
@@ -130,7 +132,11 @@ public sealed class IdentityAuditPostgresIntegrationTests
         await using var identity = new PlatformIdentityDbContext(identityOptions);
         var sessionStore = new SessionStore(identity, TimeProvider.System);
         var login = new LoginService(
-            new CredentialVerifier(new EfCredentialStore(identity), new BCryptPasswordHasher()),
+            new CredentialVerifier(
+                new EfCredentialStore(identity),
+                new BCryptPasswordHasher(),
+                Options.Create(new IdentityLockoutOptions()),
+                TimeProvider.System),
             new StoreSessionCreator(sessionStore, NullLogger<StoreSessionCreator>.Instance),
             new SessionManager(identity),
             CreateProducer(new UnavailableAuditWriter()));

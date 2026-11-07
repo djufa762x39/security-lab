@@ -29,14 +29,15 @@ public sealed class IdentityAuditProducer(
         string reasonCode,
         string correlationId,
         Guid? confirmedUserId = null,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default,
+        bool actorConfirmed = false) =>
         WriteAsync(
             new AuditEventDraft(
                 AuditEventTypes.AuthLogin,
                 AuditOutcome.Failure,
                 Resource: confirmedUserId is Guid userId ? Account(userId) : null,
                 Details: Details(("reasonCode", reasonCode))),
-            confirmedUserId is Guid id
+            actorConfirmed && confirmedUserId is Guid id
                 ? UserContext(id, correlationId)
                 : AnonymousContext(correlationId),
             cancellationToken);

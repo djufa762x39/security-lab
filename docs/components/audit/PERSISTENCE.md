@@ -29,7 +29,10 @@ or commit other pending EF changes. `AuditWriter` translates expected storage fa
 the public fail-closed result without returning database messages or event details.
 
 `AddAudit(IConfiguration)` now registers `AuditDbContext`, `PostgresAuditEventStore`,
-`AuditWriter`, `IAuditWriter` and `ITrustedAuditWriter`. The API replaces the composition
+`AuditWriter`, `IAuditWriter`, `ITrustedAuditWriter` and `ITransactionalAuditWriter`.
+The regular writer uses `ConnectionStrings:Audit`; the transactional writer instead
+enlists in the caller-owned PostgreSQL transaction and therefore requires the `audit`
+schema in that transaction's database. The API replaces the composition
 fallback context provider with `ServerAuditContextProvider`: actor identity comes only
 from the session validated by `SessionCheckMiddleware`, and correlation comes only from
 `CorrelationMiddleware`. Identity login, logout and account-status producers use the
