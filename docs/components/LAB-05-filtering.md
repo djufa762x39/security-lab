@@ -46,7 +46,7 @@ flowchart LR
   LIMIT --> UI
 ```
 
-I pretraga i učitavanje opcija prolaze postojeću serversku proveru pristupa i vraćaju `Cache-Control: no-store`. Metapodaci skrivenih laboratorija se ne čitaju i njihove oznake ne ulaze u opcije. Filteri se primenjuju pre ograničavanja rezultata i računanja `truncated`. Postojeće pravilo vidljivosti se ne proširuje; integracija kursa i članstva ostaje odgovornost LAB-03/ACC.
+I pretraga i učitavanje opcija prolaze postojeću serversku proveru pristupa i vraćaju `Cache-Control: no-store`. Metapodaci skrivenih laboratorija se ne čitaju i njihove oznake ne ulaze u opcije. Filteri se primenjuju pre ograničavanja rezultata i računanja `truncated`. LAB-05 koristi postojeće `ICourseMembership` i `LabOpenPolicy`, kao otvaranje laboratorije, uz `laboratory.read`. Članstvo se čita za sačuvani kurs u svakom zahtevu; laboratorije bez kursa i rezultati posle oduzimanja članstva ostaju skriveni i nakon uklanjanja ili resetovanja filtera. LAB-05 ne menja pravila, upis ili izvor članstva drugih komponenti.
 
 ## Dostupnost metapodataka
 

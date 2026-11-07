@@ -2,6 +2,8 @@
 
 **Tim:** 19
 
+**Aktuelno:** pretraga i opcije oznaka koriste postojeće članstvo na sačuvanom kursu i `LabOpenPolicy`, uz `laboratory.read`. Raniji datirani zapisi o ograničenju „samo autor” opisuju stanje pre ove integracije.
+
 **Student:** Zorana Jošić PR57/2023
 
 **Zahtevi iz specifikacije:** LAB-05 (Pretraga i filtriranje, nivo J). Kriterijum prihvatanja: *„Rezultati poštuju prava pristupa korisnika.”* Ovaj deo pokriva dve korisničke priče iz LAB-05:
@@ -29,7 +31,7 @@ Zajednički zahtevi koje deo pokriva: SEC-01 (serverska autorizacija, nema IDOR-
 | --- | --- | --- |
 | `IIdentityContext` (lokalni port LAB modula) | ko je pozivalac | razvoj: `FakeIdentityContext` (`X-Test-User`); van Development-a `AnonymousIdentityContext` |
 | `IAccessDecision` (lokalni port LAB modula) | (1) sme li se pretraga pozvati: radnja `laboratory.search`; (2) sme li pozivalac da čita **svaku konkretnu** laboratoriju: radnja `laboratory.read` sa ID-em laboratorije | razvoj: `FakeAccessDecision`; van Development-a `DenyAllAccessDecision`. Planiran adapter na `Platform.Access` (predlog u `LAB-01-LAB-07.md`) |
-| `LaboratoryVisibility` (novo, deljeno sa LAB-01) | jedno pravilo vidljivosti za čitanje po ID-u i za pretragu | trenutno: laboratoriju vidi samo autor. Proširenje (kurs, članstvo, objavljena revizija, LAB-03) menja se samo ovde |
+| `ICourseMembership` + `LabOpenPolicy` (postojeći ugovori) | isto pravilo konteksta kursa kao pri otvaranju laboratorije | LAB-05 čita članstvo za sačuvani `CourseId`, primenjuje postojeću odluku i dodatno proverava `laboratory.read`; ne menja pravila članstva |
 | `ILaboratoryRepository.ListAsync` | izvor laboratorija | koristi se postojeći ugovor bez izmena (radi i sa `InMemory` i sa `Postgres` adapterom) |
 | Frontend `api/labs.ts` → `searchLabs` | jedino mesto za poziv pretrage | prevodi `INVALID_QUERY`, 401, 403 i greške mreže u naše poruke |
 
@@ -41,14 +43,15 @@ Zajednički zahtevi koje deo pokriva: SEC-01 (serverska autorizacija, nema IDOR-
 | --- | --- | --- | --- |
 | anoniman / neispravno `X-Test-User` / više zaglavlja | `laboratory.search` | pretraga | Deny, 401 (pre servisa) |
 | Student, Nastavnik, Asistent, Administrator | `laboratory.search` | pretraga | Allow: poziv je dozvoljen, ali rezultat se filtrira po laboratoriji |
-| Nastavnik, autor | `laboratory.read` | sopstvena laboratorija | u rezultatu, ako naziv odgovara upitu |
+| Nastavnik, autor i nastavnik na kursu laboratorije | `laboratory.read` | sopstvena laboratorija | u rezultatu, ako naziv odgovara upitu |
+| Autor bez članstva na kursu / laboratorija bez kursa | `laboratory.read` | sopstvena laboratorija | nije u rezultatu; njene oznake nisu u opcijama filtera |
 | Nastavnik, nije autor | `laboratory.read` | tuđa laboratorija | nije u rezultatu (ni naslov ni ID se ne pojavljuju) |
 | Student (ista osoba i kad je autor u drugoj ulozi) | `laboratory.read` | nacrt | nije u rezultatu (LAB-04) |
 | Asistent, Administrator (i kad je ista osoba autor) | `laboratory.read` | nacrt | nije u rezultatu; tehnička uloga ne daje automatski pristup sadržaju (specifikacija, pogl. 2) |
 | bilo ko, posle oduzimanja prava | `laboratory.read` | ta laboratorija | u sledećoj pretrazi više nije u rezultatu; prava se proveravaju u svakom zahtevu |
 | bilo ko, van Development okruženja | bilo koja | bilo koji | Deny, 401 |
 
-Ključno pravilo: **laboratorija je u rezultatu pretrage samo ako bi je isti korisnik mogao i da otvori preko `GET /api/laboratories/{id}`.** Zato pretraga koristi isto pravilo vidljivosti (`LaboratoryVisibility`) i istu radnju `laboratory.read` kao čitanje po ID-u. To dokazuje test `Search_EveryResultCanBeOpenedBySameCaller`.
+Ključno pravilo: **laboratorija je u rezultatu pretrage samo ako bi je isti korisnik mogao i da otvori preko `GET /api/laboratories/{id}`.** Zato pretraga koristi postojeće `ICourseMembership` i `LabOpenPolicy`, uz radnju `laboratory.read`. Ista provera se primenjuje pre čitanja oznaka za opcije filtera. To proveravaju `Search_EveryResultCanBeOpenedBySameCaller` i testovi oduzimanja članstva.
 
 ## Dijagram arhitekture
 
@@ -71,7 +74,7 @@ flowchart TB
     QUERY["čitanje parametra q<br/>tačno jedna vrednost (400)"]
     SVC["LaboratorySearchService<br/>provera prava po laboratoriji, poređenje, redosled, limit 50"]
     TERM["LabTitleSearch<br/>validacija upita, Fold: mala slova, bez kvačica"]
-    VIS["LaboratoryVisibility<br/>(deljeno sa LaboratoryService, LAB-01)"]
+    VIS["LabOpenPolicy + ICourseMembership<br/>(postojeće pravilo otvaranja)"]
     REPO[["ILaboratoryRepository.ListAsync"]]
 
     ROUTES --> SAFE --> FILTER --> QUERY --> SVC
@@ -86,7 +89,7 @@ flowchart TB
   REPO --> MEM[("InMemoryLaboratoryRepository")]
   REPO --> PG[("PostgresLaboratoryRepository<br/>ako postoji ConnectionStrings:Authoring")]
   ACD -.-> ACC["Platform.Access (planiran adapter)"]
-  VIS -.-> COURSE["LAB-03 / ACC: kurs i članstvo (planirano)"]
+  VIS --> COURSE["Postojeći ugovor za članstvo na kursu"]
 ```
 
 ## DFD sa granicom poverenja klijent–server
@@ -103,7 +106,7 @@ flowchart LR
     P1(("1. Identitet<br/>IIdentityContext"))
     P2(("2. Sme li pretragu<br/>laboratory.search"))
     P3(("3. Validacija upita<br/>jedan q, 1–200 znakova,<br/>bez kontrolnih znakova"))
-    P4(("4. Filtriranje po pravima<br/>LaboratoryVisibility +<br/>laboratory.read po laboratoriji"))
+    P4(("4. Filtriranje po pravima<br/>LabOpenPolicy + članstvo +<br/>laboratory.read po laboratoriji"))
     P5(("5. Poređenje naziva<br/>Fold, redosled, limit 50"))
     D1[("Laboratorije<br/>ILaboratoryRepository")]
     LOG[("Serverski log<br/>pozivalac, dužina upita,<br/>broj rezultata (bez upita)")]
@@ -130,7 +133,7 @@ Sve što dolazi preko granice poverenja je nepouzdano: parametar `q`, eventualni
 
 | Imovina | Moguća zloupotreba | Kontrola | Test |
 | --- | --- | --- | --- |
-| Tuđi nacrti (naslov, ID) | nastavnik pretragom „prelista” tuđe laboratorije (IDOR preko liste) | `LaboratoryVisibility` + `laboratory.read` za svaku laboratoriju, pre poređenja | `Search_DoesNotReturnLabsOfAnotherTeacher` (HTTP i servis) |
+| Tuđi nacrti (naslov, ID) | nastavnik pretragom „prelista” tuđe laboratorije (IDOR preko liste) | `LabOpenPolicy`, članstvo i `laboratory.read` pre poređenja | `Search_DoesNotReturnLabsOfAnotherTeacher` (HTTP i servis) |
 | Nacrti pred studentima (LAB-04) | student pretragom otkrije nacrt | ista politika `laboratory.read` kao za `GET /{id}`: student ne čita nacrt | `Search_WhenStudentSearches_DoesNotSeeDrafts`, `Search_WhenSameUserHasStudentRole_DoesNotSeeOwnDraft` |
 | Doslednost prava | pretraga pokaže nešto što se ne može otvoriti | zajedničko pravilo vidljivosti i ista radnja čitanja | `Search_EveryResultCanBeOpenedBySameCaller`, `Search_ChecksReadPermissionForEachLaboratory` |
 | Razvojni identitet | `X-Test-User: marko:Teacher` u produkciji | fake samo u Development-u; drugde `Anonymous` + `DenyAll` | `OutsideDevelopment_TestTeacherHeaderDoesNotGrantSearch` |
@@ -154,7 +157,7 @@ Sve što dolazi preko granice poverenja je nepouzdano: parametar `q`, eventualni
 - **Osetljivi podaci:** odgovor ne sadrži tuđe laboratorije ni broj tuđih pogodaka. Stavka rezultata nema interni ID autora. Odgovor se ne kešira (`Cache-Control: no-store`). Log beleži pozivaoca, dužinu upita i broj rezultata, ali ne i sam upit (proizvoljan korisnički tekst).
 - **Odbijanje u slučaju greške:** ako provera prava za bilo koju laboratoriju ne uspe, pretraga se prekida i ne vraća delimične rezultate; klijent dobija generički 500 sa `traceId`.
 - **Poznata ograničenja:**
-  - Pravilo vidljivosti je za sada „samo autor”, kao u LAB-01. Kad LAB-03/ACC uvedu kurs i članstvo, menja se `LaboratoryVisibility` i pretraga to automatski nasleđuje.
+  - Pretraga koristi postojeću politiku otvaranja i izvor članstva. Trenutni razvojni `FakeAccessDecision` dopušta `laboratory.read` samo nastavniku; LAB-05 ne proširuje dozvole drugih uloga. Laboratorije učitane bez kursa ostaju skrivene.
   - `X-Test-User` je simulacija identiteta (isto ograničenje kao LAB-01).
   - Pretraga čita sve laboratorije kroz `ListAsync` i filtrira u memoriji. Za veliki broj laboratorija upit treba spustiti u skladište (npr. normalizovana kolona i indeks), uz dogovor sa timom za skladište.
   - Ograničenje broja zahteva (SEC-04) za pretragu nije dodato: postojeći rate limiter pripada Identity modulu (IDN-05), pa je politiku za pretragu potrebno dogovoriti sa tim timom.
@@ -245,8 +248,14 @@ Provera je izvršena 5. novembra 2026. nad lokalnim izmenama, .NET SDK 10.0.301 
 - Provera ove dorade: Release build API-ja i `Laboratories.Tests` prolazi bez upozorenja i grešaka; svih **127 odabranih LAB-05 testova prolazi** (uključujući 12 novih). Testovi su izvršeni direktnim NUnit runnerom u ignorisanom `obj/lab05-security-check` direktorijumu, sa izborom samo `LaboratorySearch*Tests`, `LaboratoryFilter*Tests` i `LabTitleSearchTests`. Izvorni test projekat i njegove zavisnosti nisu menjani radi pokretanja.
 - Obim: servis pretrage, dva LAB-05 HTTP handlera, LAB-05 testovi i ovaj dokument. Registracije identiteta, politike pristupa, model laboratorije i skladišta drugih komponenti nisu menjani. Postojeće ograničenje razvojnog identiteta i pravila „samo autor” ostaje; ova dorada ne predstavlja integraciju sa stvarnom sesijom, kursom ili članstvom.
 
+## Provera članstva u pretrazi
+
+Provera članstva u LAB-05 koristi postojeće `ICourseMembership` i `LabOpenPolicy` bez izmene njihovih pravila ili implementacija. Dodati su testovi dozvoljenog i odbijenog pristupa, članstva na drugom kursu, oduzimanja članstva uz naziv/filtere/reset, skrivenih oznaka, zapisa bez kursa i greške izvora članstva. HTTP provera na obe putanje potvrđuje da nakon oduzimanja članstva pretraga i opcije ne izlažu podatke, a otvaranje vraća 404.
+
+Provera: Release build API-ja i test projekta prolazi; svih **134 odabrana LAB-05 testa prolazi**, uključujući 7 novih slučajeva za članstvo. Izvršavanje je obavljeno istim direktnim NUnit runnerom u ignorisanom `obj/lab05-security-check` direktorijumu. Ostali moduli i njihove politike nisu menjani.
+
 ## Sledeći koraci
 
 - Kombinovanje i uklanjanje postojećih filtera proširuje isti endpoint i servis; detalji su u [LAB-05-filtering.md](LAB-05-filtering.md). Novi kriterijumi i definisanje osobina nisu deo ovog proširenja.
-- Proširenje `LaboratoryVisibility` kad LAB-03/ACC obezbede kurs, članstvo i objavljene revizije (student tada vidi objavljene laboratorije svog kursa).
+- Pozitivan scenario objavljene laboratorije za studenta, kada postojeći ugovori čitanja i vidljivosti obezbede tu dozvolu.
 - Dogovor sa timom za skladište oko pretrage u bazi i sa Identity timom oko rate limit politike za pretragu (SEC-04).

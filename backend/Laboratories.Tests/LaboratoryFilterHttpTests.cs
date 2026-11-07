@@ -11,6 +11,8 @@ using Platform.Api.Modules.Laboratories.Application;
 using Platform.Api.Modules.Laboratories.Infrastructure;
 using Platform.LabMetadata;
 using Platform.LaboratoryPersistence.Application;
+using Platform.LabVisibility.Contracts;
+using Platform.LabVisibility.Infrastructure.Membership;
 
 namespace Laboratories.Tests;
 
@@ -147,6 +149,46 @@ public sealed class LaboratoryFilterHttpTests
         });
     }
 
+    [TestCase("/api/laboratories")]
+    [TestCase("/api/labs")]
+    public async Task RevokedMembership_HidesSearchResultsAndTagsAndDeniesOpening(string route)
+    {
+        using var factory = new FilterHostFactory();
+        using var client = factory.CreateClient();
+        LaboratoryResponse lab = await CreateLab(client, "Lab membership restricted");
+        factory.Metadata.Items[lab.Id] = new(lab.Id, "Objective", LaboratoryDifficulty.Easy,
+            LaboratoryType.LogAnalysis, ["membership-secret"]);
+        Assert.That((await Search(client, route + "/search?q=membership")).Items.Select(item => item.Id),
+            Is.EqualTo(new[] { lab.Id }));
+        using (var options = await client.SendAsync(Get(route + "/search/filters")))
+            Assert.That((await options.Content.ReadFromJsonAsync<LaboratorySearchFiltersResponse>())!.Tags,
+                Does.Contain("membership-secret"));
+        using (var open = await client.SendAsync(Get(route + "/" + lab.Id)))
+            Assert.That(open.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+
+        var callerId = CallerId.From(new TestCaller())!.Value;
+        factory.Membership.Set(LabSearchTestContext.CourseId, callerId, CourseRole.None);
+        foreach (string path in new[] { "/search?q=membership", "/search?difficulty=Easy", "/search", "/search/filters", "/" + lab.Id })
+        {
+            using var response = await client.SendAsync(Get(route + path));
+            string body = await response.Content.ReadAsStringAsync();
+            Assert.Multiple(() =>
+            {
+                Assert.That(response.StatusCode, Is.EqualTo(path.StartsWith("/search") ? HttpStatusCode.OK : HttpStatusCode.NotFound));
+                Assert.That(body, Does.Not.Contain(lab.Title));
+                Assert.That(body, Does.Not.Contain(lab.Id.ToString()));
+                Assert.That(body, Does.Not.Contain("membership-secret"));
+            });
+        }
+    }
+
+    private sealed class TestCaller : IIdentityContext
+    {
+        public bool IsAuthenticated => true;
+        public string UserId => "marko";
+        public PlatformRole? Role => PlatformRole.Teacher;
+    }
+
     private static async Task<LaboratorySearchResponse> Search(HttpClient client, string path)
     {
         using var response = await client.SendAsync(Get(path));
@@ -159,7 +201,7 @@ public sealed class LaboratoryFilterHttpTests
     {
         using var request = Get("/api/laboratories/", user);
         request.Method = HttpMethod.Post;
-        request.Content = JsonContent.Create(new { title });
+        request.Content = JsonContent.Create(new { title, courseId = LabSearchTestContext.CourseId });
         using var response = await client.SendAsync(request);
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Created));
         return (await response.Content.ReadFromJsonAsync<LaboratoryResponse>())!;
@@ -175,6 +217,7 @@ public sealed class LaboratoryFilterHttpTests
     private sealed class FilterHostFactory(bool withMetadata = true) : WebApplicationFactory<Program>
     {
         public MetadataStore Metadata { get; } = new();
+        public InMemoryCourseMembership Membership { get; } = LabSearchTestContext.CreateMembership();
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -185,6 +228,8 @@ public sealed class LaboratoryFilterHttpTests
                 services.RemoveAll<ILaboratoryMetadataStore>();
                 services.RemoveAll<ILaboratoryRepository>();
                 services.AddSingleton<ILaboratoryRepository, InMemoryLaboratoryRepository>();
+                services.RemoveAll<ICourseMembership>();
+                services.AddSingleton<ICourseMembership>(Membership);
                 if (withMetadata) services.AddSingleton<ILaboratoryMetadataStore>(Metadata);
             });
         }

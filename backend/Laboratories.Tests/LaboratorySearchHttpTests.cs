@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using Platform.Api.Modules.Laboratories.Api;
 using Platform.Api.Modules.Laboratories.Application;
 using Platform.Api.Modules.Laboratories.Domain;
+using Platform.LabVisibility.Contracts;
 using Platform.Api.Modules.Laboratories.Infrastructure;
 
 namespace Laboratories.Tests;
@@ -358,7 +359,7 @@ public sealed class LaboratorySearchHttpTests
     {
         using var request = Get(LabsRoute, user);
         request.Method = HttpMethod.Post;
-        request.Content = JsonContent.Create(new { title });
+        request.Content = JsonContent.Create(new { title, courseId = LabSearchTestContext.CourseId });
         using var response = await client.SendAsync(request);
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Created));
         var created = await response.Content.ReadFromJsonAsync<LaboratoryResponse>();
@@ -393,6 +394,8 @@ public sealed class LaboratorySearchHttpTests
         {
             builder.UseEnvironment(environment);
             builder.ConfigureLogging(logging => logging.ClearProviders());
+            builder.ConfigureTestServices(services =>
+                services.AddSingleton<ICourseMembership>(LabSearchTestContext.CreateMembership()));
             if (testServices is not null)
             {
                 builder.ConfigureTestServices(testServices);

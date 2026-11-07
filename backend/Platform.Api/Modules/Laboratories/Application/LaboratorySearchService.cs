@@ -1,6 +1,7 @@
 using Platform.Api.Modules.Laboratories.Domain;
 using Platform.LabMetadata;
 using Platform.LaboratoryPersistence.Application;
+using Platform.LabVisibility.Contracts;
 
 namespace Platform.Api.Modules.Laboratories.Application;
 
@@ -25,6 +26,7 @@ public sealed record LabSearchResult(LabSearchStatus Status, IReadOnlyList<Labor
 
 public sealed class LaboratorySearchService(
     ILaboratoryRepository repository,
+    ICourseMembership courseMembership,
     IAccessDecision accessDecision,
     ILogger<LaboratorySearchService> logger,
     ILaboratoryMetadataStore? metadataStore = null)
@@ -71,7 +73,7 @@ public sealed class LaboratorySearchService(
         {
             cancellationToken.ThrowIfCancellationRequested();
             // Authorize before reading metadata, matching filters or counting results.
-            if (!CanRead(caller, callerId.Value, laboratory)) continue;
+            if (!await CanReadAsync(caller, callerId.Value, laboratory, cancellationToken)) continue;
             string folded = LabTitleSearch.Fold(laboratory.Title);
             if (!folded.Contains(key, StringComparison.Ordinal)) continue;
 
@@ -126,7 +128,7 @@ public sealed class LaboratorySearchService(
         foreach (Laboratory laboratory in await repository.ListAsync(cancellationToken))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!CanRead(caller, callerId.Value, laboratory)) continue;
+            if (!await CanReadAsync(caller, callerId.Value, laboratory, cancellationToken)) continue;
             LaboratoryMetadata? metadata = await metadataStore.GetAsync(laboratory.Id, cancellationToken);
             if (metadata is not null)
                 tags.UnionWith(metadata.Tags.Where(tag => !string.IsNullOrWhiteSpace(tag) && !tag.Any(char.IsControl)));
@@ -145,7 +147,16 @@ public sealed class LaboratorySearchService(
             : LabSearchStatus.Forbidden;
     }
 
-    private bool CanRead(IIdentityContext caller, Guid callerId, Laboratory laboratory) =>
-        LaboratoryVisibility.IsVisibleTo(laboratory, callerId)
-        && accessDecision.Decide(caller, LabActions.Read, laboratory.Id.ToString()).Allowed;
+    private async ValueTask<bool> CanReadAsync(
+        IIdentityContext caller, Guid callerId, Laboratory laboratory, CancellationToken cancellationToken)
+    {
+        if (!accessDecision.Decide(caller, LabActions.Read, laboratory.Id.ToString()).Allowed
+            || laboratory.CourseId == Guid.Empty)
+            return false;
+
+        // Reuse the opening policy; search does not define its own membership rules.
+        CourseRole role = await courseMembership.GetRoleAsync(laboratory.CourseId, callerId, cancellationToken);
+        return LabOpenPolicy.DecideOpen(laboratory.CourseId, role,
+            isCreator: laboratory.CreatedBy == callerId).Allowed;
+    }
 }

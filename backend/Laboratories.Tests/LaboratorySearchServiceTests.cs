@@ -298,11 +298,11 @@ public sealed class LaboratorySearchServiceTests
     }
 
     private LaboratorySearchService CreateService(IAccessDecision decision) =>
-        new(_repository, decision, NullLogger<LaboratorySearchService>.Instance);
+        new(_repository, LabSearchTestContext.CreateMembership(), decision, NullLogger<LaboratorySearchService>.Instance);
 
     private async Task<Laboratory> AddAsync(Caller owner, string title)
     {
-        var laboratory = new Laboratory(title, CallerId.From(owner)!.Value);
+        var laboratory = new Laboratory(LabSearchTestContext.CourseId, title, CallerId.From(owner)!.Value);
         await _repository.AddAsync(laboratory);
         return laboratory;
     }

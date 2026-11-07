@@ -10,6 +10,7 @@ using Platform.Api.Modules.Laboratories.Application;
 using Platform.Api.Modules.Laboratories.Domain;
 using Platform.LabMetadata;
 using Platform.LaboratoryPersistence.Application;
+using Platform.LabVisibility.Contracts;
 
 namespace Laboratories.Tests;
 
@@ -147,7 +148,7 @@ public sealed class LaboratorySearchAuthorizationTests
 
     private static LaboratorySearchService CreateService(
         SearchRepository repository, MetadataStore metadata, IAccessDecision access) =>
-        new(repository, access, NullLogger<LaboratorySearchService>.Instance, metadata);
+        new(repository, LabSearchTestContext.CreateMembership(), access, NullLogger<LaboratorySearchService>.Instance, metadata);
 
     private sealed class Caller : IIdentityContext
     {
@@ -178,7 +179,7 @@ public sealed class LaboratorySearchAuthorizationTests
 
     private sealed class SearchRepository : ILaboratoryRepository
     {
-        public Laboratory Laboratory { get; } = new("Lab restricted result", CallerId.From(Teacher)!.Value);
+        public Laboratory Laboratory { get; } = new(LabSearchTestContext.CourseId, "Lab restricted result", CallerId.From(Teacher)!.Value);
         public int ListCalls { get; private set; }
 
         public Task<IReadOnlyList<Laboratory>> ListAsync(CancellationToken cancellationToken = default)
@@ -227,6 +228,8 @@ public sealed class LaboratorySearchAuthorizationTests
                 services.AddSingleton<IAccessDecision>(Access);
                 services.AddSingleton<ILaboratoryRepository>(Repository);
                 services.AddSingleton<ILaboratoryMetadataStore>(Metadata);
+                services.RemoveAll<ICourseMembership>();
+                services.AddSingleton<ICourseMembership>(LabSearchTestContext.CreateMembership());
             });
         }
     }
