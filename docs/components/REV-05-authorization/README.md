@@ -9,6 +9,7 @@ rezultati i scenariji u [TEST-EVIDENCE](TEST-EVIDENCE.md).
 
 | Akcija | Resurs za IAccessDecision | Dodatni uslov |
 |---|---|---|
+| revision.entry | null (ulazna provjera) | Potvrdjen aktivni korisnik; ne zamjenjuje prava nad konkretnom revizijom |
 | revision.create | course sa GUID-om kursa | Eksplicitno pravo create; poslovni tok provjerava laboratoriju i politiku kursa |
 | revision.read | revision sa GUID-om revizije | Eksplicitno read pravo za kurs ucitan iz revizije |
 | revision.mine | revision | Korisnik je autor i ima mine pravo |
@@ -66,6 +67,13 @@ cuva postojeci Access audit tok i prosljedjuje odbijene revizijske akcije kroz
 ITrustedAuditWriter. Kratkotrajni scope izbjegava hvatanje scoped writera u singleton
 Access servis. Akter dolazi iz validirane sesije; korelacija iz postojeceg serverskog
 middleware-a. Arbitraran HTTP actor ili correlation header se ne koristi.
+
+Ovo ukljucuje i `revision.entry`: odbijanje na ulaznoj provjeri prije poslovnog
+handlera takodje stize u trajni Audit store. Endpoint metadata i audit filter
+koriste zajednicku RevisionActions.Entry konstantu. Za neautentifikovan zahtjev
+upisuje se jedan `access.denied`, Anonymous akter bez ID-ja, action=revision.entry,
+denialReason=unauthenticated i serverska korelacija. Time se ne dodjeljuju nova
+prava, niti entry postaje kursna akcija ili zamjena za naknadne provjere resursa.
 
 Poslovni tok upisuje dogadjaje `revision.submitted`, `revision.returned` i
 `revision.approved`. Sadrze aktera, serversko UTC vrijeme, kurs, ID revizije, autora,

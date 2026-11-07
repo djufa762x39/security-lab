@@ -120,3 +120,36 @@ Rezultati: TestResults/policy-denied-review/revision-authorization-after.trx,
 audit-contract-after.trx i policy-denied-after.trx. Regresioni padovi su u
 reason-mapping-before.trx i policy-denied-before.trx. Naknadna puna kampanja nije
 ponavljana; ova promjena je provjerena navedenim ciljanim testovima.
+
+## Dopuna pregleda: revision.entry (2026-11-07)
+
+Na osnovi 8ba98b2 novi HTTP/PostgreSQL test dobio je ocekivani 401 za zahtjev
+bez sesije i zahtjev sa nepoznatom sesijom, ali bez trajnog audit zapisa. Oba
+slucaja su pala bas na provjeri prisustva zapisa. Nakon dopune RevisionActions.IsKnown
+ulaznom akcijom oba slucaja prolaze. Endpoint i filter dijele konstantu za ovu akciju;
+kursne dozvole i sama odluka o pristupu nisu promijenjeni. Nema nove migracije.
+
+| Requirement ID | Preduslov i akcija | Ocekivano | Izvrsivi dokaz |
+|---|---|---|---|
+| AUD-01 / AUD-03 / AUD-04 / SEC-01 | HTTP GET /api/revisions/mine bez sesije ili sa nepoznatom sesijom; poslat lazni X-Correlation-ID | 401; tacno jedan trajni access.denied za revision.entry, Anonymous bez actor_id, Denied, unauthenticated i serverska korelacija iz odgovora | RevisionHttpWorkflowTests.DeniedRevisionEntry_PersistsAnonymousAuditWithServerCorrelation (2 slucaja) |
+
+Ciljana provjera poslije ispravke: 85/85 RevisionAuthorization testova i 2/2
+nova HTTP/PostgreSQL slucaja. Regresioni rezultati su u:
+TestResults/revision-entry-review/entry-denial-before.trx, entry-denial-after.trx i
+entry-authorization-after.trx.
+
+Uskladjenost grane je provjerena nakon git fetch: origin/main je predak radne
+grane (0 commit-a iza main), a PR grana odgovara lokalnom HEAD-u prije dopune.
+Nije bilo konflikata niti potrebe za dodatnim merge commitom.
+
+Puna lokalna CI provjera nakon ove dopune:
+
+- Release build cijelog rjesenja: 0 gresaka i 0 upozorenja.
+- scripts/audit/test-postgres.ps1: 1335 izvrsenih testova proslo, 0 palo;
+  devet zasebnih Authoring persistence testova preskoceno zbog nepodesene
+  ConnectionStrings__Authoring konekcije, kao u postojecem CI podesavanju.
+- Svih 40 REV-05 PostgreSQL integracionih testova i svi Audit runtime testovi su izvrseni.
+- Frontend build i svih 60 testova: proslo.
+- LaboratoriesDbContext: nema pending model changes.
+
+Sirovi izvjestaji pune kampanje: TestResults/audit-s09-ee75a87cd4c44e1999af4b0963f7ef4d/*.trx.

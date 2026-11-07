@@ -191,6 +191,41 @@ public sealed class RevisionHttpWorkflowTests
         Assert.That(await audit.ReadAsync(), Is.False, "The decision must produce exactly one denial event.");
     }
 
+    [TestCase(null)]
+    [TestCase("revoked-session")]
+    public async Task DeniedRevisionEntry_PersistsAnonymousAuditWithServerCorrelation(string? token)
+    {
+        using var client = token is null
+            ? host.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") })
+            : Client(token);
+        client.DefaultRequestHeaders.Add("X-Correlation-ID", "client-supplied");
+
+        using var response = await client.GetAsync("/api/revisions/mine");
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+        var correlation = response.Headers.GetValues("X-Correlation-ID").Single();
+        Assert.That(correlation, Is.Not.EqualTo("client-supplied"));
+
+        await using var connection = new NpgsqlConnection(database.GetConnectionString());
+        await connection.OpenAsync();
+        await using var sql = new NpgsqlCommand("""
+            SELECT actor_kind, actor_id, outcome, details->>'action', details->>'denialReason'
+            FROM audit.audit_events
+            WHERE event_type = 'access.denied' AND correlation_id = @correlation
+            """, connection);
+        sql.Parameters.AddWithValue("correlation", correlation);
+        await using var audit = await sql.ExecuteReaderAsync();
+        Assert.That(await audit.ReadAsync(), Is.True, "The entry denial must reach the persistent Audit store.");
+        Assert.Multiple(() =>
+        {
+            Assert.That(audit.GetString(0), Is.EqualTo("Anonymous"));
+            Assert.That(audit.IsDBNull(1), Is.True);
+            Assert.That(audit.GetString(2), Is.EqualTo("Denied"));
+            Assert.That(audit.GetString(3), Is.EqualTo("revision.entry"));
+            Assert.That(audit.GetString(4), Is.EqualTo("unauthenticated"));
+        });
+        Assert.That(await audit.ReadAsync(), Is.False, "The entry denial must be recorded exactly once.");
+    }
+
     [Test]
     public async Task FailedAudit_RollsBackHttpSubmitAndReceipt()
     {

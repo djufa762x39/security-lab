@@ -12,12 +12,13 @@ public sealed class RevisionAuditContractTests
     [TestCase(RevisionActions.Approve)]
     [TestCase(RevisionActions.Return)]
     [TestCase(RevisionActions.UnlockAccount)]
+    [TestCase(RevisionActions.Entry)]
     public void DeniedEvent_ConformsToAuditCatalog(string action)
     {
         var request = new AccessRequest(
             new SubjectRef(Guid.NewGuid().ToString(), AccountState.Active),
             action,
-            new ResourceRef("revision", Guid.NewGuid().ToString()),
+            action == RevisionActions.Entry ? null : new ResourceRef("revision", Guid.NewGuid().ToString()),
             "test-correlation");
 
         var decision = AccessDecision.Deny(

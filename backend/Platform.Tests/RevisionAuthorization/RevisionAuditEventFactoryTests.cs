@@ -49,6 +49,25 @@ public sealed class RevisionAuditEventFactoryTests
         Assert.That(result, Is.Null);
     }
 
+    [Test]
+    public void AnonymousEntryDenial_CreatesAuditEventWithoutResource()
+    {
+        var request = new AccessRequest(null, "revision.entry", null, "test-correlation");
+        var draft = RevisionAuditEventFactory.CreateDeniedEvent(request,
+            AccessDecision.Deny(AccessDenialReason.Unauthenticated, request.CorrelationId));
+
+        Assert.That(draft, Is.Not.Null);
+        Assert.Multiple(() =>
+        {
+            Assert.That(draft!.EventType, Is.EqualTo(AuditEventTypes.AccessDenied));
+            Assert.That(draft.Outcome, Is.EqualTo(AuditOutcome.Denied));
+            Assert.That(draft.Details!["action"], Is.EqualTo("revision.entry"));
+            Assert.That(draft.Details["denialReason"], Is.EqualTo("unauthenticated"));
+            Assert.That(draft.Resource, Is.Null);
+            Assert.That(draft.CourseId, Is.Null);
+        });
+    }
+
     [TestCase(AccessDenialReason.PolicyDenied, "policy_denied")]
     [TestCase(AccessDenialReason.PolicyError, "policy_error")]
     public void PolicyDenialAndEvaluationError_KeepDistinctReasonCodes(AccessDenialReason reason, string expected)
