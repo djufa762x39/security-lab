@@ -139,6 +139,9 @@ if (kt1Enabled)
 app.Services.RegisterIdentityAccess();
 app.MapAccountEndpoints();
 
+// ASN-02: lista dodela prijavljenog studenta
+app.MapMyAssignmentsEndpoints();
+
 // AUT-06: radnje i politike za sablone laboratorija, pa endpointi
 app.Services.RegisterAuthoringAccess();
 app.MapAuthoringEndpoints();

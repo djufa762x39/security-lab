@@ -17,6 +17,7 @@
     <ProjectReference Include="..\Platform.Audit\Platform.Audit.csproj" />
     <ProjectReference Include="..\Platform.LaboratoryPersistence\Platform.LaboratoryPersistence.csproj" />
     <ProjectReference Include="..\Platform.Authoring\Platform.Authoring.csproj" />
+    <ProjectReference Include="..\Platform.AssignmentOverview\Platform.AssignmentOverview.csproj" />
   </ItemGroup>
 
   <ItemGroup>
