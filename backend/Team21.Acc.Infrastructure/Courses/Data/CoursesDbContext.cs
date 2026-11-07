@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Team21.Acc.Core.Courses;
 using Team21.Acc.Infrastructure.Common;
 
 namespace Team21.Acc.Infrastructure.Courses.Data;
@@ -17,5 +18,5 @@ public class CoursesDbContext : TeamDbContextBase, ICoursesDbContext
 
     protected override string Schema => SchemaName;
 
-    // public DbSet<Course> Courses { get; set; }
+    public DbSet<Course> Courses => Set<Course>();
 }

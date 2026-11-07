@@ -143,8 +143,56 @@ The demo teacher manages groups under `/api/courses/{courseId}/groups`:
 Anyone who isn't the course's teacher gets 404, same as a course that doesn't exist.
 
 No header, a bad guid or two headers means nobody is signed in. Outside Development the header is ignored.
+Until real authentication is integrated, the API supports the
+`X-Test-User` header in the Development environment.
 
-The header only tells a service who is calling. Each service checks `actor.IsAuthenticated` itself and returns `Error.Unauthorized` when it's false.
+Shared development manager ID:
+
+`00000000-0000-0000-0000-000000000001`
+
+### List courses
+
+```bash
+curl -i \
+  -H "X-Test-User: 00000000-0000-0000-0000-000000000001" \
+  http://localhost:5080/api/courses
+```
+
+Returns `200 OK` with a JSON array of `CourseDto` objects,
+sorted by course code.
+
+Only courses the current user is authorized to view are returned.
+Archived courses remain readable with `status: "Archived"`.
+
+### Get a single course
+
+Replace `<course-id>` with an existing course GUID.
+
+```bash
+curl -i \
+  -H "X-Test-User: 00000000-0000-0000-0000-000000000001" \
+  http://localhost:5080/api/courses/<course-id>
+```
+
+Responses:
+
+- `200 OK` — the course exists and the user may view it.
+- `401 Unauthorized` — no valid identity was provided.
+- `404 Not Found` — the course does not exist or access is denied.
+
+Both missing and forbidden courses return the same
+`Course not found.` message to avoid revealing resource existence.
+
+### Development authorization
+
+- Any authenticated development user may view courses.
+- Only the shared development manager may create or archive courses.
+- An invalid, missing, or ambiguous `X-Test-User` header does not authenticate a user.
+- The header is ignored outside Development.
+- Outside Development, course permissions currently use a deny-all fallback until real authorization is integrated.
+
+This header is only a development test mechanism and must not
+be treated as production authentication.
 
 ## Adding a table
 
@@ -244,7 +292,7 @@ Whoever first needs one writes the interface and its fake next to their code, re
 | `X-Test-User` header | Login and sessions | IDN teams | done |
 | `FakeAccountStatusReader` | Blocked / active accounts | IDN-03 team | done, `DenyAllAccountStatusReader` outside Development |
 | `FakeCourseMembershipReader` | Enrollment and teacher assignment | ACC-02 / ACC-03 teams | done, `NoCourseMembershipReader` outside Development |
-| `FakeCourseStateReader` | Active / archived course | ACC-01, us | done, `NoCourseStateReader` outside Development. The real reader over `CoursesDbContext` comes once ACC-01 and ACC-06 are both in main |
+| `FakeCourseStateReader` | Active / archived course | ACC-01, us | done, the real `CourseStateReader` outside Development. The real reader over `CoursesDbContext` comes once ACC-01 and ACC-06 are both in main |
 | `LoggingVisibilityAuditWriter` | Audit log storage | AUD team | done, writes to the application log in every environment |
 | `DemoGroupsSeeder` | Groups demo data | us | done, Development only |
 | Material catalog | Labs and assignments | LAB / ASN teams | not needed while the visibility write side is not ours |

@@ -14,6 +14,10 @@
     <PackageReference Include="NUnit3TestAdapter" Version="6.3.1" />
     <!-- Db context tests without a database -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.10" />
+    <!-- Relational constraints without a running Postgres server -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.10" />
+    <!-- Override the old native SQLite bundle pulled transitively by EF's provider. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
   </ItemGroup>
 
   <ItemGroup>
