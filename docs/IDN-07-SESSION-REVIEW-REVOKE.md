@@ -1,6 +1,6 @@
 # Project component: IDN-07, Session review and revocation
 
-**Team:** 7
+**Team:** 2
 
 **Specification requirements:** IDN-07 (primary), IDN-02 (session validation and storage)
 
