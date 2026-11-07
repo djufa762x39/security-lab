@@ -1,14 +1,18 @@
 using Microsoft.AspNetCore.Mvc;
+using Platform.Access.AspNet;
 using Platform.Access.Domain.Enums;
 using Platform.Access.Domain.Models;
-using Platform.Api.Domain.Identity;
-using Platform.Api.Services.Identity;
+using Platform.Api.Interfaces.Identity;
+using Platform.Identity.Enums;
 using Platform.LabVisibility.Application.Preview;
 
 namespace Platform.Api.Controllers.LabVisibility;
 
 // AUT-07: "Pregled kao student" za nastavnika kursa.
 // 200 dozvoljeno, 401 bez identiteta, 404 i za zabranjeno i za nepostojeće (isto telo).
+// ACC-05: autorizacija je u PreviewStudentView (IAccessDecision + LabPreviewPolicy) pre čitanja
+// sadržaja; middleware bi odbijen pristup vratio kao 403, a AUT-07 traži isti 404.
+[DelegatedAuthorization]
 [ApiController]
 [Route("api/labs")]
 public sealed class LabPreviewController(

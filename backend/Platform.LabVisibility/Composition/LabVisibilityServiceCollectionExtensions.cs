@@ -1,6 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
+using Platform.Access.Domain.Enums;
+using Platform.Access.Domain.Models;
 using Platform.Access.Infrastructure.Catalog;
 using Platform.Access.Infrastructure.Policies;
+using Platform.LabVisibility.Application.EvaluatorKeys;
 using Platform.LabVisibility.Application.Preview;
 using Platform.LabVisibility.Contracts;
 using Platform.LabVisibility.Infrastructure.Auditing;
@@ -24,7 +27,9 @@ public static class LabVisibilityServiceCollectionExtensions
         services.AddSingleton<InMemoryCourseMembership>();
         services.AddSingleton<ICourseMembership>(sp => sp.GetRequiredService<InMemoryCourseMembership>());
 
-        services.AddSingleton<ILabVisibilityAudit, NullLabVisibilityAudit>();
+        services.AddLogging(); // bezbedno i ako je logging već registrovan; audit piše u log
+        services.AddSingleton<ILabVisibilityAudit, LoggerLabVisibilityAudit>();
+        services.AddSingleton<EvaluatorKeyReader>();
 
         // AUT-07: pregled pre objave (Cvetojević)
         services.AddScoped<PreviewStudentView>();
@@ -38,16 +43,27 @@ public static class LabVisibilityServiceCollectionExtensions
         var catalog = services.GetRequiredService<InMemoryActionCatalog>();
         foreach (var action in LabVisibilityActions.All)
         {
-            catalog.Register(action);
+            // lab.key.read i lab.preview (AUT-07) nose resurs "lab" (labId iz rute);
+            // ostale radnje za sada nemaju resurs u LabVisibility ugovorima.
+            var isKeyRead = action == LabVisibilityActions.KeyRead;
+            var hasLabResource = isKeyRead || action == LabVisibilityActions.Preview;
+            catalog.Register(new ActionDefinition(
+                action,
+                hasLabResource ? ActionScope.Course : ActionScope.Authenticated,
+                hasLabResource ? "lab" : null,
+                isKeyRead));
         }
 
-        // Politike se dodaju ovde, svako svoju:
+        // Politike se dodaju ovde, svako svoju, istim obrascem.
         var policies = services.GetRequiredService<InMemoryAccessPolicyRegistry>();
+        policies.Register(
+            LabVisibilityActions.KeyRead,
+            ActivatorUtilities.CreateInstance<EvaluatorKeyPolicy>(services));
 
         // AUT-07: pregled pre objave samo za nastavnika kursa (Cvetojević)
-        policies.Register(LabVisibilityActions.Preview, new LabPreviewPolicy(
-            services.GetRequiredService<ILabPublicContentReader>(),
-            services.GetRequiredService<ICourseMembership>()));
+        policies.Register(
+            LabVisibilityActions.Preview,
+            ActivatorUtilities.CreateInstance<LabPreviewPolicy>(services));
 
         return services;
     }
