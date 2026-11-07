@@ -1,4 +1,5 @@
 using Team21.Acc.Api;
+using Platform.Api.Security.RevisionAuthorization;
 using Platform.Api.Modules.Kt1;
 using Platform.Api.Modules.RevisionReviews;
 using Platform.Api.Modules.Laboratories.Application;
@@ -34,6 +35,11 @@ using LabVisibilityCourseRole = Platform.LabVisibility.Contracts.CourseRole;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddTeam21Acc();
+builder.Host.UseDefaultServiceProvider(options =>
+{
+    options.ValidateScopes = true;
+    options.ValidateOnBuild = true;
+});
 
 if (builder.Environment.IsDevelopment())
 {
@@ -42,8 +48,10 @@ if (builder.Environment.IsDevelopment())
 }
 
 // Access module
+
 builder.Services.AddAccessControl();
 builder.Services.AddAccessAspNet();
+builder.Services.AddRevisionAuthorization();
 
 if (builder.Environment.IsDevelopment())
 {
@@ -76,6 +84,7 @@ else
 }
 
 builder.Services.AddAudit();
+builder.Services.AddAuditPersistence(builder.Configuration.GetConnectionString("Laboratories"));
 builder.Services.AddAuthoring();
 builder.Services.AddLabVisibility();
 builder.Services.AddIdentityRateLimiting(builder.Configuration);
@@ -86,6 +95,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddLaboratoriesPersistence(
     builder.Configuration.GetConnectionString("Laboratories"));
 builder.Services.AddRevisionReviews();
+builder.Services.AddRevisionSecurityPersistence(builder.Configuration.GetConnectionString("Laboratories"));
 
 builder.Services.AddSingleton<IAccountRepository, InMemoryAccountRepository>(); // TODO: zameniti trajnim repozitorijumom (PostgreSQL)
 builder.Services.AddScoped<ISessionManager, StoreSessionManager>();   // zameniti kad IDN-02 bude gotov
@@ -120,13 +130,16 @@ else
 }
 
 // Kreiranje aplikacije
+builder.Services.AddRevisionRequestIdentity();
 var app = builder.Build();
+app.UseRouting();
+
+app.Services.RegisterRevisionPolicies();
 
 // AUD-01/AUD-04 (S-10): correlation ID za svaki zahtev; mora biti prvi middleware
 app.UseCorrelationContext();
-
-app.UseRouting();
 app.UseAccessControl();
+
 
 // Identity Rate Limiting
 app.UseIdentityRateLimiting();
