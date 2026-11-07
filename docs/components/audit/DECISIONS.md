@@ -17,6 +17,7 @@ They can still change through review.
 | A4 | Details are an allowlist per event type, string values only, at most 20 keys and 2048 bytes; secret-like key names are rejected as an extra check. | The system cannot reliably detect every secret in free text, so free text is not accepted (AUD-03). | PR #42 |
 | A5 | The catalog and draft validation belong to S-02; the writer (S-06) calls `AuditDraftValidator` before storing. | Avoids two validators for the same rules. Proposed in PR #42; member 3 to confirm. | PR #42 |
 | A6 | `AuditEvent` is an immutable domain record with its own invariants, independent of the validator. A retry with the same `EventId` and content is not a conflict; the time is not compared. | Defence in depth (ADM-07); supports idempotent retries. | S-03 |
+| A7 | Exception to A1: `IAuditContextProvider` is a public application integration port so the composition host can supply trusted server identity and correlation state without making the writer implementation public. `Platform.Identity.Tests` is a test-only friend assembly so its PostgreSQL integration test can exercise internal Audit persistence; production consumers still use only public contracts and composition entry points. | Keeps the runtime boundary explicit while avoiding public persistence types solely for cross-module integration testing. | PR #113; owner review pending |
 
 ## Open decisions from the team plan (v2.2)
 

@@ -144,6 +144,13 @@ Proposal: Identity calls the shared contract (`IAuditWriter` for normal requests
 `ITrustedAuditWriter` for login before the session exists) instead of its own `IAuditWriter`. An
 adapter that copies free text from the old interface is not acceptable (AUD-03).
 
+PR #113 implements the producer and event mapping described below. Its login fail-closed choice
+(revoke the newly created session and return a generic `503` when mandatory Audit persistence is
+unavailable) is pending confirmation from the Team 1 Identity owner. Account-status atomicity is
+not claimed by this producer: the current in-memory compensation is demonstration-only. D3 and
+the required new-database-session rollback proof remain S-16 work with Team 2 and members 2, 3
+and 9.
+
 `account.status.changed` (IDN-03), from `ChangeAccountStatus`:
 
 | `ChangeStatusOutcome` | Audit outcome | Actor | `reasonCode` |
