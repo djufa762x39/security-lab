@@ -97,13 +97,15 @@ Without the connection string the api still starts. Only our endpoints fail.
 
 ## Calling our endpoints in Development
 
-No real login yet. Send the user id in a header. For example the demo teacher asking for the demo course's materials:
+Platform.Api now authenticates Team 21 requests through the existing IDN session cookie, `SecurityLab.Session`. The host replaces our temporary actor with `SessionCurrentActor`, which reads the validated `IIdentityContext`. `X-Test-User`, `X-Stub-User` and other identity headers do not sign a caller in or override the session user, including in Development.
+
+Use the existing IDN login flow described in [the platform development guide](../DEVELOPMENT.md). Set `API_BASE_URL` to that local API address and use the cookie jar obtained from that flow; do not weaken the existing secure-cookie settings. For example:
 
 ```bash
-curl -H "X-Test-User: 00000000-0000-0000-0000-000000000001" http://localhost:5080/api/courses/21000000-0000-0000-0000-000000000001/materials
+curl --cookie cookies.txt "$API_BASE_URL/api/courses/21000000-0000-0000-0000-000000000001/materials"
 ```
 
-The demo ids are in `Team21.Acc.Infrastructure/Groups/Fakes/DemoIds.cs`. In Development the groups demo data is seeded at startup once the groups migration is applied. The two demo courses use the same ids as the ACC-01 sample courses.
+The demo ids are in `Team21.Acc.Infrastructure/Groups/Fakes/DemoIds.cs`. They describe the ACC-06 authorization fixtures, not provisioned IDN login accounts or sessions. In Development the groups demo data is seeded at startup once the groups migration is applied. The two demo courses use the same ids as the ACC-01 sample courses. A real session still needs an account and course membership recognized by the current readers; their fake/deny-all implementations have not been integrated yet. A valid login alone therefore does not guarantee a 200 response for these demo ids.
 
 If your local database was seeded before the demo courses moved to the ACC-01 ids, reset it once and apply the migrations again:
 
@@ -125,10 +127,10 @@ docker compose up -d db
 | `…d0a0` | Assignment in the archived course. StudentA gets 404, the teacher still gets 200 |
 
 ```bash
-curl -H "X-Test-User: 00000000-0000-0000-0000-00000000000b" http://localhost:5080/api/materials/assignment/00000000-0000-0000-0000-00000000d00a
+curl --cookie cookies.txt "$API_BASE_URL/api/materials/assignment/00000000-0000-0000-0000-00000000d00a"
 ```
 
-StudentB gets 404 for the material restricted to group A, the same answer as for a material that doesn't exist.
+When the validated session belongs to StudentB and the account/membership fixtures match, the material restricted to group A returns 404, the same answer as for a material that doesn't exist. This is not a way to impersonate StudentB through a header.
 
 The demo teacher manages groups under `/api/courses/{courseId}/groups`:
 
@@ -140,11 +142,13 @@ The demo teacher manages groups under `/api/courses/{courseId}/groups`:
 | `POST /{groupId}/members` with `{ "userId": "..." }` | Adds an active student of the course |
 | `DELETE /{groupId}/members/{userId}` | Removes a member, kept as history. Members of an archived group or course are frozen |
 
-Anyone who isn't the course's teacher gets 404, same as a course that doesn't exist.
+An authenticated caller who isn't the course's teacher gets 404, same as a course that doesn't exist.
 
-No header, a bad guid or two headers means nobody is signed in. Outside Development the header is ignored.
+Missing, invalid, expired or revoked sessions return 401 through the existing IDN validation. MFA-pending identities do not become authenticated Team 21 actors. The Development session bypasses for `/api/courses` and `/api/materials` have been removed; bypasses for other modules are unchanged.
 
-The header only tells a service who is calling. Each service checks `actor.IsAuthenticated` itself and returns `Error.Unauthorized` when it's false.
+`HeaderCurrentActor` remains available for isolated Development module tests. The integrated Platform.Api host uses the session adapter in every environment. Services retain their own authorization checks; authentication does not grant course membership or group access.
+
+The HTTP integration tests in `Team21.Acc.Tests/Api/SessionCurrentActorHostIntegrationTests.cs` exercise the real host in Testing with real `SessionManager`, Team 21 services and isolated EF InMemory stores. Separate small Development pipelines verify the removed bypasses without starting the full Development host, its automatic migrations or hosted seeders. These tests do not prove PostgreSQL or complete account/membership integration.
 
 ## Adding a table
 
@@ -228,7 +232,7 @@ Whoever first needs one writes the interface and its fake next to their code, re
 
 | Fake | Stands in for | Owner | Status |
 |---|---|---|---|
-| `X-Test-User` header | Login and sessions | IDN teams | done |
+| `X-Test-User` header | Isolated Development actor fake | IDN teams own real login/sessions | retained for module tests; Platform.Api uses the validated session adapter |
 | `FakeAccountStatusReader` | Blocked / active accounts | IDN-03 team | done, `DenyAllAccountStatusReader` outside Development |
 | `FakeCourseMembershipReader` | Enrollment and teacher assignment | ACC-02 / ACC-03 teams | done, `NoCourseMembershipReader` outside Development |
 | `FakeCourseStateReader` | Active / archived course | ACC-01, us | done, `NoCourseStateReader` outside Development. The real reader over `CoursesDbContext` comes once ACC-01 and ACC-06 are both in main |

@@ -1,4 +1,7 @@
 using Team21.Acc.Api;
+using Team21.Acc.Core.Interfaces;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Platform.Api.Modules.Team21.Integration;
 using Platform.Api.Modules.Kt1;
 using Platform.Api.Modules.RevisionReviews;
 using Platform.Api.Modules.Laboratories.Application;
@@ -99,6 +102,8 @@ builder.Services.AddScoped<ILogoutService, LogoutService>();
 builder.Services.AddScoped<ISessionCreator, StoreSessionCreator>();
 
 builder.Services.AddScoped<Platform.Api.Interfaces.Identity.IIdentityContext, SessionIdentityContext>();
+builder.Services.Replace(
+    ServiceDescriptor.Scoped<ICurrentActor, SessionCurrentActor>());
 
 
 // Laboratories modul

@@ -3,12 +3,14 @@
 - **Vlasnik:** član 9, Team 21.
 - **Zahtevi:** ACC-01 i ACC-06; saradnja sa IDN, ACC-02/03, ACC-05, delegacijama, LAB/ASN/AUT i AUD.
 - **Datum pregleda:** 2026-11-07.
-- **Status:** nacrt za pregled tima; adapteri opisani kao predlog još nisu implementirani niti prihvaćeni od drugih timova.
+- **Status:** sesijski adapter je implementiran i povezan uz odobrene minimalne host/IDN izmene; ostali adapteri ostaju predlozi ili blokirani, kako je navedeno pojedinačno.
 - **Radna grana:** `feature/acc-integration`, izvedena iz `feature/acc06-groups`, HEAD pri pregledu `736b8f2`.
 
 ## 1. Obuhvat i izvori
 
 Ovaj dokument priprema povezivanje modula. Ne uvodi nove javne ugovore, ne menja poslovna pravila i ne preuzima autentifikaciju, upis studenata, delegacije, isporuku materijala ili audit skladište od njihovih vlasnika.
+
+Dopuna nakon početnog pregleda: `SessionCurrentActor` je dodat u host integracioni sloj, a `Program.cs` sada eksplicitno zamenjuje `ICurrentActor` scoped registraciju tim adapterom. Postojeći `IIdentityContext` i IDN validacija ostaju isti. Uklonjeni su samo Development session bypass-i za `/api/courses` i `/api/materials`. Tabela Git izvora ispod beleži osnovu početne analize; sesijska aktivacija i njeni testovi opisani su u ovoj dopuni. Ne tvrdi se da su ostale međutimske integracije završene.
 
 Izvori su stvarni kod na radnoj grani i lokalne udaljene reference osvežene prethodnim `git fetch origin`. Tokom izrade dokumenta nije rađen novi fetch. Kod drugih grana pregledan je bez checkout-a i spajanja:
 
@@ -50,7 +52,7 @@ Broj tima naveden je samo gde je potvrđen pregledanim dokumentima. Ostali vlasn
 
 | Zavisnost / potrošač | Odgovorni tim i izvor podataka | Postojeći ugovor | Potrebno povezivanje — predlog | Trenutno stanje |
 | --- | --- | --- | --- | --- |
-| Pozivalac ACC-01/06 | IDN login/sesije; validirana serverska sesija | Team 21 `ICurrentActor`; `Platform.Api.Interfaces.Identity.IIdentityContext.Current` | Adapter validiranog `CallerIdentity` u `ICurrentActor` | Team 21 koristi `HeaderCurrentActor` u Development, `AnonymousCurrentActor` drugde; IDN ima `SessionIdentityContext`, ali nisu povezani |
+| Pozivalac ACC-01/06 | IDN login/sesije; validirana serverska sesija | Team 21 `ICurrentActor`; `Platform.Api.Interfaces.Identity.IIdentityContext.Current` | `SessionCurrentActor` u host integracionom sloju | Host u svim okruženjima koristi scoped sesijski adapter; početni fake/anonymous izbor ostaje samo pri samostalnom pozivu Team 21 modula |
 | Status naloga ACC-06 | IDN-03; autoritativni status naloga | Team 21 `IAccountStatusReader`; host `IAccountRepository.Find(Guid)` | Adapter potvrđenog IDN izvora statusa | Fake / deny-all; host registruje `InMemoryAccountRepository`, pa trajni izvor statusa nije potvrđen |
 | Članstvo i uloga ACC-06 | ACC-02/03; članstva kursa | Team 21 `ICourseMembershipReader`; Access `IMembershipReader.GetAsync`; na ACC-02 grani `IMembershipStore.FindActiveAsync` | Čitač koji eksplicitno mapira aktivnost, kurs i ulogu | Nema stvarnog izvora na radnoj grani; ACC-02 kod postoji zasebno |
 | Delegirani pregled | Vlasnici delegacija ACC-07 i prava pregleda; serversko važeće pravo | Team 21 `CourseMembership.CanReview`; Access `DelegatedActions` | Mapiranje tačno dogovorene radnje i važenja prava | Nije potvrđen izvor ni dogovor koja radnja znači `CanReview`; ne pretpostavljati ga iz same uloge Assistant |
@@ -78,9 +80,9 @@ Dokazi za matricu:
 
 ### 4.1. Identitet i nalog
 
-Predloženi adapter mora dati neprazan `UserId` samo za potvrđenog, autentifikovanog pozivaoca. `CallerIdentity.IsAuthenticated` i nivo `AuthenticationLevel.Active` moraju biti konzistentni; `None`, `MfaPending`, odsutna sesija ili prazan ID ne daju Team 21 identitet. Adapter ne validira lozinku, cookie ili token samostalno i ne kopira session handle u audit.
+`SessionCurrentActor` daje neprazan `UserId` samo za potvrđenog, autentifikovanog pozivaoca. `CallerIdentity.IsAuthenticated` i nivo `AuthenticationLevel.Active` moraju biti konzistentni; `None`, `MfaPending`, odsutna sesija ili prazan ID ne daju Team 21 identitet. Adapter ne validira lozinku, cookie ili token samostalno i ne kopira session handle u audit.
 
-`SessionIdentityContext` već čita rezultat `SessionCheckMiddleware`. U Development okruženju taj middleware trenutno preskače `/api/courses` i `/api/materials`; sesijski adapter zato zahteva dogovor o razvojnom režimu. `X-Test-User` i IDN `X-Stub-User` nisu stvarna autentifikacija. `StubIdentityContext` postoji, ali host registruje `SessionIdentityContext`.
+`SessionIdentityContext` čita rezultat `SessionCheckMiddleware`, a `SessionCurrentActor` prihvata samo autentifikovan Active identitet sa nepraznim UserId. Development bypass-i za `/api/courses` i `/api/materials` uklonjeni su u odobrenoj aktivaciji; ostali izuzeci nisu menjani. `X-Test-User` i IDN `X-Stub-User` nisu izvori identiteta u integrisanom hostu. `StubIdentityContext` postoji, ali host i dalje registruje `SessionIdentityContext`. Istek i opoziv proverava postojeći IDN validator, ne Team 21 adapter.
 
 | IDN status | Predloženi Team 21 status | Pristup |
 | --- | --- | --- |
@@ -201,7 +203,7 @@ Izvori: `backend/Team21.Acc.Infrastructure/Common/LoggingAuditTrail.cs`, `Groups
 
 - Core zadržava male interfejse bez EF i ASP.NET zavisnosti. Poslovne odluke ostaju u servisima; adapter prevodi podatke.
 - EF adapter ide u Infrastructure i zavisi od interfejsa konteksta. Ne duplirati `GroupMembershipReader` i `MaterialAccessRuleReader`.
-- Adapter nad trenutnim host `IIdentityContext` smestiti u host composition sloj ili koristiti naknadno prihvaćen neutralan ugovor. Team21.Acc.Api ne sme referencirati Platform.Api koji već referencira njega.
+- `SessionCurrentActor` je u `Platform.Api/Modules/Team21/Integration/`, uz eksplicitnu scoped zamenu registracije u hostu. Team21.Acc.Api ne referencira Platform.Api; test projekat referencira host radi izolovanih i HTTP integracionih testova, bez kružne zavisnosti.
 - Stvarni scoped kontekst ne ubrizgavati u singleton Access politike. Access trenutno koristi singleton politike i `EmptyMembershipReader`; eventualni adapter zahteva lifetime rešenje sa vlasnikom.
 - Registraciju zamene uraditi eksplicitno, bez oslanjanja na slučajan redosled više `AddScoped` registracija. Testirati Development i Production.
 - Team 21 endpointi već koriste `DelegatesToLegacyAuthorization()`. Ne označavati ih javnim da bi prošli middleware. Nova centralna politika ne sme ukinuti grupna ograničenja.
@@ -213,7 +215,7 @@ Izvori: Team 21 `.csproj` fajlovi, `Api/Team21AccModule.cs`, `Api/Services/HttpC
 
 ## 9. Potrebni pozitivni i negativni testovi
 
-Ovo je plan testova, ne izveštaj o izvršavanju. Postojeće testove proširiti sa članom 8 bez ponavljanja istih poslovnih provera u adapteru. NUnit + kontrolisani izvori za mapiranje; stvarni EF model za filtere; namenski PostgreSQL i HTTP host testovi za ponašanje koje in-memory provider ne dokazuje.
+Matrica ispod ostaje plan šire integracije; sesijski deo je sada pokriven izolovanim `SessionCurrentActorTests` i HTTP `SessionCurrentActorHostIntegrationTests` u Team 21 test projektu. HTTP testovi koriste stvarni host u Testing okruženju, postojeći `SessionManager`, stvarne Team 21 servise i izolovane EF InMemory baze sa sintetičkim sesijama. Development uklanjanje bypass-a proverava se zasebnim malim pipeline-om sa stvarnim middleware-om, bez izvršavanja startup migracija ili seedera. To nije dokaz PostgreSQL ponašanja ili kompletne integracije stvarnih naloga i članstava. Ostale testove proširiti sa članom 8 bez dupliranja odgovornosti.
 
 | Oblast | Pozitivni slučaj | Negativni slučajevi / očekivana bezbednosna posledica |
 | --- | --- | --- |
@@ -267,7 +269,7 @@ Izvori: `backend/Platform.Access.Tests/ApiEndpointCoverageTests.cs`, `backend/La
 | 1 | Pregled ovog nacrta i potvrda vlasnika/semantike | Spremno za pregled; član 9 i vlasnici zavisnosti |
 | 2 | Zajednička ACC-01/06 osnova bez kopiranja modela | Blokada unutar Tima 21: na radnoj grani nedostaje ACC-01; način uključivanja posebno odobrava tim |
 | 3 | Stvarni CourseStateReader, DI i fokusirani testovi | Prvi konkretan adapter; tehnički ugovor spreman, čeka korak 2 |
-| 4 | Sesijski identitet i status naloga | Delimično postoje izvori; IDN mora potvrditi middleware tok i autoritativni/trajni status |
+| 4 | Sesijski identitet i status naloga | Sesijski adapter aktiviran uz odobrene host/IDN izmene i testiran izolovanim HTTP tokom; autoritativni/trajni status naloga ostaje zavisnost IDN-03 |
 | 5 | Članstva, delegacije i ACC-01 autorizacija | Blokirano dostupnošću/usaglašavanjem ACC-02/03/07 izvora, prava i Access politika |
 | 6 | Zabrana upisa u arhiviran kurs kroz ACC-02 | Blokirano dostupnošću ACC-02 modula i dogovorom konkurentnosti; član 9 pravi adapter, ne enrollment |
 | 7 | Primena provere na stvarnom sadržaju i upis publike | Blokirano dogovorom i povezivanjem ASN/LAB/AUT vlasničkih tokova |
@@ -276,4 +278,4 @@ Izvori: `backend/Platform.Access.Tests/ApiEndpointCoverageTests.cs`, `backend/La
 
 Integracija se označava završenom tek kada su prihvaćeni ugovor i mapiranje, registrovan stvarni adapter, povezani stvarni potrošači i prošli odgovarajući pozitivni i negativni testovi. Fake, logger ili zelen izolovani test sami nisu završena međutimska integracija.
 
-Ova izmena obuhvata samo dokumentaciju. Ne implementira adaptere i ne menja ugovore, izvorni kod ili šemu baze. Matrica iz odeljka 9 opisuje buduće integracione testove; rezultate trenutnih provera pre commita prijaviti odvojeno, bez predstavljanja njih kao dokaza završene integracije.
+Početni milestone obuhvatio je samo dokumentaciju; kasniji sesijski milestone dodaje adapter, minimalnu host registraciju i uklanjanje dva Development izuzetka, bez promene šeme baze ili IDN validacione logike. Rezultate provera prijaviti odvojeno, bez predstavljanja njih kao dokaza završene celokupne integracije ili prolaska pune CI procedure.
