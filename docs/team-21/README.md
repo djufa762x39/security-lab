@@ -292,7 +292,6 @@ Whoever first needs one writes the interface and its fake next to their code, re
 | `X-Test-User` header | Login and sessions | IDN teams | done |
 | `FakeAccountStatusReader` | Blocked / active accounts | IDN-03 team | done, `DenyAllAccountStatusReader` outside Development |
 | `FakeCourseMembershipReader` | Enrollment and teacher assignment | ACC-02 / ACC-03 teams | done, `NoCourseMembershipReader` outside Development |
-| `FakeCourseStateReader` | Active / archived course | ACC-01, us | done, the real `CourseStateReader` outside Development. The real reader over `CoursesDbContext` comes once ACC-01 and ACC-06 are both in main |
 | `LoggingVisibilityAuditWriter` | Audit log storage | AUD team | done, writes to the application log in every environment |
 | `DemoGroupsSeeder` | Groups demo data | us | done, Development only |
 | Material catalog | Labs and assignments | LAB / ASN teams | not needed while the visibility write side is not ours |

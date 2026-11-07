@@ -23,13 +23,15 @@ public static class GroupsModule
         services.AddScoped<IGroupMembershipReader, GroupMembershipReader>();
         services.AddScoped<IMaterialAccessRuleReader, MaterialAccessRuleReader>();
 
+        // ACC-01 answers for the course in every environment
+        services.AddScoped<ICourseStateReader, CourseStateReader>();
+
         // Other teams' modules: fakes in Development, deny-all defaults elsewhere
         if (environment.IsDevelopment())
         {
             services.AddSingleton<FakeDirectory>();
             services.AddScoped<IAccountStatusReader, FakeAccountStatusReader>();
             services.AddScoped<ICourseMembershipReader, FakeCourseMembershipReader>();
-            services.AddScoped<ICourseStateReader, FakeCourseStateReader>();
 
             services.AddScoped<DemoGroupsSeeder>();
             services.AddHostedService<DemoSeedHostedService>();
@@ -38,7 +40,6 @@ public static class GroupsModule
         {
             services.AddScoped<IAccountStatusReader, DenyAllAccountStatusReader>();
             services.AddScoped<ICourseMembershipReader, NoCourseMembershipReader>();
-            services.AddScoped<ICourseStateReader, CourseStateReader>();
         }
 
         services.AddScoped<IVisibilityAuditWriter, LoggingVisibilityAuditWriter>();
