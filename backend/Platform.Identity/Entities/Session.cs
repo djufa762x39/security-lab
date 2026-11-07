@@ -42,7 +42,4 @@ public sealed class Session
 
     /// <summary>Marks the session as revoked. The first revocation time is kept.</summary>
     public void Revoke(DateTimeOffset now) => RevokedAt ??= now;
-
-    /// <summary>True while the session is neither revoked nor expired at the given time (US-06).</summary>
-    public bool IsActiveAt(DateTimeOffset now) => RevokedAt is null && ExpiresAt > now;
 }
