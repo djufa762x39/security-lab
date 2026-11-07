@@ -48,6 +48,7 @@ public partial class PublicationDatabaseTests
         await database.StartAsync();
         await using var context = CreateContext();
         await context.Database.MigrateAsync();
+        await Platform.Audit.Composition.AuditPersistenceExtensions.MigrateAuditDatabaseAsync(database.GetConnectionString());
     }
 
     [OneTimeTearDown]
@@ -67,7 +68,7 @@ public partial class PublicationDatabaseTests
         var after = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
         Assert.Multiple(() =>
         {
-            Assert.That(before, Has.Length.EqualTo(2));
+            Assert.That(before.Last(), Does.EndWith("_AddReviewDefinitions"));
             Assert.That(after, Is.EqualTo(before));
             Assert.That(context.Database.HasPendingModelChanges(), Is.False);
         });

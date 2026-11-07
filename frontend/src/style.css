@@ -5,6 +5,38 @@ main { max-width: 900px; margin: 8vh auto; padding: 0 24px; }
 h1 { font-size: clamp(2rem, 5vw, 3rem); line-height: 1.15; }
 .eyebrow { font-weight: 700; letter-spacing: .12em; color: #315d8a; }
 section { background: white; border: 1px solid #e1e6ed; border-radius: 12px; padding: 22px; margin-top: 32px; }
+.site-nav { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 18px 0; border-bottom: 1px solid #e1e6ed; }
+.brand-link { color: #223045; font-weight: 800; text-decoration: none; }
+.site-nav-links { display: flex; align-items: center; gap: 16px; }
+.site-nav-links a { color: #245589; text-decoration: none; }
+.site-nav button { border: 0; border-radius: 6px; padding: 9px 13px; cursor: pointer; font: inherit; }
+.landing-page { margin-top: 56px; padding: 42px; }
+.landing-page h1 { max-width: 650px; margin-bottom: 16px; }
+.landing-page > p:not(.eyebrow) { max-width: 620px; color: #4c6079; font-size: 1.1rem; line-height: 1.6; }
+.landing-actions { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 28px; }
+.primary-link, .secondary-link { display: inline-block; border-radius: 7px; padding: 11px 16px; text-decoration: none; font-weight: 600; }
+.primary-link { background: #245589; color: white; }
+.secondary-link { background: #e7edf5; color: #223045; }
+.landing-highlights { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 48px; }
+.landing-highlights article { border-top: 3px solid #b9c8d8; padding-top: 14px; }
+.landing-highlights h2 { font-size: 1.1rem; margin: 0 0 8px; }
+.landing-highlights p { color: #4c6079; line-height: 1.5; margin: 0; }
+@media (max-width: 680px) { .site-nav, .site-nav-links { align-items: flex-start; flex-direction: column; } .landing-page { padding: 24px; } .landing-highlights { grid-template-columns: 1fr; } }
+.login-page h2 { margin-top: 0; }
+.login-form { display: flex; flex-direction: column; gap: 16px; max-width: 420px; }
+.login-field { display: flex; flex-direction: column; gap: 7px; }
+.login-field label { font-weight: 600; }
+.login-field input { padding: 10px; border: 1px solid #b9c8d8; border-radius: 6px; color: inherit; background: white; font: inherit; width: 100%; }
+.login-form button { align-self: flex-start; border: 0; border-radius: 8px; padding: 11px 22px; background: #245589; color: white; font-weight: 600; cursor: pointer;}
+.login-form button:hover:not(:disabled) { background: #1b4271; box-shadow: 0 2px 6px rgba(34, 48, 69, .25); }
+.login-form button:disabled { opacity: .6; cursor: wait; }
+@media (prefers-reduced-motion: reduce) {
+  .login-form button { transition: none; }
+}
+.login-error { color: #9b1c1c; margin: 0; }
+.app-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.app-header button { border: 0; border-radius: 6px; padding: 10px 14px; cursor: pointer; font: inherit; }
+.app-header button.secondary { background: #e7edf5; color: #223045; }
 form { display: grid; gap: 8px; max-width: 420px; }
 label { font-weight: 600; margin-top: 8px; }
 input { padding: 10px 12px; border: 1px solid #c5cfdb; border-radius: 8px; font: inherit; }
