@@ -5,10 +5,12 @@ using Platform.Access.Domain.Models;
 using Platform.Api.Interfaces.Identity;
 using Platform.Prerequisites.Contracts;
 using Platform.Prerequisites.Domain;
+using Platform.Access.AspNet;
 
 namespace Platform.Api.Controllers;
 
 [ApiController]
+[DelegatedAuthorization]
 [Route("api/laboratories/{laboratoryId:guid}/prerequisites")]
 public sealed class PrerequisitesController(
     IPrerequisiteRepository repository,
@@ -17,11 +19,31 @@ public sealed class PrerequisitesController(
 {
     [HttpGet]
     public async Task<IActionResult> Get(
-        Guid laboratoryId,
-        CancellationToken cancellationToken)
+    Guid laboratoryId,
+    CancellationToken cancellationToken)
     {
         if (laboratoryId == Guid.Empty)
             return BadRequest(new { code = "invalid_laboratory_id" });
+
+        var subject = subjectResolver.Resolve(HttpContext);
+
+        if (subject is null)
+        {
+            return StatusCode(403, new { code = "forbidden" });
+        }
+
+        var decision = await accessDecision.DecideAsync(
+            new AccessRequest(
+                subject,
+                "prerequisites.read",
+                new ResourceRef("laboratory", laboratoryId.ToString()),
+                HttpContext.TraceIdentifier),
+            cancellationToken);
+
+        if (decision.Outcome != AccessOutcome.Allow)
+        {
+            return StatusCode(403, new { code = "forbidden" });
+        }
 
         var prerequisites = await repository.GetForLaboratoryAsync(
             laboratoryId, cancellationToken);
@@ -45,8 +67,8 @@ public sealed class PrerequisitesController(
             new AccessRequest(
                 subject,
                 "prerequisites.add",
-                null,
-                 HttpContext.TraceIdentifier),
+                new ResourceRef("laboratory", laboratoryId.ToString()),
+                HttpContext.TraceIdentifier),
         cancellationToken);
         if (decision.Outcome != AccessOutcome.Allow)
         {
@@ -104,7 +126,7 @@ public sealed class PrerequisitesController(
             new AccessRequest(
                 subject,
                 "prerequisites.remove",
-                null,
+                new ResourceRef("laboratory", laboratoryId.ToString()),
                 HttpContext.TraceIdentifier),
             cancellationToken);
 
