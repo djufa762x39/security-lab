@@ -33,6 +33,11 @@ using PlatformAccessDecision = Platform.Access.Contracts.IAccessDecision;
 using LabVisibilityCourseRole = Platform.LabVisibility.Contracts.CourseRole;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseDefaultServiceProvider(options =>
+{
+    options.ValidateScopes = true;
+    options.ValidateOnBuild = true;
+});
 
 if (builder.Environment.IsDevelopment())
 {
@@ -125,13 +130,12 @@ else
 // Kreiranje aplikacije
 builder.Services.AddRevisionRequestIdentity();
 var app = builder.Build();
+app.UseRouting();
 
 app.Services.RegisterRevisionPolicies();
 
 // AUD-01/AUD-04 (S-10): correlation ID za svaki zahtev; mora biti prvi middleware
 app.UseCorrelationContext();
-
-app.UseRouting();
 app.UseAccessControl();
 
 
