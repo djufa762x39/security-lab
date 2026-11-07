@@ -4,7 +4,7 @@
 - **Zahtevi:** ACC-01 i ACC-06; saradnja sa IDN, ACC-02/03, ACC-05, delegacijama, LAB/ASN/AUT i AUD.
 - **Datum pregleda:** 2026-11-07.
 - **Status:** sesijski adapter je implementiran i povezan uz odobrene minimalne host/IDN izmene; ostali adapteri ostaju predlozi ili blokirani, kako je navedeno pojedinačno.
-- **Radna grana:** `feature/acc-integration`, izvedena iz `feature/acc06-groups`, HEAD pri pregledu `736b8f2`.
+- **Radna grana:** `feature/acc-integration`, izvedena iz `feature/acc06-groups`; početni pregled na `736b8f2`, aktuelna osnova posle predaje testova na `3fca69c`.
 
 ## 1. Obuhvat i izvori
 
@@ -27,11 +27,21 @@ Osnovna dokumentacija: [README](../README.md), [ACC-06 model](../ACC-06-model.md
 
 ### KT1 dopuna nakon sesijskih i HTTP milestone-a
 
-Prethodna tabela i navod o `main` predstavljaju istorijski pregled osnove `736b8f2`, ne trenutno udaljeno stanje. Novi `git fetch origin` za KT1 pregled 2026-11-07 pokazuje `origin/main` na `e744fab` (ACC-01 je tamo spojen), a `origin/feature/acc06-groups` na `3b1e6ff`. Radni HEAD pre ove dokumentacione dopune je `c94882e`: ACC-01 model i dalje nije uključen u ovu granu. Roditelj ima 106 commitova koji nisu ovde, a ova grana šest svojih commitova; budući rezultat PR-a nije testiran. Preporučeni cilj ostaje `feature/acc06-groups`, uz poseban dogovor o objedinjavanju. Ova provera ne menja grane niti odobrava merge.
+Prethodna tabela i navod o `main` predstavljaju istorijski pregled osnove `736b8f2`, ne trenutno udaljeno stanje. Osvežavanje referenci za raniji KT1 pregled 2026-11-07 pokazalo je `origin/main` na `e744fab` (ACC-01 je tamo spojen), a `origin/feature/acc06-groups` na `3b1e6ff`. Tadašnji radni HEAD bio je `c94882e`: ACC-01 model nije bio uključen u ovu granu, roditelj je imao 106 commitova koji nisu bili ovde, a ova grana šest svojih commitova. To nisu novi podaci o udaljenim referencama. Preporučeni cilj ostaje `feature/acc06-groups`, uz poseban dogovor o objedinjavanju; odobren rezultat budućeg PR-a nije potvrđen. Ova dopuna ne menja grane niti odobrava merge.
 
-Aktuelni dokazi: 197/197 Team 21 testova prolazi. Dvanaest dodatih HTTP slučajeva proverava Active → Blocked/Inactive → Active, isti važeći session token, 200 → 404 → 200 i odsustvo zaštićenih podataka u odbijenim odgovorima, kao i zabranu kreiranja grupe neaktivnom nastavniku. Koriste kontrolisani testni `IAccountStatusReader`, stvarni `SessionCurrentActor`, IDN validaciju i Team 21 servise; **ne dokazuju autoritativni IDN status naloga**.
+Istorijski rezultat pre predaje testova: 197/197 Team 21 slučajeva prolazilo je na `c94882e`, a pun skup ponovo je potvrđen pre smanjenja na osnovi `0c05a16`. Tadašnjih dvanaest account-status HTTP slučajeva proveravalo je Active → Blocked/Inactive → Active, isti važeći session token, 200 → 404 → 200 i odsustvo zaštićenih podataka u odbijenim odgovorima, kao i zabranu kreiranja grupe neaktivnom nastavniku.
 
-Nisu dodati produkcioni adapteri za status, članstvo, stanje kursa, sadržaj ili centralni AUD. Početni rezultat od 118 testova u odeljku 9.1 ostaje istorijski; devet navedenih integracionih padova ponovo je potvrđeno na sadašnjoj grani. Nije izvršeno poređenje sa baseline-om. [Arhitektura](ARCHITECTURE.md), [DFD](DFD.md) i [KT1 pregled](KT1_READINESS.md) sadrže aktuelne granice, matricu odluka i rezultate lokalnih CI provera.
+Nisu dodati produkcioni adapteri za status, članstvo, stanje kursa, sadržaj ili centralni AUD. Početni rezultat od 118 testova u odeljku 9.1 ostaje istorijski; devet navedenih integracionih padova ponovo je potvrđeno tokom ranijeg KT1 pregleda. Tim rezultatima nije dokazano da su to pre-existing baseline padovi. Nisu ponovo proveravani u ovoj dokumentacionoj dopuni i ostaju otvorene blokade. [Arhitektura](ARCHITECTURE.md), [DFD](DFD.md) i [KT1 pregled](KT1_READINESS.md) sadrže granice, matricu odluka i odvojene aktuelne i istorijske rezultate lokalnih provera.
+
+### Dopuna nakon predaje testova članu 8
+
+Aktuelni dokaz na stvarnoj grani, commit `3fca69c`: **158/158 Team 21 test slučajeva prolazi, 0 preskočenih**; Team 21 Release build prolazi sa 0 upozorenja i 0 grešaka. Od 79 slučajeva iz sedam prethodnih commitova dela 9 zadržano je 40 ključnih, a 39 dodatnih izvezeno je članu zaduženom za deo 8. Svih 118 ranijih slučajeva drugih članova ostalo je neizmenjeno. Deo 5 zadržava odgovornost za ACC-06 backend upravljanje grupama, deo 9 za integracije, ugovore i audit, a deo 8 za sveobuhvatno automatizovano bezbednosno i integraciono testiranje.
+
+Kompletni originali pet smanjenih test fajlova i zajednički `RecordingLogger` sačuvani su pre izmene u spoljašnjem `Team21-Part8-Handoff.zip`, zajedno sa projektnim kontekstom, klasifikacijom, uputstvima i kontrolnim sumama. Arhiva je proverena i dobija se od vlasnika predaje; njena lokalna putanja nije deo dokumentacije. Originalni testovi ostaju i u Git istoriji, na primer na `0c05a16`. Zadržane asercije, zajednički fixture-i i projektne reference nisu menjani. [Pregled predaje](KT1_READINESS.md#predaja-testova-delu-8) daje brojeve po fajlu i granice vraćanja dodatnih slučajeva.
+
+Od ranijih dvanaest account-status HTTP slučajeva ostala su tri reprezentativna: Blocked za listu grupa, Inactive za materijalnu referencu i zabrana kreiranja grupe blokiranom nastavniku. Oba testa promene statusa zadržavaju isti token, 200 → 404 → 200 i provere odsustva zaštićenih podataka; test odbijenog upisa proverava nepromenjeno stanje grupa. Koriste kontrolisani testni `IAccountStatusReader`, stvarni `SessionCurrentActor`, IDN validaciju i Team 21 servise; **ne dokazuju autoritativni IDN status naloga**. Preostali HTTP fixture ima 19 slučajeva i reprezentativne provere ruta, umesto prethodnog šireg skupa od 41 slučaja.
+
+Prethodni izbor od **295 Team 21 slučajeva** odnosi se na zaseban privremeni merged worktree sa roditeljskim izmenama i Access/IDN PoC-om, pre ovog smanjenja. Nije broj testova stvarne grane niti dokaz njenog prolaska; PoC nije prenet niti spojen u `feature/acc-integration`. Njegova Access odluka 403 za neaktivne naloge ne menja ovde postojeći servisni 404 ugovor. Predaja testova nije rešila CI ili merge blokade; privremeni worktree-i ostaju odvojeni.
 
 Putanje u nastavku su relativne u odnosu na koren repozitorijuma. Putanja označena drugom Git referencom nije nužno dostupna u radnom stablu.
 

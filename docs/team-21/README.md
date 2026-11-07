@@ -258,6 +258,8 @@ The decision rules behind both diagrams are in `Team21.Acc.Infrastructure/Groups
 
 The test component uses real ACC-01/06 services, controlled external interface doubles and isolated test stores. It does not claim completed IDN, ACC-02/03, LAB/ASN, PostgreSQL or platform HTTP integration.
 
+After the approved Part 8 handoff in `3fca69c`, 39 additional cases originally authored in Part 9 were exported for the member responsible for comprehensive security and integration testing. Part 9 retains 40 essential cases; all 118 earlier cases, including other members' Part 5 coverage, remain unchanged. Part 5 owns ACC-06 backend group management, while Part 9 owns integration, contracts and audit. Complete original sources remain in Git history before the reduction (`0c05a16`) and in the external `Team21-Part8-Handoff.zip`, available from the handoff owner. See [the handoff inventory and evidence](acc-integration/KT1_READINESS.md#predaja-testova-delu-8) before integrating the exported cases, to avoid duplicate fixtures.
+
 ## Commits
 
 Short, area in brackets:
@@ -287,6 +289,8 @@ The integrated host now uses the validated IDN session identity. The older heade
 - [Component architecture](acc-integration/ARCHITECTURE.md) and [request data flow](acc-integration/DFD.md) — exactly two Part 9 Mermaid diagrams, showing current and pending connections.
 - [KT1 readiness and demonstration](acc-integration/KT1_READINESS.md) — authorization matrix, threats, reproducible tests, local results and publication blockers.
 
-The current integration branch was explicitly created from `feature/acc06-groups`; its recommended PR target is that parent, rather than the original future integration-from-main plan above. After the latest fetch, remote `main` contains ACC-01, but this branch still has its skeleton. A real course-state reader waits for the team's approved common base; it must not copy the course model. No merge or rebase was performed for this checkpoint.
+The current integration branch was explicitly created from `feature/acc06-groups`; its recommended PR target is that parent, rather than the original future integration-from-main plan above. At the earlier KT1 fetch, remote `main` contained ACC-01, but this branch still has its skeleton. A real course-state reader waits for the team's approved common base; it must not copy the course model. Parent and PoC changes have not been merged into this actual branch, and it has not been rebased.
 
-For this milestone use the isolated test commands in the readiness document. The database setup instructions above describe a separate development workflow: no migrations were executed during this review. The 197/197 Team 21 result does not imply a passing full CI or an authoritative IDN account-status integration.
+For this milestone use the isolated test commands in the readiness document. The database setup instructions above describe a separate development workflow: no migrations were executed during these checks. The current real branch at `3fca69c` has **158/158 passing Team 21 cases**, with none skipped; the Team 21 Release build passed with zero warnings and errors. The earlier 197/197 result is historical evidence from before the handoff. Neither result proves a passing full CI or an authoritative IDN account-status integration.
+
+The previous 295-case Team 21 selection belongs to a separate temporary merged worktree with an Access/IDN proof of concept. That PoC has not been transferred or merged into the actual integration branch. Its test count and behavior must be assessed separately from the current 158 cases. Full CI, publication and merge readiness remain blocked; reducing passing tests did not resolve those blockers.

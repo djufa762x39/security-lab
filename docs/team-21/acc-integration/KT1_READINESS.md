@@ -1,6 +1,6 @@
 # Team 21, deo 9 — KT1 dokazi i spremnost
 
-Datum lokalnog pregleda: 2026-11-07. Implementacioni HEAD: `c94882e`, grana `feature/acc-integration`. Ovaj milestone dopunjuje samo dokumentaciju; ne uvodi novu funkcionalnost. Rezultati ispod odnose se na ovu granu, ne na budući rezultat spajanja sa roditeljem.
+Datum dokumentacione dopune: 2026-11-07. Aktuelna osnova: `3fca69c`, grana `feature/acc-integration`, posle predaje dodatnih testova delu 8. Prethodni KT1 pregled na `c94882e` sačuvan je kao istorijski dokaz. Ovaj milestone dopunjuje samo dokumentaciju; ne uvodi novu funkcionalnost. Rezultati stvarne grane i zasebnog privremenog merge eksperimenta razdvojeni su ispod.
 
 ## Obuhvat i ocena
 
@@ -19,7 +19,7 @@ Prema [KT1 kontrolnoj listi](../../CHECKPOINT_1.md), KT1 traži početni kod, in
 | Setup i test instrukcije | [Team README](../README.md), komande ispod, postojeći HTTP test fixture | Razvojni PostgreSQL setup je odvojeni postupak; u ovom pregledu nema migracija |
 | Backlog i plan | [Plan ugovora](INTEGRATION_PLAN.md), KT2 redosled ispod | Više izvora još nije dostupno/potvrđeno na ovoj grani |
 | Git i PR tok | Lokalna podgrana ACC-06; ciljni PR prema `feature/acc06-groups` | Nema upstream-a/push-a/PR-a; roditelj je napredovao, rezultat budućeg PR-a nije proveren |
-| Početni CI | Release backend, Team 21 i frontend testovi, EF snapshot i zaseban live KT1 demo prolaze | Devet backend padova i neizvršeni PostgreSQL koraci; objava je blokirana |
+| Početni CI | Aktuelni Team 21 testovi i Release build prolaze; raniji širi backend/frontend, EF snapshot i live KT1 dokazi sačuvani su ispod | Devet zabeleženih backend padova i neizvršeni PostgreSQL koraci; objava je blokirana |
 
 ## Matrica serverskih odluka
 
@@ -70,14 +70,48 @@ dotnet test backend/Team21.Acc.Tests/Team21.Acc.Tests.csproj --configuration Rel
 
 Za prezentaciju prikazati `ValidatedTeacherReachesRealServiceAndSuppliesCreatedBy`, `MaterialVisibilityUsesSessionUserDespiteSpoofedGroupMemberHeader` i `AccountStatus_ChangesAreEnforcedOnNextRequestDespiteValidSession`. Objasniti da poslednji slučaj menja samo testni status reader, zadržava isti realno validirani token i dobija 200 → 404 → 200 bez zaštićenih podataka pri odbijanju. To je izvršiv početni HTTP tok, a ne ručno demonstriran login sa stvarnim statusom naloga. Produkcioni pokušaj sa demo header-om ne predstavlja ovu demonstraciju.
 
+## Predaja testova delu 8
+
+Commit `3fca69c` smanjio je samo testove prvobitno dodate u sedam commitova dela 9: od 79 slučajeva zadržano je 40 ključnih, a 39 dodatnih predato je članu 8. Svih 118 ranijih slučajeva, uključujući testove drugih članova za deo 5, ostalo je neizmenjeno. Ukupno na stvarnoj grani sada postoji **158 slučajeva**, umesto ranijih 197. Deo 5 ostaje ACC-06 backend upravljanje grupama; deo 9 integracije, ugovori i audit; deo 8 sveobuhvatno automatizovano bezbednosno i integraciono testiranje.
+
+Putanje u tabeli su unutar `backend/Team21.Acc.Tests/`:
+
+| Test fajl | Pre predaje | Zadržano | Predato delu 8 |
+| --- | --- | --- | --- |
+| `Api/HttpCorrelationContextTests.cs` | 9 | 4 | 5 |
+| `Api/SessionCurrentActorTests.cs` | 20 | 12 | 8 |
+| `Api/SessionCurrentActorHostIntegrationTests.cs` | 41 | 19 | 22 |
+| `Infrastructure/LoggingAuditTrailTests.cs` | 4 | 3 | 1 |
+| `Groups/LoggingVisibilityAuditWriterTests.cs` | 5 | 2 | 3 |
+| Ukupno iz dela 9 | 79 | 40 | 39 |
+
+Pre prve izmene sačuvani su kompletni originali ovih pet fajlova i `Support/RecordingLogger.cs` u spoljašnjem **`Team21-Part8-Handoff.zip`**. Arhiva ima 12 stavki: izvore, projektni kontekst, poreklo commitova, README za integraciju, klasifikaciju svih slučajeva i kontrolne sume. ZIP i hash-evi svih stavki su provereni. Arhiva je izvan repozitorijuma i privremenih worktree-a, dobija se od vlasnika predaje; ne sadrži kredencijale ni build izlaze. Originali ostaju i u Git istoriji pre smanjenja, na primer na `0c05a16`; autorstvo prethodnih Part 9 commitova se ne menja.
+
+Zadržani su osnovni pozitivni i negativni tokovi za grupe i dozvole, validirani identitet, odbijanje lažnih/nedostajućih sesija, IDOR, audit i serversku korelaciju. Od account-status HTTP matrice ostala su dva prelaza Active → Blocked/Inactive → Active i jedna zabrana kreiranja grupe blokiranom nastavniku. Preostale asercije i zajednički fixture-i nisu menjani; dodatnu pokrivenost član 8 integriše bez dupliranja postojećih klasa i uz očuvanje zavisnosti ciljne grane. Arhiva ne uključuje nove testove privremenog Access/IDN PoC-a. Smanjenje prolaznih testova nije rešilo CI ili merge blokade i ne dokazuje stvarni IDN status reader.
+
 ## Lokalna verifikacija i CI blokade
 
-Dokazi ovog pregleda su lokalni ignorisani TRX fajlovi pod `TestResults/team21-kt1/`, nisu deo commita. Build i test rezultati odnose se na nepromenjeni kod `c94882e`.
+### Aktuelni rezultati posle predaje
+
+Za commit `3fca69c` ponovljene su provere na stvarnoj integracionoj grani. Lokalni ignorisani TRX dokaz za kompletan skup je pod `TestResults/test-handoff-388c8b4c/commit-review/`; nije deo dokumentacionog commita.
+
+| Provera | Aktuelni rezultat / ograničenje |
+| --- | --- |
+| Svi preostali Team 21 testovi | **158/158 prolazi, 0 neuspešnih i 0 preskočenih** |
+| Zadržani slučajevi dela 9 | 40/40 prolazi u pregledu predaje; podskup navedenih 158 |
+| Ciljani deo 5: `GroupServiceCreateTests` i `GroupServiceReadAuthorizationTests` | 21/21 prolazi u pregledu predaje; neizmenjeni testovi, podskup navedenih 158 |
+| Team 21 Release, `backend/Team21.Acc.slnx` | 0 upozorenja / 0 grešaka; korišćeni izdvojeni artefakti zbog zaključanih DLL-ova standardnog API izlaza |
+
+Kod izdvojenog testnog izlaza korišćen je lokalni `runsettings` sa eksplicitnim API content root-om; nije menjan produkcioni ili testni kod radi tog podešavanja. Nisu izvršavane migracije ni produkcioni seeder-i. Predatih 39 slučajeva nije preskočeno tokom završnog run-a: oni su uklonjeni iz ovog skupa nakon proverene arhive. Širi backend, frontend, PostgreSQL i puni CI nisu ponovo proveravani u ovoj dokumentacionoj dopuni.
+
+### Istorijski KT1 rezultati pre predaje
+
+Dokazi ranijeg KT1 pregleda su lokalni ignorisani TRX fajlovi pod `TestResults/team21-kt1/`, nisu deo commita. Sledeća tabela i postupci beleže istorijske rezultate na `c94882e`, pre predaje testova; nisu nova verifikacija na `3fca69c`.
 
 | Provera | Rezultat / ograničenje |
 | --- | --- |
 | Backend Release, `backend/SecurityLab.slnx` i `backend/Team21.Acc.slnx` | Obe komande uspešne, po 0 upozorenja / 0 grešaka |
-| Team 21 testovi | 197/197 prolazi, 0 preskočenih; uključeni u širi bezmigracioni skup |
+| Team 21 testovi pre predaje | Istorijski: 197/197 prolazi, 0 preskočenih; uključeni u tadašnji širi bezmigracioni skup |
 | Širi backend skup bez migracionih/DB scenarija | 1.349 prolazi, 9 pada, 0 preskočenih; dva projekta bez izabranih testova; nije kompletan CI skup |
 | REV-05 domain/model | 61/61 prolazi u navedenom skupu |
 | REV-05 snapshot, `dotnet ef migrations has-pending-model-changes` | Nema modelskih promena; ne primenjuje migracije niti menja bazu |
@@ -96,16 +130,22 @@ Isključeni su i pojedini testovi koji se mogu bezbedno izvršiti zasebno; broj 
 
 Za zaseban CI demo provereno je odsustvo svih `ConnectionStrings*`/`AUDIT_TEST*` environment podešavanja i relevantnih secrets; host je pokrenut sa `Kt1Demo__Enabled=true`, apsolutnim `contentRoot` i slobodnim lokalnim portom, pa ugašen. Nije podešena DB konekcija, pa postojeći startup preskače IDN migracije; nijedna migracija nije primenjena. Rezultat skripte je u ignorisanom `TestResults/acc04-adm08-http-demo.json`. Prvi lokalni pokušaj sa relativnim `contentRoot` stao je pre startup-a; ponovljen je sa ispravljenom apsolutnom putanjom, bez promene aplikacije ili CI skripte.
 
-Ponovo potvrđenih devet padova:
+Devet padova ponovo potvrđenih tokom tog ranijeg KT1 pregleda:
 
 - ACC-05 `ACC05_Every_real_route_is_protected_or_approved_public`: osam Team 21 ruta nije u `ApprovedDelegatedRoutes`; potrebno odobrenje inventara sa Access vlasnikom, uz očuvanje servisne autorizacije.
 - REV `Approve_WithoutRegisteredPolicy_DeniesBeforeDatabase(True,Forbidden)`: očekivan 403, dobijen 401; test nema validiranu IDN sesiju.
 - AUD `Request_CorrelationIdIsAcceptedByAuditValidator`, `Request_LogsWrittenDuringRequestCarryCorrelationScope`, `TwoRequests_GetDifferentCorrelationIds`: 401 na probnoj ruti.
 - AUD `Request_GetsServerIdInContextTraceIdentifierAndHeader` i tri slučaja `Request_WithClientCorrelationHeader_IgnoresClientValue` (`attacker-chosen-id`, `corr-0001`, `0123456789abcdef0123456789abcdef`): JSON parsiranje pada jer probna ruta vraća prazan 401 odgovor.
 
-To su aktuelne integracione blokade, **nisu dokazano pre-existing baseline padovi**: nije testirana neizmenjena roditeljska grana. Uzroci i vlasnički fajlovi su navedeni u [planu, odeljak 9.1](INTEGRATION_PLAN.md#91-zatečene-integracione-blokade-van-dokumentacionog-zadatka); nisu popravljani tuđi testovi.
+Ove zabeležene integracione blokade ostaju otvorene na stvarnoj grani. **Nisu dokazano pre-existing baseline padovi**: u tom KT1 pregledu nije testirana neizmenjena roditeljska grana. Uzroci i vlasnički fajlovi su navedeni u [planu, odeljak 9.1](INTEGRATION_PLAN.md#91-zatečene-integracione-blokade-van-dokumentacionog-zadatka); nisu popravljani tuđi testovi. Predaja 39 prolaznih slučajeva ne rešava te padove i ne predstavlja novu proveru punog CI-ja.
 
 [Starter checks](../../../.github/workflows/ci.yml) zahteva backend build, `scripts/audit/test-postgres.ps1 -NoBuild`, izvršene TRX testove, live KT1 demo i frontend install/build/test. PostgreSQL skripta primenjuje migracije; nije pokrenuta. [REV-05 checks](../../../.github/workflows/rev05.yml) zahteva domain/model, PostgreSQL integration i EF snapshot proveru. To su zahtevi verzionisanih workflow-a; remote branch-protection pravila nisu proverena. Lokalni Windows/.NET 10 i Node 24.14.1 nisu isto okruženje kao Ubuntu/Node 22 u CI.
+
+### Odvojeni privremeni merge eksperiment
+
+Prethodni bezmigracioni izbor od **295 Team 21 slučajeva** pripada privremenom merged worktree-u sa roditeljskim izmenama i Access/IDN PoC-om, na osnovi `0c05a16` pre predaje testova. To nije broj slučajeva na stvarnoj grani niti dokaz prolaska svih 295 na njoj. Aktuelnih **158/158** odnosi se samo na stvarnu granu na `3fca69c`.
+
+Access/IDN PoC i njegovi novi testovi nisu preneti niti spojeni u stvarnu granu. PoC odbija neaktivne naloge na Access granici sa 403; ovde postojeći servisni HTTP testovi i matrica i dalje koriste 404. Pri budućoj integraciji izvezene slučajeve treba uskladiti sa odobrenim Access ugovorom, uz očuvanje provera identiteta, vlasništva i odsustva zaštićenih podataka. Eksperiment ne potvrđuje autoritativni IDN account-status izvor niti produkcionu spremnost. Privremeni worktree-i nisu menjani ovom dopunom; odobrena integracija, full CI i merge readiness ostaju blokirani.
 
 ## KT2 redosled i vlasništvo
 
@@ -118,8 +158,8 @@ To su aktuelne integracione blokade, **nisu dokazano pre-existing baseline padov
 
 ## Git i objavljivanje
 
-`origin` fetch/push URL je `https://github.com/owlCoder/security-lab.git`. Posle osvežavanja referenci `feature/acc-integration` postoji samo lokalno, bez upstream-a. Zajednički predak sa `origin/feature/acc06-groups` je `736b8f2`; roditelj je `3b1e6ff`, a udaljeni `main` je `e744fab` i sadrži ACC-01. U trenutku pregleda roditelj ima 106 svojih commitova, radna grana šest; ovaj dokumentacioni commit će biti sledeći lokalni commit.
+Istorijska Git provera za KT1 zabeležila je `origin` fetch/push URL `https://github.com/owlCoder/security-lab.git`, lokalnu granu bez upstream-a, zajedničkog pretka sa `origin/feature/acc06-groups` na `736b8f2`, roditelja na `3b1e6ff` i udaljeni `main` na `e744fab` sa ACC-01. Tada je roditelj imao 106 svojih commitova, a radna grana šest. Posle dokumentacionog `0c05a16` i predaje testova u `3fca69c` to više nije aktuelni broj commitova; u ovoj dopuni nije rađen novi fetch niti objava grane.
 
-Preporučeni PR target je **`feature/acc06-groups`**, prema stvarnom poreklu grane i dogovorenom Team 21 toku. Veliko napredovanje roditelja zahteva pregled buduće integracije i ponovno testiranje; nije urađen merge/rebase niti je dokazana odsutnost konflikata. Formalni remote review, Tapiz statusi i branch-protection podešavanja nisu potvrđeni.
+Preporučeni PR target je **`feature/acc06-groups`**, prema stvarnom poreklu grane i dogovorenom Team 21 toku. Veliko napredovanje roditelja zahteva pregled buduće integracije i ponovno testiranje; roditeljske/PoC izmene nisu spojene u stvarnu granu niti je ona rebase-ovana. Privremeni eksperiment nije odobren rezultat PR-a i ne dokazuje da će kasnije spajanje biti bez konflikata. Formalni remote review, Tapiz statusi i branch-protection podešavanja nisu potvrđeni.
 
 **Push ostaje zabranjen** zbog devet padova i nepotpune CI verifikacije. Ne pravi se PR. Tek nakon rešavanja blokada sa vlasnicima, kompletnog propuštenog testiranja i provere tada aktuelnih referenci može se razmotriti normalan `git push -u origin feature/acc-integration`, bez force-a. Postojeći workflow-i se pokreću na PR i push na `main`; sam push ove feature grane ne garantuje CI izvršavanje.
