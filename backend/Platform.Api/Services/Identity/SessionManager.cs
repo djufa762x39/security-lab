@@ -9,7 +9,7 @@ using Platform.Identity.Persistence;
 
 namespace Platform.Api.Services.Identity;
 
-public sealed class SessionManager(PlatformIdentityDbContext db) : ISessionManager
+public sealed class SessionManager(PlatformIdentityDbContext db, TimeProvider clock) : ISessionManager
 {
     public async Task<int> RevokeAllForUser(Guid userId, string reason, CancellationToken ct = default)
     {
@@ -54,8 +54,8 @@ public sealed class SessionManager(PlatformIdentityDbContext db) : ISessionManag
             candidate => candidate.TokenHash == tokenHash,
             ct);
 
-        var now = DateTimeOffset.UtcNow;
-        if (session is null || session.RevokedAt is not null || session.ExpiresAt <= now)
+        var now = clock.GetUtcNow();
+        if (session is null || !session.IsActiveAt(now))
             return null;
 
         session.Touch(now);
