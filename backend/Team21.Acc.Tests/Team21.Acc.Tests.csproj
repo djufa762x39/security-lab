@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Team21.Acc.Api\Team21.Acc.Api.csproj" />
+    <ProjectReference Include="..\Platform.Api\Platform.Api.csproj" />
   </ItemGroup>
 
   <ItemGroup>
