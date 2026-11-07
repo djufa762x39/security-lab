@@ -2,7 +2,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { EditTaskForm } from './EditTaskForm'
 
-const task = { id: 'task-42', title: 'Početni naslov', description: 'Početni opis' }
+const task = {
+  id: 'task-42',
+  title: 'Početni naslov',
+  description: 'Početni opis',
+  goal: 'Početni opis',
+  type: 'AccessControl',
+}
 
 afterEach(() => {
   cleanup()
@@ -43,18 +49,26 @@ describe('AUT-01 EditTaskForm', () => {
     render(<EditTaskForm taskId={task.id} />)
     await screen.findByDisplayValue(task.title)
     fireEvent.change(screen.getByLabelText('Naslov zadatka'), { target: { value: 'Novi naslov' } })
+    fireEvent.change(screen.getByLabelText('Opis zadatka'), { target: { value: 'Novi opis' } })
+    fireEvent.change(screen.getByLabelText('Tip zadatka'), { target: { value: 'LogAnalysis' } })
     fireEvent.click(screen.getByRole('button', { name: 'Sačuvaj izmene' }))
     expect((await screen.findByText('Izmene su uspešno sačuvane.')).textContent).toContain('uspešno sačuvane')
     const [, options] = fetchMock.mock.calls[1]
     expect(options.method).toBe('PUT')
-    expect(JSON.parse(options.body)).toEqual({ title: 'Novi naslov', description: task.description })
+    expect(JSON.parse(options.body)).toEqual({
+      title: 'Novi naslov',
+      description: 'Novi opis',
+      goal: 'Novi opis',
+      type: 'LogAnalysis',
+    })
     expect(fetchMock.mock.calls[1][0]).toBe('/api/authoring/tasks/task-42')
   })
 
-  it('ne prikazuje lažne podatke kada zadatak ne može da se učita', async () => {
+  it('prikazuje formu i grešku kada zadatak ne može da se učita', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 404 })))
     render(<EditTaskForm taskId={task.id} />)
     expect((await screen.findByRole('alert')).textContent).toContain('HTTP 404')
-    expect(screen.queryByRole('button', { name: 'Sačuvaj izmene' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Sačuvaj izmene' })).toBeTruthy()
+    expect(screen.getByLabelText('Naslov zadatka')).toBeTruthy()
   })
 })
