@@ -65,10 +65,21 @@ describe('AUT-01 EditTaskForm', () => {
   })
 
   it('prikazuje formu i grešku kada zadatak ne može da se učita', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 404 })))
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 404 }))
+    vi.stubGlobal('fetch', fetchMock)
     render(<EditTaskForm taskId={task.id} />)
     expect((await screen.findByRole('alert')).textContent).toContain('HTTP 404')
     expect(screen.getByRole('button', { name: 'Sačuvaj izmene' })).toBeTruthy()
     expect(screen.getByLabelText('Naslov zadatka')).toBeTruthy()
+  })
+
+  it('ne šalje PUT zahtev kada GET učitavanje zadatka nije uspelo', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 404 }))
+    vi.stubGlobal('fetch', fetchMock)
+    render(<EditTaskForm taskId={task.id} />)
+    await screen.findByRole('alert')
+    fireEvent.click(screen.getByRole('button', { name: 'Sačuvaj izmene' }))
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/authoring/tasks/task-42')
   })
 })

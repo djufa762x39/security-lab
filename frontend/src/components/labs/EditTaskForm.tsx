@@ -38,9 +38,7 @@ export interface EditTaskFormProps {
 
 function normalizeTask(taskId: string, data: Partial<TaskData>): TaskData {
   const description = typeof data.description === 'string' ? data.description : typeof data.goal === 'string' ? data.goal : ''
-  const type = typeof data.type === 'string' && LAB_TYPES.includes(data.type as typeof LAB_TYPES[number])
-    ? data.type
-    : DEFAULT_TYPE
+  const type = typeof data.type === 'string' ? data.type : DEFAULT_TYPE
 
   return {
     id: typeof data.id === 'string' ? data.id : taskId,
@@ -57,6 +55,7 @@ export function EditTaskForm({ taskId }: EditTaskFormProps) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -64,6 +63,7 @@ export function EditTaskForm({ taskId }: EditTaskFormProps) {
     setLoading(true)
     setError('')
     setSuccess('')
+    setLoaded(false)
 
     if (!taskId.trim()) {
       setError('Nije odabran zadatak.')
@@ -80,11 +80,15 @@ export function EditTaskForm({ taskId }: EditTaskFormProps) {
       const normalized = normalizeTask(taskId, data)
       if (normalized.id !== taskId || typeof normalized.title !== 'string')
         throw new Error('Server je vratio neispravne podatke o zadatku.')
-      if (!controller.signal.aborted) setTask(normalized)
+      if (!controller.signal.aborted) {
+        setTask(normalized)
+        setLoaded(true)
+      }
     }).catch((cause: unknown) => {
       if (!controller.signal.aborted) {
         setError(cause instanceof Error ? cause.message : 'Učitavanje zadatka nije uspelo.')
         setTask(emptyTask(taskId))
+        setLoaded(false)
       }
     }).finally(() => {
       if (!controller.signal.aborted) setLoading(false)
@@ -100,10 +104,20 @@ export function EditTaskForm({ taskId }: EditTaskFormProps) {
     setError('')
     setSuccess('')
 
+    if (!loaded) {
+      setError('Zadatak nije uspešno učitan. Sačuvanje je blokirano dok se validan odgovor ne vrati.')
+      return
+    }
+
     const title = task.title.trim()
     const goal = (task.goal ?? task.description ?? '').trim()
     if (!title || !goal) {
       setError('Naslov i opis zadatka su obavezni.')
+      return
+    }
+
+    if (task.type && !LAB_TYPES.includes(task.type as typeof LAB_TYPES[number])) {
+      setError('Nepoznat tip zadatka. Odaberite jedan od ponuđenih tipova.')
       return
     }
 
