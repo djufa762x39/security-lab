@@ -111,9 +111,18 @@ function LabSearchForm({ user }: Props) {
           <h3 id="labs-search-heading">Pretraga laboratorija</h3>
           <span className="labs-tag">LAB-05</span>
         </div>
+        <div className="labs-search-access" role="note" aria-labelledby="labs-search-access-title">
+          <svg className="labs-search-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+            <path d="M12 3 4 6v6c0 4 4 7 8 9 4-2 8-5 8-9V6l-8-3Z" />
+            <path d="m8 12 3 3 5-6" />
+          </svg>
+          <div>
+            <p id="labs-search-access-title" className="labs-search-access-title">Samo laboratorije kojima imate pristup</p>
+            <p>Rezultati se prilagođavaju vašim pravima pristupa. Laboratorije koje vam nisu dostupne neće biti prikazane.</p>
+          </div>
+        </div>
         <p className="hint">
           Pretražite po nazivu ili kombinujte postojeće osobine. Rezultat mora da odgovara svim izabranim filterima i oznakama.
-          Server vraća samo laboratorije kojima imate pravo pristupa.
         </p>
         <div className="labs-search-row">
           <div className="labs-field">
@@ -182,15 +191,28 @@ function LabSearchForm({ user }: Props) {
         </div>}
       </form>
 
-      {failure && <ResultMessage tone="error" lines={failure.lines} status={failure.status} requestId={failure.requestId} />}
-      {found && <div className="labs-search-results">
+      {failure && <div className="labs-search-denial">
+        {(failure.status === 401 || failure.status === 403) && <h4>
+          {failure.status === 401 ? 'Pristup pretrazi nije potvrđen' : 'Pretraga nije dozvoljena'}
+        </h4>}
+        <ResultMessage tone="error" lines={failure.lines} status={failure.status} requestId={failure.requestId} />
+      </div>}
+      {found && <div className="labs-search-results" role="region" aria-labelledby="labs-search-results-heading">
+        <h4 id="labs-search-results-heading">Dostupne laboratorije</h4>
         <p id="labs-search-count" role="status" className="labs-search-count">
           {found.items.length === 0 ? 'Nijedna dostupna laboratorija ne odgovara pretrazi.' : `Pronađeno laboratorija: ${found.items.length}`}
         </p>
+        {found.items.length === 0 && <div className="labs-search-empty">
+          <p>Pokušajte sa drugim nazivom ili uklonite neki od filtera.</p>
+          <p className="hint">Pretraga obuhvata samo laboratorije koje smete da pregledate.</p>
+        </div>}
         {found.truncated && <p className="hint">Prikazani su samo prvi rezultati. Unesite precizniji naziv ili primenite filtere da biste suzili pretragu.</p>}
         {found.items.length > 0 && <ul className="labs-search-list">
           {found.items.map(lab => <li key={lab.id} className="labs-search-item">
-            <p className="labs-search-title">{lab.title}</p>
+            <div className="labs-search-item-head">
+              <p className="labs-search-title">{lab.title}</p>
+              <span className="labs-search-available">Dostupno</span>
+            </div>
             <dl className="labs-meta">
               <div><dt>Status</dt><dd>{STATUS_NAMES[lab.status] ?? lab.status}</dd></div>
               <div><dt>Kreirana</dt><dd>{formatDate(lab.createdAt)}</dd></div>

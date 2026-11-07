@@ -6,6 +6,17 @@
 .labs input[type="search"] { width: 100%; padding: 10px 12px; border: 1px solid #b9c5d3; border-radius: 8px; font: inherit; background: #fff; color: var(--labs-ink); }
 
 .labs .labs-search-results { display: grid; gap: 10px; }
+.labs .labs-search-access { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border: 1px solid #b9d7ce; border-radius: 10px; background: #f0f8f5; color: #234f43; }
+.labs .labs-search-shield { width: 26px; height: 26px; flex: 0 0 26px; }
+.labs .labs-search-access p { margin: 0; line-height: 1.5; }
+.labs .labs-search-access .labs-search-access-title { margin-bottom: 4px; font-weight: 700; }
+.labs .labs-search-results > h4, .labs .labs-search-denial > h4 { margin: 0; font-size: 1.05rem; }
+.labs .labs-search-denial { display: grid; gap: 10px; }
+.labs .labs-search-empty { padding: 16px; border: 1px dashed var(--labs-line); border-radius: 10px; background: var(--labs-soft); }
+.labs .labs-search-empty p { margin: 0; }
+.labs .labs-search-empty .hint { margin-top: 6px; }
+.labs .labs-search-item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.labs .labs-search-available { padding: 3px 9px; border: 1px solid #b9d7ce; border-radius: 20px; background: #f0f8f5; color: #234f43; font-size: .8rem; font-weight: 650; }
 .labs .labs-search-count { margin: 0; font-weight: 650; }
 .labs .labs-search-results > .hint { margin: 0; }
 .labs .labs-search-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }

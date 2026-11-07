@@ -49,6 +49,7 @@ describe('LAB-05 pretraga laboratorija', () => {
     expect(screen.getByText('RBAC i kontrola pristupa')).toBeTruthy()
     expect(screen.getByText('RBAC napredno')).toBeTruthy()
     expect(screen.getByText('id-1')).toBeTruthy()
+    expect(screen.getByRole('region', { name: 'Dostupne laboratorije' })).toBeTruthy()
   })
 
   it('kada nema rezultata, to jasno piše', async () => {
@@ -82,17 +83,22 @@ describe('LAB-05 pretraga laboratorija', () => {
     expect(container.querySelector('img')).toBeNull()
   })
 
-  it('posle odbijanja (401) ne ostaju prikazani prethodni rezultati', async () => {
+  it.each([
+    [401, 'Pristup pretrazi nije potvrđen'],
+    [403, 'Pretraga nije dozvoljena'],
+  ])('posle odbijanja (%s) uklanja prethodne rezultate i objašnjava pristup', async (status, heading) => {
     serverReturns(200, { items: [lab('id-1', 'RBAC i kontrola pristupa')], truncated: false })
     render(<LabSearch user={teacher} />)
     search('rbac')
     await screen.findByText('RBAC i kontrola pristupa')
 
-    serverReturns(401, { title: 'Unauthenticated' })
+    serverReturns(status, { title: 'Access denied' })
     search('rbac')
 
-    expect((await screen.findByRole('alert')).textContent).toContain('HTTP 401')
+    expect((await screen.findByRole('alert')).textContent).toContain(`HTTP ${status}`)
+    expect(screen.getByRole('heading', { name: heading })).toBeTruthy()
     expect(screen.queryByText('RBAC i kontrola pristupa')).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Dostupne laboratorije' })).toBeNull()
   })
 
   it('promena korisnika briše rezultate prethodnog korisnika', async () => {
