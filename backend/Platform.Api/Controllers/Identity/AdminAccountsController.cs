@@ -1,14 +1,16 @@
+using Platform.Access.AspNet;
  using Microsoft.AspNetCore.Mvc;
+ using Platform.Api.Enums.Identity;
+ using Platform.Api.Models.Identity;
  using Platform.Api.Services.Identity;
 
  namespace Platform.Api.Controllers.Identity;
-
- public sealed record ChangeStatusRequest(string? Status, string? Reason);
 
  [ApiController]
  [Route("api/admin/accounts")]
  public class AdminAccountsController(ChangeAccountStatus changeStatus) : ControllerBase
  {
+     [DelegatedAuthorization]
      [HttpPut("{id:guid}/status")]
      public IActionResult ChangeStatus(Guid id, [FromBody] ChangeStatusRequest body)
      {

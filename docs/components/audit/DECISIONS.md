@@ -22,12 +22,12 @@ They can still change through review.
 
 | # | Question | Owner | Target | Temporary rule |
 |-|-|-|-|-|
-| D1 | Identity and membership sources; owners of AUD-02..05; does Identity switch to the Audit contract or keep its own `IAuditWriter` behind an adapter? | Member 9 | 03.11 | Only test adapters until confirmed. |
-| D2 | Access DI lifetimes, explicit replacement of `NullAccessAuditWriter`, behaviour when the audit write fails. | Members 1, 5, 9 with Team 3 | 03.11 | No claim of a finished Access integration. |
-| D3 | Shared transaction or transactional outbox for privileged changes; meaning of each outcome per producer. | Members 2, 3, 9 with producers | before S-12 | Demo producer only; no real committed change without a guaranteed audit record. |
+| D1 | Identity and membership sources; owners of AUD-02..05; does Identity switch to the Audit contract or keep its own `IAuditWriter` behind an adapter? | Member 9 | 03.11 | Only test adapters until confirmed. Proposal: [INTEGRATION.md](INTEGRATION.md) S11-07, S11-08, S11-10. |
+| D2 | Access DI lifetimes, explicit replacement of `NullAccessAuditWriter`, behaviour when the audit write fails. | Members 1, 5, 9 with Team 3 | 03.11 | No claim of a finished Access integration. Proposal: [INTEGRATION.md](INTEGRATION.md) S11-01 to S11-05. |
+| D3 | Shared transaction or transactional outbox for privileged changes; meaning of each outcome per producer. | Members 2, 3, 9 with producers | before S-12 | Demo producer only; no real committed change without a guaranteed audit record. Proposal: one transaction for KT1, [INTEGRATION.md](INTEGRATION.md) S11-06. |
 | D4 | Global or administrator view of events; events without a course; which fields a teacher sees. | Members 5, 7, 9 with the assistant | before S-14 | Only the course view; no automatic global access. |
 | D5 | Query limits and behaviour when writing `audit.events.viewed` fails. | Members 4, 5, 6 | before S-14 | Proposed: 503 before any data is sent. |
-| D6 | Audit volume of Deny decisions and load on the database. | Member 9 with Team 3 | before S-13 | No silent sampling of mandatory records; measure and alarm on loss. |
+| D6 | Audit volume of Deny decisions and load on the database. | Member 9 with Team 3 | before S-13 | No silent sampling of mandatory records; measure and alarm on loss. Proposal: [INTEGRATION.md](INTEGRATION.md) S11-04, S11-07. |
 | D7 | KT1 and KT2 dates and team capacity. | Member 1 | 03.11 | 09–10.11 is a working assumption. Everyone re-estimates the stories. |
 | D8 | Retention, restore and extra integrity protection. | Members 2, 7, 9 with ADM owners | KT2 | No public delete; stronger protection only with a justified design. |
 
@@ -39,6 +39,9 @@ They can still change through review.
 | D10 | Three interfaces named `IIdentityContext` now exist (`Platform.Api.Services.Identity`, `Platform.Identity.Contracts`, and the reference contract in the spec). Which one gives the current caller for the audit actor? | `Platform.Api`, `Platform.Identity` | Members 3 and 9 with Identity teams | The writer's context adapter is not built until this is answered. |
 | D11 | `Platform.Identity.Tests` is not in `SecurityLab.slnx`, so its tests do not run locally or in CI. | `backend/SecurityLab.slnx` | Identity team; member 1 for CI | Reported only; the Audit component does not change another team's project. |
 | D12 | `ChangeAccountStatus` writes a free-text administrator reason into its audit detail, which conflicts with AUD-03. Proposed: a reason code. | `Platform.Api` | Member 9 with Team 2 | Same as open question 1 in CONTRACTS.md. |
+| D13 | `DefaultDenyAccessDecision` calls the audit writer outside any `try`/`catch`, so a writer exception replaces the computed decision. | `Platform.Access` | Member 9 with Team 3 | Forwarder not connected; proposal in INTEGRATION.md S11-04. |
+| D14 | Resolved in current code: Access returns `PolicyDenied` when a policy returns false and `PolicyError` on evaluation failure. | `Platform.Access` and REV-05 audit adapter | Member 9 with Team 3 | REV-05 preserves `policy_denied` separately; Audit accepts both codes. The revoked-grant HTTP test checks the stored reason (2026-11-06). |
+| D15 | `SubjectRef.Id` is a free string, while the audit actor ID is an account GUID. | `Platform.Access` | Member 9 with Team 3 | The forwarder records nothing for a non-GUID subject and raises an alarm (S11-05). |
 
 ## KT1 scope
 
@@ -101,3 +104,4 @@ their own stories at the team sync; the new value is entered in Tapiz and here.
 | Date | Change |
 |-|-|
 | 2026-11-03 | Initial register, KT1 scope and estimate table (S-03) |
+| 2026-11-03 | Links to the S-11 proposals; new questions D13 to D15 (S-11) |

@@ -1,0 +1,32 @@
+flowchart TD
+  subgraph C["Trust boundary 1: untrusted client"]
+    ACTOR["Course admin / delegate / teacher"] --> INPUT["Course ID / grantee / capabilities / name / version"]
+  end
+  subgraph S["Trusted server: Development-only synthetic session"]
+    API["Resolve session subject and validate input"] --> DEC["Administration service and shared ADM-08 checks"]
+    DEC -->|Allow| MUT["View / rename / delegate / revoke"]
+    DEC -->|No session, deny or unavailable| DENY["Normalize rejection without private details"]
+    API -->|Transport validation failure: 400| OUT
+    MUT -->|Authorized metadata or version conflict| OUT["Public response; never student answers"]
+    MUT -->|Authority changed or unavailable| DENY
+    DENY -->|400 / 401 / generic 404| OUT
+    MUT -->|Actor, action, IDs, versions, outcome| AUD[("Metadata-only audit")]
+    DENY -->|Internal reason and correlation| AUD
+  end
+  subgraph P["Trust boundary 2: trusted provider and store ports"]
+    ACC[("Accounts")]
+    GRANTS[("Course administrative grants")]
+    COURSES[("Course metadata and version")]
+  end
+  INPUT -->|HTTP request| API
+  DEC -->|Account ID| ACC
+  ACC -->|Current account or failure| DEC
+  DEC -->|Actor and course IDs| GRANTS
+  GRANTS -->|Current scoped authority or failure| DEC
+  DEC -->|Course ID| COURSES
+  COURSES -->|Course snapshot or failure| DEC
+  MUT -->|Capture and atomically compare authority| GRANTS
+  GRANTS -->|Current grant, grant change or rejection| MUT
+  MUT -->|Bound read or versioned metadata write| COURSES
+  COURSES -->|Metadata, next version or failure| MUT
+  OUT -->|HTTP status and permitted body| ACTOR

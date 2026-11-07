@@ -1,0 +1,27 @@
+flowchart TD
+  subgraph C["Trust boundary 1: untrusted client"]
+    ACTOR["Student / teacher"] --> INPUT["Attempt ID / draft answer / expected version"]
+  end
+  subgraph S["Trusted server: Development-only synthetic session"]
+    API["Resolve session subject and validate input"] --> CHECK["Attempt service and shared ACC-04 checks"]
+    CHECK -->|Allow| IO["Read answer or update own draft with CAS"]
+    CHECK -->|No session, deny or unavailable| DENY["Normalize rejection without resource details"]
+    API -->|Transport validation failure: 400| OUT
+    IO -->|Content or authorized version conflict| OUT["Public response"]
+    IO -->|Snapshot changed or unavailable| DENY
+    DENY -->|400 / 401 / generic 404| OUT
+    IO -->|Actor, action, IDs, versions, outcome| AUD[("Metadata-only audit")]
+    DENY -->|Internal reason and correlation| AUD
+  end
+  subgraph P["Trust boundary 2: trusted provider ports / simulator"]
+    ID[("Accounts and course memberships")]
+    ATT[("Attempt metadata and answers")]
+  end
+  INPUT -->|HTTP request| API
+  CHECK -->|Account and course IDs| ID
+  ID -->|Current account, membership or failure| CHECK
+  CHECK -->|Attempt ID| ATT
+  ATT -->|Ownership, course, state, version or failure| CHECK
+  IO -->|Authorized snapshot and optional draft write| ATT
+  ATT -->|Bound answer, next version or failure| IO
+  OUT -->|HTTP status and permitted body| ACTOR
