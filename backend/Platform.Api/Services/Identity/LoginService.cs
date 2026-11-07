@@ -25,8 +25,13 @@ public sealed class LoginService(
         if (!IsAcceptable(email, password))
             return Fail(LoginOutcome.InvalidRequest, null, correlationId, "failure", "malformed request");
 
-        // IDN-05 (attempt limiting) is not part of this story. It would be called here, before the check.
         var check = await credentials.VerifyAsync(email!, password!, ct);
+
+        // IDN-05: a locked account gets the same answer as a wrong password; only the audit event differs.
+        // The caller is not proven to own the account, so it is the target and not the actor.
+        if (check.IsLockedOut)
+            return Fail(LoginOutcome.InvalidCredentials, null, correlationId, "failure", "account locked", check.AccountId);
+
         if (!check.IsValid)
             return Fail(LoginOutcome.InvalidCredentials, null, correlationId, "failure", "invalid credentials");
 
@@ -46,13 +51,15 @@ public sealed class LoginService(
         !string.IsNullOrWhiteSpace(email) && email.Length <= CredentialVerifier.MaxEmailLength &&
         !string.IsNullOrEmpty(password) && password.Length <= CredentialVerifier.MaxPasswordLength;
 
-    private LoginResult Fail(LoginOutcome outcome, Guid? actorId, string correlationId, string auditOutcome, string detail)
+    private LoginResult Fail(
+        LoginOutcome outcome, Guid? actorId, string correlationId, string auditOutcome, string detail, Guid? targetId = null)
     {
-        Write(actorId, correlationId, auditOutcome, detail);
+        Write(actorId, correlationId, auditOutcome, detail, targetId);
         return new LoginResult(outcome);
     }
 
     // Never put the e-mail, password, hash or token in an audit event (AUD-03).
-    private void Write(Guid? actorId, string correlationId, string outcome, string? detail) =>
-        audit.Write(new AuditEvent(clock.GetUtcNow(), actorId, AuditAction, actorId?.ToString() ?? "-", outcome, correlationId, detail));
+    private void Write(Guid? actorId, string correlationId, string outcome, string? detail, Guid? targetId = null) =>
+        audit.Write(new AuditEvent(
+            clock.GetUtcNow(), actorId, AuditAction, (targetId ?? actorId)?.ToString() ?? "-", outcome, correlationId, detail));
 }
