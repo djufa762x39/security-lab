@@ -31,6 +31,7 @@ backend/
   Team21.Acc.Tests/                 NUnit tests
 docs/team-21/                       this file and our KT1 / KT2 documents
   acc06-visibility/                 ACC-06 material visibility diagrams
+  acc01-acc06-tests/                Member 8 security tests: component description, diagrams, KT1 demo
 ```
 
 Core knows nothing about EF or HTTP and Infrastructure knows nothing about HTTP. That's the dependency direction the spec checks for (chapter 8.2), and the compiler holds it for us.
@@ -245,6 +246,13 @@ The KT1 diagrams for server-side material visibility are in [acc06-visibility/](
 - **[Data flow diagram](acc06-visibility/data-flow.png).** Who asks for a material, the checks the request goes through, the tables and modules it reads, where the audit record goes and where the trust boundaries are. Denials, including a swapped id, a direct URL and a removed member, end in 404.
 
 The decision rules behind both diagrams are in `Team21.Acc.Infrastructure/Groups/Services/MaterialVisibilityService.cs`. The group model they read is in [ACC-06-model.md](ACC-06-model.md).
+
+## Member 8 — ACC-01 / ACC-06 security tests (KT1)
+
+- [Component architecture, DFD and test scope](acc01-acc06-tests/PROJECT_COMPONENT.md) — component architecture and data flow diagrams (PNG), interfaces, isolated persistence and verified work.
+- [KT1 demonstration](acc01-acc06-tests/DEMO.md) — reproducible commands and explanation of expected security results.
+
+The test component uses real ACC-01/06 services, controlled external interface doubles and isolated test stores. It does not claim completed IDN, ACC-02/03, LAB/ASN, PostgreSQL or platform HTTP integration.
 
 ## Commits
 
