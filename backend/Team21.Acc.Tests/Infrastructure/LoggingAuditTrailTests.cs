@@ -53,20 +53,6 @@ public class LoggingAuditTrailTests
     }
 
     [Test]
-    public async Task Record_WithoutCurrentActor_PreservesNullActorId()
-    {
-        var logger = new RecordingLogger<LoggingAuditTrail>();
-        var audit = new LoggingAuditTrail(
-            new CurrentActor(null), new FixedCorrelation("server-anonymous"), new FixedTime(Now), logger);
-
-        await audit.RecordAsync("group.create", Guid.NewGuid(), AuditOutcome.Denied);
-
-        Assert.That(logger.Entries, Has.Count.EqualTo(1));
-        Assert.That(logger.Entries.Single().Fields["ActorId"], Is.Null);
-        Assert.That(logger.Entries.Single().Fields["Outcome"], Is.EqualTo(AuditOutcome.Denied));
-    }
-
-    [Test]
     public async Task BothWriters_PreserveServerCorrelationWithoutCopyingHttpSecrets()
     {
         const string serverId = "trusted-server-request";

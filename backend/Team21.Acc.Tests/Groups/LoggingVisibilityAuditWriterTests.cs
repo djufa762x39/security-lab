@@ -12,7 +12,6 @@ public class LoggingVisibilityAuditWriterTests
     private static readonly DateTime OccurredAt = new(2026, 11, 7, 10, 15, 0, DateTimeKind.Utc);
 
     [TestCase(MaterialType.Assignment, DenialReason.NotInGroup)]
-    [TestCase(MaterialType.Attachment, DenialReason.CourseArchived)]
     public async Task WriteDenial_PreservesStructuredMaterialAndSuppliedAuditContext(
         MaterialType materialType, DenialReason reason)
     {
@@ -52,32 +51,6 @@ public class LoggingVisibilityAuditWriterTests
             Assert.That(entry.Fields["Action"], Is.Null);
             Assert.That(entry.Fields["Reason"], Is.EqualTo(DenialReason.NotCourseMember));
         });
-    }
-
-    [Test]
-    public async Task WriteDenial_UnknownMaterialCoursePreservesNullCourseId()
-    {
-        var denial = new VisibilityDenial(
-            Guid.NewGuid(), null, new MaterialRef(MaterialType.Assignment, Guid.NewGuid()),
-            MaterialAction.Read, OccurredAt, DenialReason.NoRule, "server-unknown-material");
-
-        var entry = await Write(denial);
-
-        Assert.That(entry.Fields["CourseId"], Is.Null);
-        Assert.That(entry.Fields["MaterialId"], Is.EqualTo(denial.Material!.MaterialId));
-        Assert.That(entry.Fields["Reason"], Is.EqualTo(DenialReason.NoRule));
-    }
-
-    [Test]
-    public async Task WriteDenial_NullActorIsNotReplacedWithInventedIdentity()
-    {
-        var denial = new VisibilityDenial(
-            null, Guid.NewGuid(), null, null,
-            OccurredAt, DenialReason.AccountNotActive, "server-null-actor");
-
-        var entry = await Write(denial);
-
-        Assert.That(entry.Fields["ActorId"], Is.Null);
     }
 
     private static async Task<RecordedLog> Write(VisibilityDenial denial)

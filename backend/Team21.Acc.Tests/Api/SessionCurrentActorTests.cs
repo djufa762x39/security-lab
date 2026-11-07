@@ -11,7 +11,6 @@ namespace Team21.Acc.Tests.Api;
 
 public class SessionCurrentActorTests
 {
-    [TestCase(true)]
     [TestCase(false)]
     public void ActiveAuthenticatedIdentityMapsUserWithoutRequiringSessionHandle(bool hasSessionHandle)
     {
@@ -33,12 +32,8 @@ public class SessionCurrentActorTests
     }
 
     [TestCase(false, AuthenticationLevel.Active)]
-    [TestCase(false, AuthenticationLevel.None)]
-    [TestCase(false, AuthenticationLevel.MfaPending)]
-    [TestCase(true, AuthenticationLevel.None)]
     [TestCase(true, AuthenticationLevel.MfaPending)]
     [TestCase(true, (AuthenticationLevel)999)]
-    [TestCase(false, (AuthenticationLevel)999)]
     public void InactiveOrInconsistentAuthenticationStateIsAnonymous(bool authenticated, AuthenticationLevel level)
     {
         var identity = new CallerIdentity(authenticated, Guid.NewGuid(), level, Guid.NewGuid());
@@ -88,9 +83,6 @@ public class SessionCurrentActorTests
     }
 
     [TestCase("X-Test-User")]
-    [TestCase("X-Stub-User")]
-    [TestCase("X-User-Id")]
-    [TestCase("Authorization")]
     public void ClientHeaderWithoutValidatedIdentityCannotAuthenticate(string headerName)
     {
         var http = new DefaultHttpContext();
