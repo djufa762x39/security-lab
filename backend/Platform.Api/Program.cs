@@ -5,6 +5,7 @@ using Platform.Api.Modules.Laboratories.Application;
 using Platform.Api.Modules.Laboratories.Infrastructure;
 using Platform.LaboratoryPersistence.Composition;
 using Platform.Api.Modules.Laboratories;
+using Platform.Api.Modules.MyAssignments;
 
 using Platform.Access.Composition;
 using Platform.Access.Contracts;
@@ -108,6 +109,9 @@ builder.Services.AddScoped<ISessionCreator, StoreSessionCreator>();
 
 builder.Services.AddScoped<Platform.Api.Interfaces.Identity.IIdentityContext, SessionIdentityContext>();
 
+
+// ASN-02: lista dodela studenta
+builder.Services.AddMyAssignments(builder.Environment);
 
 // Laboratories modul
 builder.Services.AddLaboratories(builder.Environment);
