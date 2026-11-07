@@ -237,6 +237,14 @@ Provera je izvršena 5. novembra 2026. nad lokalnim izmenama, .NET SDK 10.0.301 
   - Frontend: `npm run build` i `npm test` 73/73.
 - **Šta ova priča ne može dok ne postoji LAB-03:** prava po kursu i članstvu (npr. student vidi objavljene laboratorije svog kursa). LAB-01 laboratorija još nema kurs ni stanje „objavljena”; kad ih dobije, menja se samo `LaboratoryVisibility`, a pretraga i ovi testovi ostaju isti.
 
+## Minimalna dorada bezbednog pristupa (7. novembar 2026)
+
+- `LaboratorySearchService` proverava `laboratory.search` i pri direktnom pozivu servisa, pre validacije upita i čitanja skladišta. Isto važi za opcije filtera. Odbijanje vraća prazan rezultat: `Unauthenticated` (HTTP 401) ili `Forbidden` (HTTP 403).
+- Usklađen je `GetFilterOptionsAsync` sa postojećim API ugovorom. Oznake se čitaju samo iz laboratorija koje prođu postojeće pravilo vidljivosti i `laboratory.read`; skriveni metapodaci ne ulaze u opcije.
+- `LaboratorySearchAuthorizationTests` dodaje 12 slučajeva za odbijanje pretrage uz dozvoljeno čitanje, oduzimanje prava pri narednom pozivu i odbijanje u servisu nakon početne HTTP provere, na obe putanje pretrage i opcija.
+- Provera ove dorade: Release build API-ja i `Laboratories.Tests` prolazi bez upozorenja i grešaka; svih **127 odabranih LAB-05 testova prolazi** (uključujući 12 novih). Testovi su izvršeni direktnim NUnit runnerom u ignorisanom `obj/lab05-security-check` direktorijumu, sa izborom samo `LaboratorySearch*Tests`, `LaboratoryFilter*Tests` i `LabTitleSearchTests`. Izvorni test projekat i njegove zavisnosti nisu menjani radi pokretanja.
+- Obim: servis pretrage, dva LAB-05 HTTP handlera, LAB-05 testovi i ovaj dokument. Registracije identiteta, politike pristupa, model laboratorije i skladišta drugih komponenti nisu menjani. Postojeće ograničenje razvojnog identiteta i pravila „samo autor” ostaje; ova dorada ne predstavlja integraciju sa stvarnom sesijom, kursom ili članstvom.
+
 ## Sledeći koraci
 
 - Kombinovanje i uklanjanje postojećih filtera proširuje isti endpoint i servis; detalji su u [LAB-05-filtering.md](LAB-05-filtering.md). Novi kriterijumi i definisanje osobina nisu deo ovog proširenja.

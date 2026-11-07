@@ -70,6 +70,7 @@ public static class LaboratoriesEndpoints
                     result.Items.Select(ToSearchItem).ToList(), result.Truncated)),
                 LabSearchStatus.InvalidQuery => InvalidQuery(),
                 LabSearchStatus.Unauthenticated => Results.Problem(statusCode: StatusCodes.Status401Unauthorized, title: "Unauthenticated"),
+                LabSearchStatus.Forbidden => Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "Access denied"),
                 LabSearchStatus.FiltersUnavailable => Results.Json(
                     new ApiErrorResponse(LabErrorCodes.FiltersUnavailable, "Laboratory filters are currently unavailable."),
                     statusCode: StatusCodes.Status503ServiceUnavailable),
@@ -81,10 +82,14 @@ public static class LaboratoriesEndpoints
         {
             http.Response.Headers.CacheControl = "no-store";
             LabSearchFilterOptions options = await service.GetFilterOptionsAsync(caller, http.RequestAborted);
-            return options.Status == LabSearchStatus.Ok
-                ? Results.Ok(new LaboratorySearchFiltersResponse(
-                    options.Difficulties, options.Types, options.Tags, options.MetadataAvailable))
-                : Results.Problem(statusCode: StatusCodes.Status401Unauthorized, title: "Unauthenticated");
+            return options.Status switch
+            {
+                LabSearchStatus.Ok => Results.Ok(new LaboratorySearchFiltersResponse(
+                    options.Difficulties, options.Types, options.Tags, options.MetadataAvailable)),
+                LabSearchStatus.Unauthenticated => Results.Problem(statusCode: StatusCodes.Status401Unauthorized, title: "Unauthenticated"),
+                LabSearchStatus.Forbidden => Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "Access denied"),
+                _ => Results.Problem(statusCode: StatusCodes.Status500InternalServerError, title: "Unexpected error"),
+            };
         }).RequireLabAccess(LabActions.Search);
 
         // POST /api/laboratories  ->  201 Created + Location + telo sa serverskim Id-em

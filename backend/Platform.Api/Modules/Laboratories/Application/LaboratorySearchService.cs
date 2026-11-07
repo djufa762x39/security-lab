@@ -9,7 +9,8 @@ public enum LabSearchStatus
     Ok,
     InvalidQuery,
     Unauthenticated,
-    FiltersUnavailable
+    FiltersUnavailable,
+    Forbidden
 }
 
 public sealed record LabSearchResult(LabSearchStatus Status, IReadOnlyList<Laboratory> Items, bool Truncated)
@@ -39,6 +40,10 @@ public sealed class LaboratorySearchService(
         {
             return LabSearchResult.Unauthenticated;
         }
+
+        LabSearchStatus accessStatus = CheckSearchAccess(caller);
+        if (accessStatus != LabSearchStatus.Ok)
+            return new(accessStatus, [], false);
 
         // An empty title is a catalog search, needed for filters-only searches and reset.
         if ((query?.Any(char.IsControl) ?? false)
@@ -101,14 +106,43 @@ public sealed class LaboratorySearchService(
         return LabSearchResult.Ok(matches, truncated);
     }
 
-    public LabSearchFilterOptions GetFilterOptions(IIdentityContext caller)
+    public async Task<LabSearchFilterOptions> GetFilterOptionsAsync(
+        IIdentityContext caller, CancellationToken cancellationToken)
     {
-        if (CallerId.From(caller) is null)
-            return new(LabSearchStatus.Unauthenticated, [], [], false);
+        Guid? callerId = CallerId.From(caller);
+        if (callerId is null)
+            return new(LabSearchStatus.Unauthenticated, [], [], [], false);
 
-        // Ovo su javne enum vrednosti, bez metapodataka konkretnih laboratorija.
-        return new(LabSearchStatus.Ok, Enum.GetNames<LaboratoryDifficulty>(),
-            Enum.GetNames<LaboratoryType>(), metadataStore is not null);
+        LabSearchStatus accessStatus = CheckSearchAccess(caller);
+        if (accessStatus != LabSearchStatus.Ok)
+            return new(accessStatus, [], [], [], false);
+
+        string[] difficulties = Enum.GetNames<LaboratoryDifficulty>();
+        string[] types = Enum.GetNames<LaboratoryType>();
+        if (metadataStore is null)
+            return new(LabSearchStatus.Ok, difficulties, types, [], false);
+
+        var tags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (Laboratory laboratory in await repository.ListAsync(cancellationToken))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!CanRead(caller, callerId.Value, laboratory)) continue;
+            LaboratoryMetadata? metadata = await metadataStore.GetAsync(laboratory.Id, cancellationToken);
+            if (metadata is not null)
+                tags.UnionWith(metadata.Tags.Where(tag => !string.IsNullOrWhiteSpace(tag) && !tag.Any(char.IsControl)));
+        }
+
+        return new(LabSearchStatus.Ok, difficulties, types,
+            tags.Order(StringComparer.OrdinalIgnoreCase).ToArray(), true);
+    }
+
+    // Keep direct service calls behind the same search permission as the HTTP endpoints.
+    private LabSearchStatus CheckSearchAccess(IIdentityContext caller)
+    {
+        AccessResult decision = accessDecision.Decide(caller, LabActions.Search);
+        return decision.Allowed ? LabSearchStatus.Ok
+            : decision.Reason == DenyReason.Unauthenticated ? LabSearchStatus.Unauthenticated
+            : LabSearchStatus.Forbidden;
     }
 
     private bool CanRead(IIdentityContext caller, Guid callerId, Laboratory laboratory) =>
