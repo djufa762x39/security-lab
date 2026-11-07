@@ -9,8 +9,10 @@ using Platform.Identity.Persistence;
 
 namespace Platform.Api.Services.Identity;
 
-public sealed class SessionManager(PlatformIdentityDbContext db, TimeProvider clock) : ISessionManager
+public sealed class SessionManager(PlatformIdentityDbContext db, TimeProvider? timeProvider = null) : ISessionManager
 {
+    private readonly TimeProvider clock = timeProvider ?? TimeProvider.System;
+
     public async Task<int> RevokeAllForUser(Guid userId, string reason, CancellationToken ct = default)
     {
         if (userId == Guid.Empty) throw new ArgumentException("userId is required", nameof(userId));
