@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Platform.Access.AspNet;
 using Team21.Acc.Api.Extensions;
 using Team21.Acc.Core.Common;
 using Team21.Acc.Core.Groups;
@@ -16,8 +17,11 @@ public static class MaterialEndpoints
 {
     public static IEndpointRouteBuilder MapMaterialEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/materials/{type}/{id:guid}", GetMaterialAsync);
-        app.MapGet("/api/courses/{courseId:guid}/materials", ListCourseMaterialsAsync);
+        // Access is decided in the service, ACC-05 only has to let the call reach it
+        app.MapGet("/api/materials/{type}/{id:guid}", GetMaterialAsync)
+            .DelegatesToLegacyAuthorization();
+        app.MapGet("/api/courses/{courseId:guid}/materials", ListCourseMaterialsAsync)
+            .DelegatesToLegacyAuthorization();
 
         return app;
     }

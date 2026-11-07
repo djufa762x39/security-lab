@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Platform.Access.AspNet;
 using Team21.Acc.Api.Extensions;
 using Team21.Acc.Core.Groups.Interfaces;
 
@@ -13,7 +14,9 @@ public static class GroupEndpoints
 {
     public static IEndpointRouteBuilder MapGroupEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/courses/{courseId:guid}/groups");
+        // Access is decided in the service, ACC-05 only has to let the call reach it
+        var group = app.MapGroup("/api/courses/{courseId:guid}/groups")
+            .DelegatesToLegacyAuthorization();
 
         group.MapGet("/", GetGroupsAsync);
         group.MapPost("/", CreateGroupAsync);
