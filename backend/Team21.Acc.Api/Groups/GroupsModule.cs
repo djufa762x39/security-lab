@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Team21.Acc.Core.Groups;
 using Team21.Acc.Core.Groups.Interfaces;
 using Team21.Acc.Core.Groups.Visibility.Interfaces;
+using Team21.Acc.Infrastructure.Courses.Services;
 using Team21.Acc.Infrastructure.Groups.Defaults;
 using Team21.Acc.Infrastructure.Groups.Fakes;
 using Team21.Acc.Infrastructure.Groups.Services;
@@ -37,7 +38,7 @@ public static class GroupsModule
         {
             services.AddScoped<IAccountStatusReader, DenyAllAccountStatusReader>();
             services.AddScoped<ICourseMembershipReader, NoCourseMembershipReader>();
-            services.AddScoped<ICourseStateReader, NoCourseStateReader>();
+            services.AddScoped<ICourseStateReader, CourseStateReader>();
         }
 
         services.AddScoped<IVisibilityAuditWriter, LoggingVisibilityAuditWriter>();
