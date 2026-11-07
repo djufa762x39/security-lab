@@ -13,7 +13,7 @@
   - `IMyAssignmentsService` (nudimo): koristi ga API endpoint `GET /api/me/assignments` (Lazar, tim 16).
   - `IStudentCourseReader` (tražimo): aktivni kursevi studenta, implementacija nad modulom za upise (tim 10, ACC-02).
   - `IAssignmentRepository` (koristimo): dodele kurseva, modul `Platform.Assignments` (tim 15).
-- Implementation status: modul `Platform.AssignmentOverview`, model `StudentAssignmentView`, oba ugovora, `MyAssignmentsService` i 4 NUnit testa su implementirani (PR #114). In-memory podaci, pravila za arhivirane, istekle i duplikate i povezivanje sa pravim modulima su planirani.
+- Implementation status: modul `Platform.AssignmentOverview`, model `StudentAssignmentView`, oba ugovora, `MyAssignmentsService` i 4 NUnit testa su implementirani (PR #114). Endpoint `GET /api/me/assignments` (PR #132) i privremeni in-memory podaci za Development su implementirani. Pravila za arhivirane, istekle i duplikate, provera pristupa preko `assignment.read.own` i povezivanje sa pravim modulima su planirani.
 
 ## Component architecture
 
@@ -34,7 +34,7 @@ flowchart LR
   GRP["Dodela grupi<br/>tim 13 (ASN-05)"]
 
   API -->|ID studenta iz sesije| ID
-  API -->|da li sme da pozove| ACC
+  API -. da li sme da pozove, planirano .-> ACC
   API -->|IMyAssignmentsService| SVC
   SVC -->|aktivni kursevi studenta| READER
   READER -. adapter, planirano .-> MEM
@@ -44,7 +44,7 @@ flowchart LR
   SVC -->|samo dozvoljena polja| VIEW
 ```
 
-Pune strelice postoje u kodu. Isprekidane su planirane veze sa modulima drugih timova. Kutije sa duplim ivicama su ugovori (interfejsi) na granici modula.
+Pune strelice postoje u kodu. Isprekidane su planirane veze sa modulima drugih timova. Kutije sa duplim ivicama su ugovori (interfejsi) na granici modula. Do povezivanja sa pravim modulima, ugovore u Development okruženju zamenjuju privremene in-memory klase `DevelopmentStudentCourseReader` i `DevelopmentAssignmentRepository`, a izvan Developmenta `Unavailable*` klase koje bacaju grešku.
 
 ## Data flow diagram
 
@@ -76,6 +76,39 @@ flowchart LR
 
 Sve što dolazi od klijenta je nepouzdano. Klijent ne šalje ID studenta: on se uzima iz sesije na serveru. Odluka o tome šta student vidi donosi se na serveru, ne u interfejsu.
 
+Trenutno P2 nije u kodu: sesiju proverava `SessionCheckMiddleware` (bez važeće sesije 401), a endpoint koristi `DelegatesToLegacyAuthorization`. Akcija `assignment.read.own` ima opseg `Course` sa resursom `assignment`, a naša ruta nema ID kursa, pa se sa timom 3 dogovara kako da se koristi za listu.
+
+## Endpoint
+
+`GET /api/me/assignments`, bez parametara. Student dolazi iz sesije (kolačić `SecurityLab.Session`); parametri poput `?studentId=` se ignorišu.
+
+| Situacija | Odgovor |
+|---|---|
+| Bez sesije, nepoznata ili opozvana sesija, sesija sa čekanjem na MFA | 401 (`{ "error": "unauthenticated", "correlationId": "..." }` iz endpointa, prazno telo iz middleware-a) |
+| Važeća sesija | 200 |
+
+```json
+{
+  "assignments": [
+    {
+      "assignmentId": "a0000000-0000-0000-0000-000000000001",
+      "courseId": "course-oib",
+      "publishedLabRevisionId": "rev-sql-injection-1",
+      "availableFromUtc": null,
+      "dueAtUtc": "2027-01-31T22:59:00+00:00",
+      "maxAttempts": 3
+    }
+  ],
+  "correlationId": "526bc5edf9f346f6bebb5994898349e8"
+}
+```
+
+Datumi su UTC, `availableFromUtc` može biti `null`. Odgovor ima `Cache-Control: no-store`. Nema naziva kursa ni vežbe, samo ID-jevi.
+
+Podaci za Development (privremeni): student `student@example.com` (`22222222-2222-2222-2222-222222222222`) je upisan na `course-oib` i `course-security`, a postoji i dodela na kursu `course-other` koju ne sme da vidi.
+
+Ručna provera: u `.env` moraju da postoje `ConnectionStrings__Identity` i `Seed__DevelopmentPassword` (vidi `.env.example` i `docs/DEVELOPMENT.md`), zatim `docker compose up -d db`, `dotnet run --project backend/Platform.Api --urls http://localhost:5080`, prijava kao `student@example.com` na `POST /api/auth/login` i `GET /api/me/assignments` sa dobijenim kolačićem.
+
 ## Decisions and dependencies
 
 | Tema | Odluka |
@@ -93,7 +126,7 @@ Sve što dolazi od klijenta je nepouzdano. Klijent ne šalje ID studenta: on se 
 
 ## Security requirements
 
-- Server-side access checks: endpoint traži akciju `assignment.read.own` (tim 3, PR #109); servis vraća samo dodele kurseva na koje je student aktivno upisan.
+- Server-side access checks: endpoint traži važeću sesiju (`SessionCheckMiddleware`), a servis vraća samo dodele kurseva na koje je student aktivno upisan. Provera akcije `assignment.read.own` (tim 3) je planirana.
 - Input validation and sensitive data: prazan ID studenta se odbija (`ArgumentException`); odgovor sadrži samo polja iz `StudentAssignmentView`.
 - Negative scenarios:
 
@@ -102,11 +135,16 @@ Sve što dolazi od klijenta je nepouzdano. Klijent ne šalje ID studenta: on se 
 | Student vidi dodelu tuđeg kursa | filtriranje po aktivnim kursevima | `Student_DoesNotSeeAssignmentFromOtherCourse` |
 | Greška u tuđem modulu vrati tuđu dodelu | ponovna provera kursa u servisu | `ForeignAssignment_IsFilteredEvenIfRepositoryReturnsIt` |
 | Zahtev bez identiteta studenta | odbijanje praznog ID-ja | `EmptyStudentId_IsRejected` |
-| Student traži tuđu listu menjanjem ID-ja (IDOR) | ID se uzima samo iz sesije (endpoint) | planirano, Lazar i Luka |
+| Student traži tuđu listu menjanjem ID-ja (IDOR) | ID se uzima samo iz sesije (endpoint) | `ClientCannotChooseTheStudent_SessionAlwaysWins` |
+| Neprijavljen korisnik | 401, servis se ne poziva | `NoSessionCookie_Returns401_AndServiceIsNotCalled` |
+| Opozvana ili nepoznata sesija | 401, servis se ne poziva | `UnknownOrRevokedSession_Returns401_AndServiceIsNotCalled` |
+| Sesija koja čeka MFA | 401, servis se ne poziva | `SessionWithPendingMfa_Returns401_AndServiceIsNotCalled` |
+| Odgovor otkriva interna polja | poseban DTO odgovora | `ResponseContainsOnlyStudentVisibleFields` |
+| Izvan Developmenta vraćeni izmišljeni podaci | `Unavailable*` klase bacaju grešku | `OutsideDevelopment_FailsClosed_InsteadOfReturningInventedData` |
 
 ## Evidence of work
 
 - Pull request: #114 (8 commitova u `feature/ASN-02-ASN-07`).
-- Run instructions: `dotnet test backend/Platform.AssignmentOverview.Tests`
-- Tests and results: 4/4 prolaze lokalno i u CI-u (`Platform.AssignmentOverview.Tests.dll`).
-- Next steps: pravila za arhivirane, istekle i duplikate (sprint 2); adapter nad modulom tima 10 i prava implementacija dodela tima 15 (sprint 3).
+- Run instructions: `dotnet test backend/Platform.AssignmentOverview.Tests` i `dotnet test backend/Platform.MyAssignments.Tests`
+- Tests and results: `Platform.AssignmentOverview.Tests` 4/4 i `Platform.MyAssignments.Tests` 11/11 prolaze lokalno. Endpoint je ručno proveren na pokrenutom API-ju: bez prijave 401, kao `student@example.com` 200 sa dve dodele.
+- Next steps: pravila za arhivirane, istekle i duplikate i log odbijenih zahteva (sprint 2); provera `assignment.read.own` kad tim 3 odgovori; adapter nad modulom tima 10, prava implementacija dodela tima 15 i prava sesija u Access modulu (sprint 3).
