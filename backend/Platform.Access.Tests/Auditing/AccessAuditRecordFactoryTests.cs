@@ -11,7 +11,7 @@ public sealed class AccessAuditRecordFactoryTests
     private static readonly DateTimeOffset Now = new(2026, 11, 3, 12, 0, 0, TimeSpan.Zero);
 
     private static readonly string[] AllowedDenialReasons =
-        ["unauthenticated", "account_not_active", "unknown_action", "no_policy", "policy_error"];
+        ["unauthenticated", "account_not_active", "unknown_action", "no_policy", "policy_denied", "policy_error"];
 
     private static AccessAuditRecordFactory CreateFactory() =>
         new(new ManualTimeProvider(Now), new AccessAuditOptions());
@@ -260,6 +260,7 @@ public sealed class AccessAuditRecordFactoryTests
     [TestCase(AccessDenialReason.AccountNotActive, "account_not_active")]
     [TestCase(AccessDenialReason.UnknownAction, "unknown_action")]
     [TestCase(AccessDenialReason.NoPolicy, "no_policy")]
+    [TestCase(AccessDenialReason.PolicyDenied, "policy_denied")]
     [TestCase(AccessDenialReason.PolicyError, "policy_error")]
     [Property("RequirementId", "ACC-05")]
     public void ACC05_DenialReason_MapsToSnakeCase(AccessDenialReason reason, string expected)

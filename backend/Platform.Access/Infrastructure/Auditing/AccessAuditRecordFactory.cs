@@ -39,6 +39,7 @@ internal sealed partial class AccessAuditRecordFactory(TimeProvider clock, Acces
         AccessDenialReason.AccountNotActive => "account_not_active",
         AccessDenialReason.UnknownAction => "unknown_action",
         AccessDenialReason.NoPolicy => "no_policy",
+        AccessDenialReason.PolicyDenied => "policy_denied",
         _ => "policy_error",
     };
 
