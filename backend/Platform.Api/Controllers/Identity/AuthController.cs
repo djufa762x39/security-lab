@@ -1,12 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Platform.Access.AspNet;
+using Platform.Api.Contracts.Identity;
 using Platform.Api.Enums.Identity;
 using Platform.Api.Interfaces.Identity;
-using Platform.Api.Models.Identity;
-using Platform.Api.Modules.Identity.RateLimiting;
 using Platform.Api.Services.Identity;
-using Microsoft.AspNetCore.RateLimiting;
 
 namespace Platform.Api.Controllers.Identity;
 
@@ -22,7 +20,6 @@ public class AuthController(ILoginService login, ILogoutService logout, IIdentit
     private readonly ILogoutService _logout = logout;
 
     [AllowAnonymous]
-    [EnableRateLimiting(RateLimitPolicies.Login)]
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest body, CancellationToken ct)
     {
@@ -34,7 +31,7 @@ public class AuthController(ILoginService login, ILogoutService logout, IIdentit
             case LoginOutcome.Success:
                 // The token goes only into the cookie, never into the body.
                 Response.Cookies.Append(SessionCookie.Name, result.Session!.Token, SessionCookie.Options(result.Session.ExpiresAt));
-                return Ok(new { userId = result.UserId });
+                return Ok(new LoginResponse(result.UserId!.Value));
             case LoginOutcome.InvalidRequest:
                 return BadRequest(new { code = "invalid_request" });
             case LoginOutcome.Unavailable:
@@ -62,10 +59,10 @@ public class AuthController(ILoginService login, ILogoutService logout, IIdentit
     {
         var caller = _identity.Current;
 
-        if (caller == null || !caller.IsAuthenticated)
+        if (caller is not { IsAuthenticated: true })
             return Unauthorized();
 
         Response.Headers.CacheControl = "no-store";
-        return Ok(new { userId = caller.UserId, level = caller.Level.ToString() });
+        return Ok(new MeResponse(caller.UserId!.Value, caller.Level.ToString()));
     }
 }
