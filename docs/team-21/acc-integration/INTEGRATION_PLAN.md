@@ -25,6 +25,14 @@ Prethodna Git provera pokazala je da `origin/main` (`e3c8f03`) još nema Team 21
 
 Osnovna dokumentacija: [README](../README.md), [ACC-06 model](../ACC-06-model.md), [testovi i ograničenja](../acc01-acc06-tests/PROJECT_COMPONENT.md), [AUD ugovor](../../components/audit/CONTRACTS.md).
 
+### KT1 dopuna nakon sesijskih i HTTP milestone-a
+
+Prethodna tabela i navod o `main` predstavljaju istorijski pregled osnove `736b8f2`, ne trenutno udaljeno stanje. Novi `git fetch origin` za KT1 pregled 2026-11-07 pokazuje `origin/main` na `e744fab` (ACC-01 je tamo spojen), a `origin/feature/acc06-groups` na `3b1e6ff`. Radni HEAD pre ove dokumentacione dopune je `c94882e`: ACC-01 model i dalje nije uključen u ovu granu. Roditelj ima 106 commitova koji nisu ovde, a ova grana šest svojih commitova; budući rezultat PR-a nije testiran. Preporučeni cilj ostaje `feature/acc06-groups`, uz poseban dogovor o objedinjavanju. Ova provera ne menja grane niti odobrava merge.
+
+Aktuelni dokazi: 197/197 Team 21 testova prolazi. Dvanaest dodatih HTTP slučajeva proverava Active → Blocked/Inactive → Active, isti važeći session token, 200 → 404 → 200 i odsustvo zaštićenih podataka u odbijenim odgovorima, kao i zabranu kreiranja grupe neaktivnom nastavniku. Koriste kontrolisani testni `IAccountStatusReader`, stvarni `SessionCurrentActor`, IDN validaciju i Team 21 servise; **ne dokazuju autoritativni IDN status naloga**.
+
+Nisu dodati produkcioni adapteri za status, članstvo, stanje kursa, sadržaj ili centralni AUD. Početni rezultat od 118 testova u odeljku 9.1 ostaje istorijski; devet navedenih integracionih padova ponovo je potvrđeno na sadašnjoj grani. Nije izvršeno poređenje sa baseline-om. [Arhitektura](ARCHITECTURE.md), [DFD](DFD.md) i [KT1 pregled](KT1_READINESS.md) sadrže aktuelne granice, matricu odluka i rezultate lokalnih CI provera.
+
 Putanje u nastavku su relativne u odnosu na koren repozitorijuma. Putanja označena drugom Git referencom nije nužno dostupna u radnom stablu.
 
 ## 2. Postojeći Core ugovori

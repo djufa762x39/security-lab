@@ -278,3 +278,15 @@ dotnet test backend/Team21.Acc.Tests
 
 Each rule gets a positive and a negative test (spec chapter 8). For access rules the negative ones are the important part: wrong user, swapped id, removed member.
 The tests in `Infrastructure/` use the EF in memory provider. Filtered indexes and real SQL need a test on Postgres.
+
+## Member 9 — integration, contracts and audit (KT1)
+
+The integrated host now uses the validated IDN session identity. The older header actor in the project tree above remains a module test double. Account status, membership and course state readers remain fakes in Development and deny-all defaults elsewhere; a valid session alone does not grant access.
+
+- [Integration plan and ownership](acc-integration/INTEGRATION_PLAN.md).
+- [Component architecture](acc-integration/ARCHITECTURE.md) and [request data flow](acc-integration/DFD.md) — exactly two Part 9 Mermaid diagrams, showing current and pending connections.
+- [KT1 readiness and demonstration](acc-integration/KT1_READINESS.md) — authorization matrix, threats, reproducible tests, local results and publication blockers.
+
+The current integration branch was explicitly created from `feature/acc06-groups`; its recommended PR target is that parent, rather than the original future integration-from-main plan above. After the latest fetch, remote `main` contains ACC-01, but this branch still has its skeleton. A real course-state reader waits for the team's approved common base; it must not copy the course model. No merge or rebase was performed for this checkpoint.
+
+For this milestone use the isolated test commands in the readiness document. The database setup instructions above describe a separate development workflow: no migrations were executed during this review. The 197/197 Team 21 result does not imply a passing full CI or an authoritative IDN account-status integration.
