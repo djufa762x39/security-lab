@@ -15,7 +15,7 @@ The reference stack is React and TypeScript for the frontend, ASP.NET Core and C
 | .NET SDK | 10.x | `dotnet --version` |
 | Node.js | 22.12 or later (or 24 or later) | `node --version` |
 | Git | any recent version | `git --version` |
-| Docker Desktop | optional, only for the local PostgreSQL service | `docker --version` |
+| Docker Desktop | needed for login and the identity module (local PostgreSQL service) | `docker --version` |
 
 ## Getting started
 
@@ -45,16 +45,16 @@ npm ci
 npm run dev
 ```
 
-`npm ci` is only needed the first time and after `package-lock.json` changes. Then open <http://localhost:5173>. The page shows **API available** under "Development status" when the frontend can reach the API. The frontend forwards every `/api` request to `http://localhost:5080` (see `frontend/vite.config.ts`), so the API must be running first.
+`npm ci` is only needed the first time and after `package-lock.json` changes. Then open <http://localhost:5173>. The frontend forwards every `/api` request to `http://localhost:5080` (see `frontend/vite.config.ts`), so the API must be running first.
 
 To stop either program, press `Ctrl+C` in its terminal.
 
-### 4. Optional: local PostgreSQL
+### 4. PostgreSQL for login and the identity module
 
-No module uses the database yet. When one does, start the local PostgreSQL service like this:
+Login and the identity module need the local PostgreSQL service. The API also starts without it, but login then does not work.
 
 1. Copy `.env.example` to `.env` (`copy .env.example .env` in PowerShell or Command Prompt, `cp .env.example .env` in Bash).
-2. Open `.env` and replace `CHANGE_ME_FOR_LOCAL_DEVELOPMENT` with a password of your choice. Never commit `.env`; it is already in `.gitignore`.
+2. Open `.env` and replace every `CHANGE_ME_FOR_LOCAL_DEVELOPMENT` with a value of your choice (the database password and the password of the development accounts). Never commit `.env`; it is already in `.gitignore`.
 3. Start the service and check that it is healthy:
 
 ```
@@ -63,6 +63,8 @@ docker compose ps
 ```
 
 The database listens on `127.0.0.1:5432` only. Stop it with `docker compose down` (add `-v` to also delete its data).
+
+Locally, the API applies the identity migrations and seeds the development accounts when it starts. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for configuration, migrations, and the database reset.
 
 ## Running the checks
 
@@ -103,7 +105,7 @@ The first call lists the templates (`200`), the second creates a draft from one 
 
 | Problem | What to do |
 | --- | --- |
-| The page says "API unavailable (start the backend)" | The API is not running or is not on port 5080. Start it as in step 2 and reload the page. |
+| The login page reports an error, or login does not work | The API or PostgreSQL is not running. Start the API as in step 2 and the database as in step 4, then reload the page. |
 | `Address already in use` when starting the API or the frontend | Another program uses port 5080 or 5173. Close it, or stop the earlier run of this project with `Ctrl+C`. |
 | `dotnet` reports that the target framework `net10.0` is not found | Your .NET SDK is older than 10. Install .NET SDK 10 and check `dotnet --version`. |
 | `npm ci` or `npm run dev` reports an unsupported engine or fails on syntax | Your Node.js is too old. Install Node.js 22.12 or later and check `node --version`. |
@@ -114,12 +116,13 @@ The first call lists the templates (`200`), the second creates a draft from one 
 
 - `backend/SecurityLab.slnx` — backend solution file used by CI.
 - `backend/Platform.Api/` — API entry point.
+- `backend/Platform.Identity/` — identity module: entities, `DbContext`s, migrations, and core services (IDN-01, IDN-02).
+- `backend/Platform.Identity.Tests/` — NUnit tests for the identity module and the identity part of the API.
 - `backend/Platform.Access/` — access control module (ACC-05, ACC-08).
 - `backend/Platform.Assignments/` — assignments module: assignment model, attempt limit and individual deadline extension (ASN-04, ASN-06). Its tests are in `backend/Platform.Tests/Assignments/`.
 - `backend/Platform.Audit/` and `backend/Platform.Audit.Tests/` — audit module skeleton and its tests (AUD-01).
 - `backend/Platform.Authoring/` — authoring module: laboratory drafts and templates (AUT-01, AUT-06).
 - `backend/Platform.Authoring.Tests/` — NUnit tests for the authoring module.
-- `backend/Platform.Tests/` — NUnit tests that use the API project (identity tests).
 - `frontend/` — React application.
 - `docs/ARCHITECTURE.md` — conceptual architecture and module boundaries.
 - `docs/DATA_FLOW.md` — platform-level data flow example.
