@@ -46,7 +46,7 @@ public sealed class AccessControlMiddleware
             return;
         }
 
-        var correlationId = Guid.NewGuid().ToString("N");   
+        var correlationId = context.TraceIdentifier;
         if (requirement is null || isPublic || delegated)
         {
             _logger.LogWarning(
