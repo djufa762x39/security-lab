@@ -36,6 +36,10 @@ public class ApiEndpointCoverageTests
         "/api/labs/",
         "/api/labs/{id:guid}",
         "/api/labs/{id:guid}/title",
+        // AUT-04: session identity and account status are checked by LabCaller.
+        // GetStudentLabView calls IAccessDecision before returning public content.
+        // HTTP access boundaries are covered by StudentLabViewTests.
+        "/api/labs/{id:guid}/student-view",
     };
 
     [Test]

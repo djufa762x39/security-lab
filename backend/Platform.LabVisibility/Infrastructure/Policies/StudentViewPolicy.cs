@@ -3,6 +3,7 @@ using Platform.Access.Domain.Enums;
 using Platform.Access.Domain.Models;
 using Platform.LabVisibility.Contracts;
 using Platform.LabVisibility.Domain;
+using LabVisibilityCourseRole = Platform.LabVisibility.Contracts.CourseRole;
 
 namespace Platform.LabVisibility.Infrastructure.Policies;
 
@@ -36,6 +37,6 @@ public sealed class StudentViewPolicy(ILabPublicContentReader labs, ICourseMembe
 
         var role = await membership.GetRoleAsync(lab.CourseId, userId, cancellationToken);
 
-        return role == CourseRole.Student || role == CourseRole.Teacher;
+        return role == LabVisibilityCourseRole.Student || role == LabVisibilityCourseRole.Teacher;
     }
 }
