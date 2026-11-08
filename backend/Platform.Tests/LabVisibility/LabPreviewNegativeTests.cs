@@ -18,7 +18,7 @@ namespace Platform.Tests.LabVisibility;
 public sealed class LabPreviewNegativeTests
 {
     private const string SecretAnswer = "TAJNI-ODGOVOR-7f3a";
-    private const string Teacher = "11111111-1111-1111-1111-111111111111";
+    private const string Teacher = LabPreviewHostFactory.Teacher;
 
     private static readonly Guid DemoCourse = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private static readonly Guid LabId = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
@@ -91,8 +91,7 @@ public sealed class LabPreviewNegativeTests
 
     private async Task<string> GetTeacherPreviewBodyAsync()
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/labs/{LabId}/preview");
-        request.Headers.Add("X-Stub-User", Teacher);
+        using var request = LabPreviewHostFactory.PreviewRequest(LabId, Teacher);
 
         using var response = await client.SendAsync(request);
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));

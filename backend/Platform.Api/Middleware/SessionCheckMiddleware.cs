@@ -44,7 +44,9 @@ public class SessionCheckMiddleware
             && context.RequestServices.GetService<IHostEnvironment>()?.IsDevelopment() == true
             && (context.Request.Path.StartsWithSegments("/api/laboratories")
                 || (context.Request.Path.StartsWithSegments("/api/labs")
-                && context.Request.Path.Value?.TrimEnd('/').EndsWith("/student-view", StringComparison.OrdinalIgnoreCase) != true)
+                && context.Request.Path.Value?.TrimEnd('/').EndsWith("/student-view", StringComparison.OrdinalIgnoreCase) != true
+                // AUT-07: pregled pre objave takođe traži pravu sesiju (LabCaller), i u Developmentu.
+                && context.Request.Path.Value?.TrimEnd('/').EndsWith("/preview", StringComparison.OrdinalIgnoreCase) != true)
                 || context.Request.Path.StartsWithSegments("/api/kt1")
                 || context.Request.Path.StartsWithSegments("/api/courses")
                 || context.Request.Path.StartsWithSegments("/api/materials")

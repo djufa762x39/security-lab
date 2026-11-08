@@ -1,8 +1,6 @@
 using System.Net;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
-using Platform.Api.Interfaces.Identity;
-using Platform.Identity.Entities;
 using Platform.LabVisibility.Domain;
 using Platform.LabVisibility.Infrastructure.Membership;
 using Platform.LabVisibility.Infrastructure.Persistence;
@@ -12,7 +10,7 @@ using LabVisibilityCourseRole = Platform.LabVisibility.Contracts.CourseRole;
 namespace Platform.Tests.LabVisibility;
 
 // AUT-07 (stavka 4): GET /api/labs/{id}/preview kroz ceo HTTP pipeline.
-// Nalozi 1111/2222/3333 i demo kurs dolaze iz Program.cs (Development seed).
+// Korisnici se prijavljuju sesijskim kolačićem; članstvo na demo kursu dolazi iz Program.cs.
 [TestFixture]
 public sealed class LabPreviewHttpTests
 {
@@ -20,10 +18,10 @@ public sealed class LabPreviewHttpTests
     private static readonly Guid OtherCourse = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
     private static readonly Guid DraftLab = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
 
-    private const string Teacher = "11111111-1111-1111-1111-111111111111";
-    private const string Student = "22222222-2222-2222-2222-222222222222";
-    private const string Outsider = "33333333-3333-3333-3333-333333333333";
-    private const string OtherCourseTeacher = "44444444-4444-4444-4444-444444444444";
+    private const string Teacher = LabPreviewHostFactory.Teacher;
+    private const string Student = LabPreviewHostFactory.Student;
+    private const string Outsider = LabPreviewHostFactory.Outsider;
+    private const string OtherCourseTeacher = LabPreviewHostFactory.OtherCourseTeacher;
 
     private LabPreviewHostFactory factory = null!;
     private HttpClient client = null!;
@@ -47,8 +45,6 @@ public sealed class LabPreviewHttpTests
             [new PublicTask("t1", 1, "Koji događaj je prvi?", ["A", "B"])]));
 
         // Nastavnik drugog kursa: aktivan nalog, ali nije na kursu ove laboratorije.
-        services.GetRequiredService<IAccountRepository>()
-            .Save(new UserAccount(Guid.Parse(OtherCourseTeacher), "teacher2@example.com"));
         services.GetRequiredService<InMemoryCourseMembership>()
             .Set(OtherCourse, Guid.Parse(OtherCourseTeacher), LabVisibilityCourseRole.Teacher);
     }
@@ -113,10 +109,10 @@ public sealed class LabPreviewHttpTests
     }
 
     // Pregled nacrta ne sme da ostane u kešu, bez obzira na ishod.
+    // (Zahtev bez sesije odbija SessionCheckMiddleware pre kontrolera, bez tela odgovora.)
     [TestCase(Teacher)]
     [TestCase(Student)]
-    [TestCase(null)]
-    public async Task EveryResponse_IsNotCached(string? user)
+    public async Task EveryResponse_IsNotCached(string user)
     {
         using var response = await GetPreviewAsync(DraftLab, user);
 
@@ -125,12 +121,7 @@ public sealed class LabPreviewHttpTests
 
     private async Task<HttpResponseMessage> GetPreviewAsync(Guid labId, string? user)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/labs/{labId}/preview");
-        if (user is not null)
-        {
-            request.Headers.Add("X-Stub-User", user);
-        }
-
+        using var request = LabPreviewHostFactory.PreviewRequest(labId, user);
         return await client.SendAsync(request);
     }
 }
