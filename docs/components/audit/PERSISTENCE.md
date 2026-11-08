@@ -39,11 +39,12 @@ from the session validated by `SessionCheckMiddleware`, and correlation comes on
 trusted writer boundary because those flows establish their actor at different points.
 `FindAsync` remains an internal storage operation, not an authorized AUD-06 endpoint.
 
-The S-06 writer/store contract is therefore integrated. The remaining transaction work
-is narrower: `ChangeAccountStatus` still uses `InMemoryAccountRepository` and compensates
-after an Audit failure. That is not equivalent to one PostgreSQL transaction. S-16 must
-connect the existing persistent Identity account row and Audit insert to a shared commit
-boundary, then verify the final state through a new database session.
+The S-06 writer/store contract is therefore integrated. PR #148 completed the IDN-03
+transaction boundary: `ChangeAccountStatus` updates the persistent `identity.accounts` row,
+revokes sessions and appends `account.status.changed` through `ITransactionalAuditWriter` in
+one PostgreSQL transaction. `AccountStatusChangeIntegrationTests` forces an unavailable Audit
+writer and verifies through fresh service scopes that the account status and session remain
+unchanged and that no Audit row was committed.
 
 ## Architecture and data flow
 
@@ -78,8 +79,8 @@ flowchart LR
 
 These diagrams cover persistence, not the complete AUD-06 flow. The API must not build
 the trusted actor context from client input. The runtime database role is not a substitute
-for course authorization. The shared producer/Audit transaction remains an S-12/S-16
-integration task; the existing rollback test proves only rollback of the Audit insert.
+for course authorization. IDN-03 now demonstrates the shared producer/Audit transaction;
+other privileged producers must still provide their own transaction or accepted outbox proof.
 
 ## Migration tools
 

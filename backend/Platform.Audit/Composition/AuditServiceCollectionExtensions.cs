@@ -2,7 +2,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Platform.Access.Composition;
+using Platform.Access.Domain.Constants;
 using Platform.Audit.Application;
+using Platform.Audit.Application.Authorization;
 using Platform.Audit.Contracts;
 using Platform.Audit.Correlation;
 using Platform.Audit.Infrastructure.Persistence;
@@ -17,6 +20,10 @@ public static class AuditServiceCollectionExtensions
 
         services.AddScoped<CorrelationContext>();
         services.AddScoped<ICorrelationContext>(provider => provider.GetRequiredService<CorrelationContext>());
+
+        // Access owns the central action catalog and singleton policy registry. Audit supplies
+        // the course-scoped read policy through the public composition hook.
+        services.AddAccessPolicy<CourseAuditReadPolicy>(AccessActions.AuditEventsRead.Id);
 
         return services;
     }

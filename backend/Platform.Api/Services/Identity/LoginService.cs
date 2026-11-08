@@ -48,7 +48,24 @@ internal sealed class LoginService(
                 actorConfirmed: true);
 
         // MFA (IDN-06) is not implemented yet: until an MFA policy exists every login is Active.
-        var session = await sessions.CreateAsync(check.AccountId, AuthenticationLevel.Active, ct);
+        IssuedSession? session;
+        try
+        {
+            session = await sessions.CreateAsync(check.AccountId, AuthenticationLevel.Active, ct);
+        }
+        catch (AccountNotActiveException)
+        {
+            // The account was blocked or archived after the status check above (IDN-03, SEC-03): same answer as a
+            // login that was refused up front, and no session exists that a later reactivation could revive.
+            return await FailAsync(
+                LoginOutcome.InvalidCredentials,
+                "account_inactive",
+                correlationId,
+                check.AccountId,
+                ct,
+                actorConfirmed: true);
+        }
+
         if (session is null)
             return await FailAsync(
                 LoginOutcome.Unavailable,
