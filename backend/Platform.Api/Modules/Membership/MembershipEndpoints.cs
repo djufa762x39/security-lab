@@ -2,6 +2,8 @@
 using Platform.Access.AspNet;
 using Platform.Api.Interfaces.Identity;
 using Platform.Membership.Application;
+using Platform.Api.Interfaces.Identity;
+using Platform.Audit.Contracts;
 namespace Platform.Api.Modules.Membership;
 /// <summary>
 /// Telo zahteva za upis. Namerno sadrži samo nalog koji se upisuje: ko upisuje
@@ -23,9 +25,11 @@ public static class MembershipEndpoints
     HttpContext context,
     IRequestSubjectResolver subjectResolver,
     IMembershipService memberships,
+     ICorrelationContext correlation,
     CancellationToken cancellationToken)
     {
-        var correlationId = Guid.NewGuid().ToString("N");
+        // AUD-04: isti ID kao u zaglavlju X-Correlation-ID, da se zahtev prati kroz module.
+        var correlationId = correlation.CorrelationId ?? context.TraceIdentifier;
         var result = await memberships.EnrollStudentAsync(
         subjectResolver.Resolve(context),
         courseId,

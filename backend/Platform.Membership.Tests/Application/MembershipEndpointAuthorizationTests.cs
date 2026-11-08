@@ -129,9 +129,30 @@ public sealed class MembershipEndpointAuthorizationTests
 
         Assert.That(store.All, Has.Count.EqualTo(1));
     }
+    // AUD-04: telo odgovora nosi isti correlation ID kao zaglavlje X-Correlation-ID.
+    [Test]
+    public async Task Enrollment_uses_the_request_correlation_id()
+    {
+        var teacherId = Guid.NewGuid();
+        var store = new InMemoryMembershipStore();
+        store.Seed(CourseId, teacherId, MemberRole.Teacher);
 
+        using var factory = new ApiFactory("Development", teacherId, store);
+        using var client = factory.CreateClient();
 
-[Test]
+        var response = await client.PostAsJsonAsync(
+            $"/api/courses/{CourseId}/members",
+            new { accountId = StudentId });
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+        var header = response.Headers.GetValues("X-Correlation-ID").Single();
+        var body = await response.Content.ReadFromJsonAsync<CorrelationBody>();
+        Assert.That(body!.CorrelationId, Is.EqualTo(header));
+    }
+
+    private sealed record CorrelationBody(string CorrelationId);
+
+    [Test]
 public async Task Teacher_of_own_course_can_enroll_student()
 {
     var teacherId = Guid.NewGuid();
