@@ -43,7 +43,8 @@ public class SessionCheckMiddleware
         if (context.RequestServices is not null
             && context.RequestServices.GetService<IHostEnvironment>()?.IsDevelopment() == true
             && (context.Request.Path.StartsWithSegments("/api/laboratories")
-                || context.Request.Path.StartsWithSegments("/api/labs")
+                || (context.Request.Path.StartsWithSegments("/api/labs")
+                && context.Request.Path.Value?.TrimEnd('/').EndsWith("/student-view", StringComparison.OrdinalIgnoreCase) != true)
                 || context.Request.Path.StartsWithSegments("/api/kt1")
                 || context.Request.Path.StartsWithSegments("/api/courses")
                 || context.Request.Path.StartsWithSegments("/api/materials")
