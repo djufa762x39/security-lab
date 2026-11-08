@@ -6,6 +6,7 @@
   <Project Path="Platform.Audit/Platform.Audit.csproj" />
   <Project Path="Platform.AssignmentOverview.Tests/Platform.AssignmentOverview.Tests.csproj" />
   <Project Path="Platform.AssignmentOverview/Platform.AssignmentOverview.csproj" />
+  <Project Path="Platform.AssignmentPrerequisites.Tests/Platform.AssignmentPrerequisites.Tests.csproj" />
   <Project Path="Platform.AssignmentPrerequisites/Platform.AssignmentPrerequisites.csproj" />
   <Project Path="Platform.Assignments/Platform.Assignments.csproj" />
   <Project Path="Platform.Audit.Tests/Platform.Audit.Tests.csproj" />
