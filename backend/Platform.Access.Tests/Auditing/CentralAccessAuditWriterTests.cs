@@ -4,7 +4,7 @@ using Platform.Access.Composition;
 using Platform.Access.Contracts;
 using Platform.Access.Domain.Enums;
 using Platform.Access.Domain.Models;
-using Platform.Access.Infrastructure.Auditing;
+using Platform.Api.Security.AccessAudit;
 using Platform.Audit.Contracts;
 
 namespace Platform.Access.Tests.Auditing;
@@ -84,20 +84,29 @@ public sealed class CentralAccessAuditWriterTests
     }
 
     [Test]
-    public async Task AddAccessControl_SendsEngineDenialsToCentralAudit()
+    public async Task AddCentralAccessAudit_SendsEngineDenialsToCentralAudit()
     {
         var central = new RecordingTrustedWriter(AuditWriteResult.Recorded(Guid.NewGuid()));
         var services = new ServiceCollection()
             .AddLogging()
-            .AddScoped<ITrustedAuditWriter>(_ => central);
-        services.AddAccessControl();
+            .AddScoped<ITrustedAuditWriter>(_ => central)
+            .AddCentralAccessAudit()
+            .AddAccessControl();
         await using var provider = services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
 
-        Assert.That(provider.GetRequiredService<IAccessAuditWriter>(), Is.TypeOf<CentralAccessAuditWriter>());
+        Assert.That(provider.GetServices<IAccessAuditWriter>().Single(), Is.TypeOf<CentralAccessAuditWriter>());
 
         await provider.GetRequiredService<IAccessDecision>().DecideAsync(Request("unknown.action"));
 
         Assert.That(central.Writes.Single().Draft.Details!["denialReason"], Is.EqualTo("unknown_action"));
+    }
+
+    [Test]
+    public void AddCentralAccessAudit_AfterAccessControl_Throws()
+    {
+        var services = new ServiceCollection().AddAccessControl();
+
+        Assert.Throws<InvalidOperationException>(() => services.AddCentralAccessAudit());
     }
 }

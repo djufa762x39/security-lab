@@ -129,13 +129,10 @@ public static class AccessServiceCollectionExtensions
         });
         services.AddSingleton<IAccessPolicyRegistry>(sp =>
             sp.GetRequiredService<InMemoryAccessPolicyRegistry>());
-        services.AddSingleton<IAccessDeniedAuditMapper, AccessDeniedAuditMapper>();
-        services.AddSingleton<IAccessAuditWriter>(sp =>
-            new CentralAccessAuditWriter(
-                sp.GetRequiredService<IAccessDeniedAuditMapper>(),
-                sp.GetRequiredService<IServiceScopeFactory>(),
-                sp.GetService<ILogger<CentralAccessAuditWriter>>()
-                    ?? NullLogger<CentralAccessAuditWriter>.Instance));
+        services.TryAddSingleton<IAccessAuditWriter>(sp =>
+            new LoggerAccessAuditWriter(
+                sp.GetService<ILogger<LoggerAccessAuditWriter>>()
+                    ?? NullLogger<LoggerAccessAuditWriter>.Instance));
         services.AddSingleton<IAccessDecision, DefaultDenyAccessDecision>();
         services.AddSingleton<AccessConfigurationStartupCheck>(services =>
             new AccessConfigurationStartupCheck(

@@ -1,6 +1,6 @@
 using Platform.Access.Domain.Enums;
 using Platform.Access.Domain.Models;
-using Platform.Access.Infrastructure.Auditing;
+using Platform.Api.Security.AccessAudit;
 using Platform.Audit.Contracts;
 
 namespace Platform.Access.Tests.Auditing;
@@ -65,21 +65,13 @@ public sealed class AccessDeniedAuditMapperTests
     [TestCase(AccessDenialReason.PolicyError, "policy_error")]
     public void DenialReason_UsesAuditCatalogCodes(AccessDenialReason reason, string expected)
     {
-        Assert.That(AccessDeniedAuditMapper.DenialReasonOf(reason), Is.EqualTo(expected));
+        Assert.That(mapper.CreateDraft(Request(), Denied(reason)).Details!["denialReason"], Is.EqualTo(expected));
     }
 
     [Test]
-    public void KnownResourceType_IsMappedToAuditResource()
+    public void Deny_IsNotAttachedToTheResourceAuditTrail()
     {
-        var draft = mapper.CreateDraft(Request(resource: new ResourceRef("course", "c-1")), Denied());
-
-        Assert.That(draft.Resource, Is.EqualTo(new AuditResourceRef(AuditResourceTypes.Course, "c-1")));
-    }
-
-    [Test]
-    public void UnknownResourceType_IsLeftOut()
-    {
-        var draft = mapper.CreateDraft(Request(resource: new ResourceRef("attempt", "a-1")), Denied());
+        var draft = mapper.CreateDraft(Request(resource: new ResourceRef("revision", "r-1")), Denied());
 
         Assert.That(draft.Resource, Is.Null);
     }

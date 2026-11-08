@@ -1,13 +1,11 @@
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Platform.Access.Contracts;
 using Platform.Access.Domain.Enums;
 using Platform.Access.Domain.Models;
 using Platform.Audit.Contracts;
 
-namespace Platform.Access.Infrastructure.Auditing;
+namespace Platform.Api.Security.AccessAudit;
 
-internal sealed class CentralAccessAuditWriter(
+public sealed class CentralAccessAuditWriter(
     IAccessDeniedAuditMapper mapper,
     IServiceScopeFactory scopes,
     ILogger<CentralAccessAuditWriter> logger) : IAccessAuditWriter

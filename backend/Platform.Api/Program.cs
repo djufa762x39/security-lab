@@ -1,5 +1,6 @@
 using Team21.Acc.Api;
 using Platform.Api.Security.RevisionAuthorization;
+using Platform.Api.Security.AccessAudit;
 using Platform.Api.Modules.Kt1;
 using Platform.Api.Modules.RevisionReviews;
 using Platform.Api.Modules.Laboratories.Application;
@@ -50,6 +51,7 @@ if (builder.Environment.IsDevelopment())
 
 // Access module
 
+builder.Services.AddCentralAccessAudit();
 builder.Services.AddAccessControl();
 builder.Services.AddAccessAspNet();
 builder.Services.AddRevisionAuthorization();

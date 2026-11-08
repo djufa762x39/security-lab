@@ -4,25 +4,17 @@ using Platform.Access.Domain.Models;
 using Platform.Access.Domain.ValueObjects;
 using Platform.Audit.Contracts;
 
-namespace Platform.Access.Infrastructure.Auditing;
+namespace Platform.Api.Security.AccessAudit;
 
-internal interface IAccessDeniedAuditMapper
+public interface IAccessDeniedAuditMapper
 {
     AuditEventDraft CreateDraft(AccessRequest request, AccessDecision decision);
 
     AuditContext CreateContext(AccessRequest request);
 }
 
-internal sealed partial class AccessDeniedAuditMapper : IAccessDeniedAuditMapper
+public sealed partial class AccessDeniedAuditMapper : IAccessDeniedAuditMapper
 {
-    private static readonly string[] ResourceTypes =
-    [
-        AuditResourceTypes.Account,
-        AuditResourceTypes.Course,
-        AuditResourceTypes.Delegation,
-        AuditResourceTypes.Revision,
-    ];
-
     [GeneratedRegex(@"^[a-z][a-z0-9_.-]{0,63}\z", RegexOptions.CultureInvariant)]
     private static partial Regex PolicyIdPattern();
 
@@ -54,11 +46,7 @@ internal sealed partial class AccessDeniedAuditMapper : IAccessDeniedAuditMapper
             details["policyVersion"] = version;
         }
 
-        return new AuditEventDraft(
-            AuditEventTypes.AccessDenied,
-            AuditOutcome.Denied,
-            Resource: ResourceOf(request.Resource),
-            Details: details);
+        return new AuditEventDraft(AuditEventTypes.AccessDenied, AuditOutcome.Denied, Details: details);
     }
 
     public AuditContext CreateContext(AccessRequest request)
@@ -72,7 +60,7 @@ internal sealed partial class AccessDeniedAuditMapper : IAccessDeniedAuditMapper
         return new AuditContext(actor, request.CorrelationId);
     }
 
-    internal static string DenialReasonOf(AccessDenialReason reason) => reason switch
+    private static string DenialReasonOf(AccessDenialReason reason) => reason switch
     {
         AccessDenialReason.Unauthenticated => "unauthenticated",
         AccessDenialReason.AccountNotActive => "account_not_active",
@@ -81,12 +69,4 @@ internal sealed partial class AccessDeniedAuditMapper : IAccessDeniedAuditMapper
         AccessDenialReason.PolicyDenied => "policy_denied",
         _ => "policy_error",
     };
-
-    private static AuditResourceRef? ResourceOf(ResourceRef? resource)
-    {
-        var type = ResourceTypes.FirstOrDefault(known =>
-            string.Equals(known, resource?.Type, StringComparison.OrdinalIgnoreCase));
-
-        return type is null ? null : new AuditResourceRef(type, resource!.Id);
-    }
 }
