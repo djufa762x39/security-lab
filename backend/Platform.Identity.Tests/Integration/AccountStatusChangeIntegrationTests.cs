@@ -6,6 +6,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
+using Platform.Api.Enums.Identity;
+using Platform.Api.Interfaces.Identity;
+using Platform.Api.Models.Identity;
 using Platform.Api.Services.Identity;
 using Platform.Audit.Composition;
 using Platform.Audit.Contracts;
@@ -119,13 +122,84 @@ public class AccountStatusChangeIntegrationTests : IntegrationTestBase
     [Test]
     public async Task SessionOfAccountBlockedBehindTheRevocation_IsStillRefused()
     {
-        // A login that raced with the status change can leave a live session of a blocked account behind.
+        // Defense in depth: even a session row that exists for a blocked account (created without the issuing
+        // check) is refused on use. Issuing such a session is refused too, see the tests below.
         var user = await UserTestData.AddAsync(Factory, "raced@example.com", Password, AccountStatus.Blocked);
         var session = await SessionTestData.CreateAsync(Factory, user.Id);
 
         var response = await SendAsync(HttpMethod.Get, "/api/auth/me", session.RawToken);
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+    }
+
+    [Test]
+    public async Task IssuingASession_ForAnActiveAccount_StoresOneThatWorks()
+    {
+        var student = await UserTestData.AddAsync(Factory, "active@example.com", Password);
+
+        var issued = await IssueSessionAsync(student.Id);
+
+        Assert.That(issued, Is.Not.Null);
+        Assert.That((await SendAsync(HttpMethod.Get, "/api/auth/me", issued!.Token)).StatusCode,
+            Is.EqualTo(HttpStatusCode.OK));
+    }
+
+    [Test]
+    public async Task LoginThatStartedBeforeTheBlock_IsRefusedAtIssue_SoReactivationCannotRevive_ItsToken()
+    {
+        // The status change holds the account lock (as ChangeAccountStatus does) while a login that already
+        // passed its status check tries to store a session. The login waits; once the block commits it must
+        // see Blocked and store nothing, so there is no token a later reactivation could bring back to life.
+        var student = await UserTestData.AddAsync(Factory, "racer@example.com", Password);
+
+        using var statusScope = Factory.Services.CreateScope();
+        var statusStore = new EfAccountStatusStore(statusScope.ServiceProvider.GetRequiredService<PlatformIdentityDbContext>());
+        await using var unitOfWork = await statusStore.BeginAsync();
+        var account = await unitOfWork.FindForUpdateAsync(student.Id);
+        await unitOfWork.ApplyAsync(account!, AccountStatus.Blocked);
+
+        var login = IssueSessionAsync(student.Id);
+        await Task.Delay(500);
+        Assert.That(login.IsCompleted, Is.False, "the login must wait for the status change that holds the lock");
+
+        await unitOfWork.CommitAsync();
+
+        await Assert.ThrowsAsync<AccountNotActiveException>(async () => await login);
+        Assert.That(await SessionCountAsync(student.Id), Is.Zero);
+
+        await SetStatusAsync(student.Id, AccountStatus.Active);
+        Assert.That(await SessionCountAsync(student.Id), Is.Zero, "nothing is left that reactivation could revive");
+    }
+
+    [Test]
+    public async Task LoginsRacingWithABlock_NeverLeaveATokenThatWorksAfterReactivation()
+    {
+        var (admin, _) = await ArrangeAdminAndStudentAsync();
+        var adminSession = await SessionTestData.CreateAsync(Factory, admin.Id);
+
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            var student = await UserTestData.AddAsync(Factory, $"racer{attempt}@example.com", Password);
+
+            var login = Task.Run(async () =>
+            {
+                try { return (await IssueSessionAsync(student.Id))?.Token; }
+                catch (AccountNotActiveException) { return null; }
+            });
+            var block = Task.Run(() => SendAsync(HttpMethod.Put, StatusUrl(student.Id), adminSession.RawToken,
+                new { status = "BLOCKED" }));
+
+            await Task.WhenAll(login, block);
+            var token = await login;
+
+            Assert.That((await block).StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            await SetStatusAsync(student.Id, AccountStatus.Active);
+
+            // Whichever came first: either the block revoked the new session or the login was refused.
+            if (token is not null)
+                Assert.That((await SendAsync(HttpMethod.Get, "/api/auth/me", token)).StatusCode,
+                    Is.EqualTo(HttpStatusCode.Unauthorized), $"attempt {attempt}: a token outlived the block");
+        }
     }
 
     [Test]
@@ -146,6 +220,30 @@ public class AccountStatusChangeIntegrationTests : IntegrationTestBase
         public ValueTask<AuditWriteResult> WriteAsync(AuditEventDraft draft, AuditContext context,
             DbTransaction transaction, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(AuditWriteResult.Unavailable());
+    }
+
+    private static async Task<IssuedSession?> IssueSessionAsync(Guid accountId)
+    {
+        // Own scope = own DbContext and connection, like a separate login request.
+        using var scope = Factory.Services.CreateScope();
+        var creator = scope.ServiceProvider.GetRequiredService<ISessionCreator>();
+        return await creator.CreateAsync(accountId, AuthenticationLevel.Active);
+    }
+
+    private static async Task<int> SessionCountAsync(Guid accountId)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformIdentityDbContext>();
+        return await db.Sessions.AsNoTracking().CountAsync(session => session.UserId == accountId);
+    }
+
+    private static async Task SetStatusAsync(Guid accountId, AccountStatus status)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformIdentityDbContext>();
+        var account = await db.Accounts.SingleAsync(candidate => candidate.Id == accountId);
+        account.Status = status;
+        await db.SaveChangesAsync();
     }
 
     private static string StatusUrl(Guid accountId) => $"/api/admin/accounts/{accountId}/status";
