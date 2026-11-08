@@ -10,5 +10,6 @@
     <PackageReference Include="NUnit" Version="4.3.2" />
     <PackageReference Include="NUnit3TestAdapter" Version="5.0.0" />
     <ProjectReference Include="../Platform.Competencies/Platform.Competencies.csproj" />
+    <ProjectReference Include="../Platform.Api/Platform.Api.csproj" />
   </ItemGroup>
 </Project>

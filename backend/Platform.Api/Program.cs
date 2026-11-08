@@ -21,6 +21,7 @@ using Platform.Api.Modules.Identity.RateLimiting;
 using Platform.Api.Services.Identity;
 using Platform.Audit.Composition;
 using Platform.Authoring.Composition;
+using Platform.Competencies.Composition;
 using Platform.Identity;
 using Platform.Identity.Entities;
 using Platform.Identity.Persistence;
@@ -85,6 +86,16 @@ else
 
 builder.Services.AddAudit();
 builder.Services.AddAuditPersistence(builder.Configuration.GetConnectionString("Laboratories"));
+
+// PRG-04 uses its own schema, but can share the already configured PostgreSQL server.
+// A dedicated Competencies connection takes precedence when deployment supplies one.
+var competenciesConnectionString = builder.Configuration.GetConnectionString("Competencies");
+if (string.IsNullOrWhiteSpace(competenciesConnectionString))
+    competenciesConnectionString = builder.Configuration.GetConnectionString("Laboratories");
+
+if (!string.IsNullOrWhiteSpace(competenciesConnectionString))
+    builder.Services.AddCompetencyPersistence(competenciesConnectionString);
+
 builder.Services.AddAuthoring();
 builder.Services.AddLabVisibility();
 builder.Services.AddIdentityRateLimiting(builder.Configuration);
@@ -198,6 +209,7 @@ app.UseMiddleware<SessionCheckMiddleware>();
 
 app.MapControllers();
 app.MapLaboratories();
+app.MapCompetencyEndpoints();
 app.MapTeam21Acc();
 app.MapRevisionReviews();
 

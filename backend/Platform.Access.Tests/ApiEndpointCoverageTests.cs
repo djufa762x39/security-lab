@@ -30,9 +30,12 @@ public class ApiEndpointCoverageTests
         "/api/auth/me",
         "/api/authoring/templates",
         "/api/authoring/templates/{templateId:guid}/drafts",
+        "/api/competencies",
         "/api/laboratories/",
         "/api/laboratories/{id:guid}",
         "/api/laboratories/{id:guid}/title",
+        "/api/laboratories/{laboratoryId:guid}/competencies",
+        "/api/laboratories/{laboratoryId:guid}/competencies/{competencyId:guid}",
         "/api/labs/",
         "/api/labs/{id:guid}",
         "/api/labs/{id:guid}/title",
@@ -82,6 +85,9 @@ public class ApiEndpointCoverageTests
         var res = await client.GetAsync($"/api/laboratories/{Guid.NewGuid()}");
         Assert.That(res.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
         Assert.That(await res.Content.ReadAsStringAsync(), Does.Not.Contain("laboratory"));
+
+        var competencies = await client.GetAsync("/api/competencies");
+        Assert.That(competencies.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
 
         Assert.That((await client.GetAsync("/api/test/no-metadata")).StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
     }

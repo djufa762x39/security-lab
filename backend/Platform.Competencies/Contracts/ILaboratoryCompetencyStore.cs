@@ -2,8 +2,9 @@ using Platform.Competencies.Domain;
 
 namespace Platform.Competencies.Contracts;
 
-// Storage only. The PRG-04 application boundary must check laboratory existence and
-// authorize the caller before invoking these methods (story 2); this port is not an API.
+// Storage only. It neither resolves a laboratory nor authenticates or authorizes a caller.
+// The current PRG-04 HTTP boundary checks identity only; existence and per-laboratory
+// authorization are deliberately deferred to a later story.
 public interface ILaboratoryCompetencyStore
 {
     // Returns false if the relationship already exists; unknown competencies are rejected.
