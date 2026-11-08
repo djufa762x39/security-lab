@@ -1,9 +1,13 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Platform.Access.AspNet;
 using Platform.Api.Interfaces.Identity;
 using Platform.Api.Services.Identity;
 
 namespace Platform.Api.Controllers.Identity;
 
+// ACC-05: both actions authenticate the caller themselves (401 without a session) and only
+// ever touch the caller's own sessions, so the strict Access middleware delegates to them.
+[DelegatedAuthorization]
 [ApiController]
 [Route("api/auth/sessions")]
 public class SessionController(IIdentityContext identity, ISessionManager sessionManager) : ControllerBase
