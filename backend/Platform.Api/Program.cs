@@ -22,6 +22,10 @@ using Platform.LabVisibility.Composition;
 using Platform.LabVisibility.Contracts;
 using Platform.LabVisibility.Infrastructure.Membership;
 
+using Platform.Prerequisites.Application;
+using Platform.Prerequisites.Contracts;
+using Platform.Prerequisites.Infrastructure;
+
 // Oba modula imaju IAccessDecision, zato koristimo alias.
 using IdentityAccessDecision = Platform.Api.Interfaces.Identity.IAccessDecision;
 using PlatformAccessDecision = Platform.Access.Contracts.IAccessDecision;
@@ -55,6 +59,10 @@ builder.Services.AddSingleton(TimeProvider.System);
 
 builder.Services.AddLaboratoriesPersistence(
     builder.Configuration.GetConnectionString("Laboratories"));
+builder.Services.AddScoped<IPrerequisiteAccessService, PrerequisiteAccessService>();
+builder.Services.AddSingleton<StubCompletedLaboratories>();
+builder.Services.AddSingleton<ICompletedLaboratories>(
+    sp => sp.GetRequiredService<StubCompletedLaboratories>());
 
 builder.Services.AddSingleton<IAccountRepository, InMemoryAccountRepository>();
 builder.Services.AddSingleton<ICredentialAuthenticator, UnavailableCredentialAuthenticator>();
@@ -91,19 +99,24 @@ else
 
 // Laboratories modul
 builder.Services.AddLaboratories(builder.Environment);
-// Use the official LAB-01 repository contract. Never silently persist to memory in production.
+
+// Koristimo PostgreSQL kada postoji Authoring konekcija.
 if (!string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("Authoring")))
 {
     builder.Services.AddLaboratoryPersistence(builder.Configuration);
+
     builder.Services.AddScoped<ILaboratoryRepository, PostgresLaboratoryRepository>();
+    builder.Services.AddScoped<IPrerequisiteRepository, LabPrerequisiteStoreAdapter>();
 }
 else if (builder.Environment.IsDevelopment())
 {
+    // U razvojnom okruženju koristimo memorijske repozitorijume.
     builder.Services.AddSingleton<ILaboratoryRepository, InMemoryLaboratoryRepository>();
+    builder.Services.AddSingleton<IPrerequisiteRepository, InMemoryPrerequisiteRepository>();
 }
 else
 {
-    // Keep unrelated API routes available, but never silently write laboratories to memory.
+    // Ne koristimo memorijsko čuvanje u produkciji.
     builder.Services.AddSingleton<ILaboratoryRepository, UnavailableLaboratoryRepository>();
 }
 
