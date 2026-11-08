@@ -18,8 +18,8 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('LAB-05 searchLabs', () => {
-  it('šalje GET na /search sa parametrom q i test identitetom, bez tela', async () => {
+describe('LAB-05 laboratory search API', () => {
+  it('sends GET /search with the query and test identity without a body', async () => {
     const fetchMock = reply(200, { items: [LAB], truncated: false })
     vi.stubGlobal('fetch', fetchMock)
 
@@ -37,7 +37,7 @@ describe('LAB-05 searchLabs', () => {
     expect(init.headers[TEST_USER_HEADER]).toBe('marko:Teacher')
   })
 
-  it('kodira unos, pa & i = ne mogu da dodaju nove parametre', async () => {
+  it('encodes input so special characters cannot inject query parameters', async () => {
     const fetchMock = reply(200, { items: [], truncated: false })
     vi.stubGlobal('fetch', fetchMock)
 
@@ -47,7 +47,7 @@ describe('LAB-05 searchLabs', () => {
     expect(url.searchParams.getAll('q')).toEqual(['a&q=b#x'])
   })
 
-  it('400 INVALID_QUERY daje našu poruku, bez teksta sa servera', async () => {
+  it('maps INVALID_QUERY responses to a local message without exposing server text', async () => {
     vi.stubGlobal('fetch', reply(400, { code: 'INVALID_QUERY', message: 'internal detail' }))
 
     const outcome = await searchLabs('x', teacher)
@@ -57,7 +57,7 @@ describe('LAB-05 searchLabs', () => {
     expect(JSON.stringify(outcome)).not.toContain('internal detail')
   })
 
-  it('401 i greška mreže imaju svoje ishode', async () => {
+  it('distinguishes unauthenticated responses from network failures', async () => {
     vi.stubGlobal('fetch', reply(401, { title: 'Unauthenticated' }))
     expect((await searchLabs('rbac', null)).kind).toBe('unauthenticated')
 
@@ -65,7 +65,7 @@ describe('LAB-05 searchLabs', () => {
     expect((await searchLabs('rbac', teacher)).kind).toBe('error')
   })
 
-  it('odgovor bez niza items je greška, a neispravne stavke se odbacuju', async () => {
+  it('rejects responses without an items array and discards invalid items', async () => {
     vi.stubGlobal('fetch', reply(200, { items: 'nije niz' }))
     expect((await searchLabs('rbac', teacher)).kind).toBe('error')
 
@@ -75,7 +75,7 @@ describe('LAB-05 searchLabs', () => {
     expect(outcome.kind === 'ok' && outcome.truncated).toBe(true)
   })
 
-  it('šalje sve kriterijume odvojeno i bez dodavanja parametara kroz oznake', async () => {
+  it('sends criteria separately and prevents query parameter injection through tags', async () => {
     const fetchMock = reply(200, { items: [], truncated: false })
     vi.stubGlobal('fetch', fetchMock)
     await searchLabs('', teacher, { difficulty: 'Easy', type: 'AccessControl', tags: ['security', 'x&type=LogAnalysis'] })
@@ -88,7 +88,7 @@ describe('LAB-05 searchLabs', () => {
     expect(fetchMock.mock.calls[0][1].cache).toBe('no-store')
   })
 
-  it('učitava postojeće filtere sa servera bez keširanja', async () => {
+  it('loads existing filter options without caching', async () => {
     const options = { difficulties: ['Easy'], types: ['AccessControl'], tags: ['security'], metadataAvailable: true }
     const fetchMock = reply(200, options)
     vi.stubGlobal('fetch', fetchMock)
@@ -104,12 +104,12 @@ describe('LAB-05 searchLabs', () => {
     { difficulties: 'Easy', types: [], tags: [], metadataAvailable: true },
     { difficulties: [], types: [], tags: [], metadataAvailable: 'true' },
     { difficulties: [], types: [], tags: [''], metadataAvailable: true },
-  ])('odbija neispravan oblik opcija filtera', async options => {
+  ])('rejects malformed filter options', async options => {
     vi.stubGlobal('fetch', reply(200, options))
     expect((await getLabFilterOptions(teacher)).kind).toBe('error')
   })
 
-  it('nedostupni filteri imaju poseban ishod bez internih poruka', async () => {
+  it('returns a distinct outcome for unavailable filters without exposing internal messages', async () => {
     vi.stubGlobal('fetch', reply(503, { code: 'FILTERS_UNAVAILABLE', message: 'connection-string-secret', traceId: 'request-5' }))
     expect(await searchLabs('', teacher, { difficulty: 'Easy' })).toEqual({ kind: 'filtersUnavailable', requestId: 'request-5' })
   })

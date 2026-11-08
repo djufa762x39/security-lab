@@ -32,18 +32,18 @@ public sealed class LaboratoryFilterServiceTests
     [Test]
     public async Task Search_CombinesFiltersAndRemovingSelectionsBroadensResults()
     {
-        Laboratory first = await Add("Lab A", LaboratoryDifficulty.Easy, LaboratoryType.LogAnalysis, ["security", "access"]);
-        Laboratory second = await Add("Lab B", LaboratoryDifficulty.Easy, LaboratoryType.LogAnalysis, ["security"]);
-        Laboratory third = await Add("Lab C", LaboratoryDifficulty.Easy, LaboratoryType.AccessControl, ["security"]);
-        Laboratory fourth = await Add("Lab D", LaboratoryDifficulty.Hard, LaboratoryType.LogAnalysis, ["security", "access"]);
-        Laboratory missing = await Add("Lab without metadata");
-        Laboratory hidden = await Add("Lab hidden", LaboratoryDifficulty.Easy, LaboratoryType.LogAnalysis, ["security", "access"], OtherTeacher);
+        Laboratory first = await AddAsync("Lab A", LaboratoryDifficulty.Easy, LaboratoryType.LogAnalysis, ["security", "access"]);
+        Laboratory second = await AddAsync("Lab B", LaboratoryDifficulty.Easy, LaboratoryType.LogAnalysis, ["security"]);
+        Laboratory third = await AddAsync("Lab C", LaboratoryDifficulty.Easy, LaboratoryType.AccessControl, ["security"]);
+        Laboratory fourth = await AddAsync("Lab D", LaboratoryDifficulty.Hard, LaboratoryType.LogAnalysis, ["security", "access"]);
+        Laboratory missing = await AddAsync("Lab without metadata");
+        Laboratory hidden = await AddAsync("Lab hidden", LaboratoryDifficulty.Easy, LaboratoryType.LogAnalysis, ["security", "access"], OtherTeacher);
         var filters = new LabSearchFilters(LaboratoryDifficulty.Easy, LaboratoryType.LogAnalysis, ["security", "access"]);
 
-        LabSearchResult combined = await Search("lab", filters);
-        LabSearchResult oneTag = await Search("lab", filters with { Tags = ["security"] });
-        LabSearchResult noType = await Search("lab", filters with { Type = null, Tags = ["security"] });
-        LabSearchResult reset = await Search(null, new());
+        LabSearchResult combined = await SearchAsync("lab", filters);
+        LabSearchResult oneTag = await SearchAsync("lab", filters with { Tags = ["security"] });
+        LabSearchResult noType = await SearchAsync("lab", filters with { Type = null, Tags = ["security"] });
+        LabSearchResult reset = await SearchAsync(null, new());
 
         Assert.Multiple(() =>
         {
@@ -60,11 +60,11 @@ public sealed class LaboratoryFilterServiceTests
     [TestCase("   ")]
     public async Task Search_EmptyTitleAllowsFiltersOnlyAndReset(string? query)
     {
-        Laboratory easy = await Add("First", LaboratoryDifficulty.Easy);
-        Laboratory hard = await Add("Second", LaboratoryDifficulty.Hard);
+        Laboratory easy = await AddAsync("First", LaboratoryDifficulty.Easy);
+        Laboratory hard = await AddAsync("Second", LaboratoryDifficulty.Hard);
 
-        LabSearchResult filtered = await Search(query, new(LaboratoryDifficulty.Easy));
-        LabSearchResult reset = await Search(query, new());
+        LabSearchResult filtered = await SearchAsync(query, new(LaboratoryDifficulty.Easy));
+        LabSearchResult reset = await SearchAsync(query, new());
 
         Assert.Multiple(() =>
         {
@@ -77,11 +77,11 @@ public sealed class LaboratoryFilterServiceTests
     [Test]
     public async Task Search_TagsAreTrimmedCaseInsensitiveExactMatchesAndAllAreRequired()
     {
-        Laboratory match = await Add("Lab exact", LaboratoryDifficulty.Easy, tags: ["security", "access"]);
-        await Add("Lab partial", LaboratoryDifficulty.Easy, tags: ["security-tools", "access"]);
-        await Add("Lab one tag", LaboratoryDifficulty.Easy, tags: ["security"]);
+        Laboratory match = await AddAsync("Lab exact", LaboratoryDifficulty.Easy, tags: ["security", "access"]);
+        await AddAsync("Lab partial", LaboratoryDifficulty.Easy, tags: ["security-tools", "access"]);
+        await AddAsync("Lab one tag", LaboratoryDifficulty.Easy, tags: ["security"]);
 
-        LabSearchResult result = await Search(null, new(Tags: [" SECURITY ", "Access", "security"]));
+        LabSearchResult result = await SearchAsync(null, new(Tags: [" SECURITY ", "Access", "security"]));
 
         Assert.That(result.Items.Select(l => l.Id), Is.EqualTo(new[] { match.Id }));
     }
@@ -90,10 +90,10 @@ public sealed class LaboratoryFilterServiceTests
     public async Task Search_FilteringPrecedesResultLimitAndTruncation()
     {
         for (int i = 0; i < LaboratorySearchService.MaxResults + 10; i++)
-            await Add($"Lab {i:D3}", LaboratoryDifficulty.Hard);
-        Laboratory selected = await Add("Lab Z selected", LaboratoryDifficulty.Easy);
+            await AddAsync($"Lab {i:D3}", LaboratoryDifficulty.Hard);
+        Laboratory selected = await AddAsync("Lab Z selected", LaboratoryDifficulty.Easy);
 
-        LabSearchResult result = await Search("lab", new(LaboratoryDifficulty.Easy));
+        LabSearchResult result = await SearchAsync("lab", new(LaboratoryDifficulty.Easy));
 
         Assert.Multiple(() =>
         {
@@ -105,8 +105,8 @@ public sealed class LaboratoryFilterServiceTests
     [Test]
     public async Task Options_OnlyReadAndExposeMetadataOfVisibleLaboratories()
     {
-        Laboratory own = await Add("Own", LaboratoryDifficulty.Easy, tags: ["visible", "shared"]);
-        Laboratory hidden = await Add("Hidden", LaboratoryDifficulty.Easy, tags: ["secret", "shared"], owner: OtherTeacher);
+        Laboratory own = await AddAsync("Own", LaboratoryDifficulty.Easy, tags: ["visible", "shared"]);
+        Laboratory hidden = await AddAsync("Hidden", LaboratoryDifficulty.Easy, tags: ["secret", "shared"], owner: OtherTeacher);
         var options = await _service.GetFilterOptionsAsync(Teacher, CancellationToken.None);
         var studentOptions = await _service.GetFilterOptionsAsync(new Caller("marko", PlatformRole.Student), CancellationToken.None);
 
@@ -125,7 +125,7 @@ public sealed class LaboratoryFilterServiceTests
     [Test]
     public async Task MissingStore_DoesNotDisableTitleSearchOrSilentlyIgnoreFilters()
     {
-        Laboratory lab = await Add("Lab", LaboratoryDifficulty.Easy);
+        Laboratory lab = await AddAsync("Lab", LaboratoryDifficulty.Easy);
         var service = new LaboratorySearchService(_repository, _membership, new FakeAccessDecision(), NullLogger<LaboratorySearchService>.Instance);
 
         LabSearchResult title = await service.SearchAsync("lab", Teacher, CancellationToken.None);
@@ -151,7 +151,7 @@ public sealed class LaboratoryFilterServiceTests
             new(Tags: [""]), new(Tags: ["bad\nvalue"]),
         ];
         foreach (var filters in invalid)
-            Assert.That((await Search(null, filters)).Status, Is.EqualTo(LabSearchStatus.InvalidQuery));
+            Assert.That((await SearchAsync(null, filters)).Status, Is.EqualTo(LabSearchStatus.InvalidQuery));
         Assert.That(_metadata.Reads, Is.Empty);
     }
 
@@ -159,9 +159,9 @@ public sealed class LaboratoryFilterServiceTests
     public async Task Search_UsesExistingTagsWithoutIntroducingMetadataLengthOrCountRestrictions()
     {
         string[] tags = Enumerable.Range(0, 21).Select(i => new string('a', 201) + i).ToArray();
-        Laboratory laboratory = await Add("Lab", LaboratoryDifficulty.Easy, tags: tags);
+        Laboratory laboratory = await AddAsync("Lab", LaboratoryDifficulty.Easy, tags: tags);
 
-        LabSearchResult result = await Search(null, new(Tags: tags));
+        LabSearchResult result = await SearchAsync(null, new(Tags: tags));
         LabSearchFilterOptions options = await _service.GetFilterOptionsAsync(Teacher, CancellationToken.None);
 
         Assert.Multiple(() =>
@@ -174,18 +174,18 @@ public sealed class LaboratoryFilterServiceTests
     [Test]
     public async Task Search_StoreFailureReturnsNoPartialResultsAndDoesNotReadHiddenMetadata()
     {
-        await Add("First", LaboratoryDifficulty.Easy);
-        Laboratory failing = await Add("Second", LaboratoryDifficulty.Easy);
+        await AddAsync("First", LaboratoryDifficulty.Easy);
+        Laboratory failing = await AddAsync("Second", LaboratoryDifficulty.Easy);
         _metadata.FailOn = failing.Id;
 
-        Assert.ThrowsAsync<InvalidOperationException>(() => Search(null, new(LaboratoryDifficulty.Easy)));
+        Assert.ThrowsAsync<InvalidOperationException>(() => SearchAsync(null, new(LaboratoryDifficulty.Easy)));
         Assert.ThrowsAsync<InvalidOperationException>(() => _service.GetFilterOptionsAsync(Teacher, CancellationToken.None));
     }
 
     [Test]
     public async Task Search_AnonymousCallerCannotReadMetadataOrOptions()
     {
-        await Add("Lab", LaboratoryDifficulty.Easy);
+        await AddAsync("Lab", LaboratoryDifficulty.Easy);
         var caller = new AnonymousIdentityContext();
         var result = await _service.SearchAsync(null, caller, CancellationToken.None, new(LaboratoryDifficulty.Easy));
         var options = await _service.GetFilterOptionsAsync(caller, CancellationToken.None);
@@ -201,12 +201,12 @@ public sealed class LaboratoryFilterServiceTests
     [TestCase(CourseRole.Teacher, true)]
     public async Task SearchAndOptions_UseMembershipOfStoredCourse(CourseRole role, bool allowed)
     {
-        Laboratory lab = await Add("Lab member", LaboratoryDifficulty.Easy, tags: ["course-secret"]);
+        Laboratory lab = await AddAsync("Lab member", LaboratoryDifficulty.Easy, tags: ["course-secret"]);
         Guid callerId = CallerId.From(Teacher)!.Value;
         _membership.Set(Guid.NewGuid(), callerId, CourseRole.Teacher);
         _membership.Set(lab.CourseId, callerId, role);
 
-        var result = await Search("lab", new(LaboratoryDifficulty.Easy));
+        var result = await SearchAsync("lab", new(LaboratoryDifficulty.Easy));
         var options = await _service.GetFilterOptionsAsync(Teacher, CancellationToken.None);
         var reader = new LaboratoryService(_repository, _membership, TimeProvider.System,
             NullLogger<LaboratoryService>.Instance);
@@ -225,8 +225,8 @@ public sealed class LaboratoryFilterServiceTests
     [Test]
     public async Task RevokedMembership_HidesResultsAndTagsForTitleFiltersAndReset()
     {
-        await Add("Lab member", LaboratoryDifficulty.Easy, tags: ["course-secret"]);
-        Assert.That((await Search("lab", new())).Items, Has.Count.EqualTo(1));
+        await AddAsync("Lab member", LaboratoryDifficulty.Easy, tags: ["course-secret"]);
+        Assert.That((await SearchAsync("lab", new())).Items, Has.Count.EqualTo(1));
         Assert.That((await _service.GetFilterOptionsAsync(Teacher, CancellationToken.None)).Tags,
             Does.Contain("course-secret"));
 
@@ -235,7 +235,7 @@ public sealed class LaboratoryFilterServiceTests
         foreach (var criteria in new (string? Query, LabSearchFilters Filters)[]
                  { ("lab", new()), (null, new(LaboratoryDifficulty.Easy)), (null, new()) })
         {
-            var result = await Search(criteria.Query, criteria.Filters);
+            var result = await SearchAsync(criteria.Query, criteria.Filters);
             Assert.That(result.Items, Is.Empty);
             Assert.That(result.Truncated, Is.False);
         }
@@ -258,7 +258,6 @@ public sealed class LaboratoryFilterServiceTests
         Assert.That(_metadata.Reads, Is.Empty);
     }
 
-    // The in-memory adapter rejects legacy records; supply the existing persistence contract directly.
     private sealed class LegacyRepository(Laboratory legacy) : ILaboratoryRepository
     {
         public Task<IReadOnlyList<Laboratory>> ListAsync(CancellationToken cancellationToken = default) =>
@@ -273,7 +272,7 @@ public sealed class LaboratoryFilterServiceTests
     [Test]
     public async Task MembershipFailure_StopsSearchAndOptionsWithoutReadingMetadata()
     {
-        await Add("Lab member", LaboratoryDifficulty.Easy);
+        await AddAsync("Lab member", LaboratoryDifficulty.Easy);
         var service = new LaboratorySearchService(_repository, new UnavailableMembership(),
             new FakeAccessDecision(), NullLogger<LaboratorySearchService>.Instance, _metadata);
 
@@ -290,10 +289,10 @@ public sealed class LaboratoryFilterServiceTests
             throw new InvalidOperationException("Membership unavailable.");
     }
 
-    private Task<LabSearchResult> Search(string? query, LabSearchFilters filters) =>
+    private Task<LabSearchResult> SearchAsync(string? query, LabSearchFilters filters) =>
         _service.SearchAsync(query, Teacher, CancellationToken.None, filters);
 
-    private async Task<Laboratory> Add(string title, LaboratoryDifficulty? difficulty = null,
+    private async Task<Laboratory> AddAsync(string title, LaboratoryDifficulty? difficulty = null,
         LaboratoryType type = LaboratoryType.LogAnalysis, string[]? tags = null, Caller? owner = null)
     {
         var lab = new Laboratory(LabSearchTestContext.CourseId, title, CallerId.From(owner ?? Teacher)!.Value);
@@ -323,6 +322,6 @@ public sealed class LaboratoryFilterServiceTests
         }
 
         public Task SaveAsync(LaboratoryMetadata metadata, CancellationToken ct = default) =>
-            throw new NotSupportedException("LAB-05 must never write metadata.");
+            throw new NotSupportedException("Laboratory search must never write metadata.");
     }
 }

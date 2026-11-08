@@ -45,9 +45,10 @@ public sealed class LaboratorySearchService(
 
         LabSearchStatus accessStatus = CheckSearchAccess(caller);
         if (accessStatus != LabSearchStatus.Ok)
+        {
             return new(accessStatus, [], false);
+        }
 
-        // An empty title is a catalog search, needed for filters-only searches and reset.
         if ((query?.Any(char.IsControl) ?? false)
             || !(filters ?? new LabSearchFilters()).TryNormalize(out LabSearchFilters normalizedFilters))
         {
@@ -58,9 +59,13 @@ public sealed class LaboratorySearchService(
         if (!string.IsNullOrWhiteSpace(query))
         {
             if (!LabTitleSearch.TryCreateKey(query, out string? titleKey))
+            {
                 return LabSearchResult.InvalidQuery;
+            }
+
             key = titleKey;
         }
+
         if (normalizedFilters.HasValues && metadataStore is null)
         {
             return LabSearchResult.FiltersUnavailable;
@@ -72,15 +77,24 @@ public sealed class LaboratorySearchService(
         foreach (Laboratory laboratory in laboratories)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            // Authorize before reading metadata, matching filters or counting results.
-            if (!await CanReadAsync(caller, callerId.Value, laboratory, cancellationToken)) continue;
+            if (!await CanReadAsync(caller, callerId.Value, laboratory, cancellationToken))
+            {
+                continue;
+            }
+
             string folded = LabTitleSearch.Fold(laboratory.Title);
-            if (!folded.Contains(key, StringComparison.Ordinal)) continue;
+            if (!folded.Contains(key, StringComparison.Ordinal))
+            {
+                continue;
+            }
 
             if (normalizedFilters.HasValues)
             {
                 LaboratoryMetadata? metadata = await metadataStore!.GetAsync(laboratory.Id, cancellationToken);
-                if (metadata is null || !normalizedFilters.Matches(metadata)) continue;
+                if (metadata is null || !normalizedFilters.Matches(metadata))
+                {
+                    continue;
+                }
             }
 
             candidates.Add((laboratory, folded));
@@ -113,32 +127,43 @@ public sealed class LaboratorySearchService(
     {
         Guid? callerId = CallerId.From(caller);
         if (callerId is null)
+        {
             return new(LabSearchStatus.Unauthenticated, [], [], [], false);
+        }
 
         LabSearchStatus accessStatus = CheckSearchAccess(caller);
         if (accessStatus != LabSearchStatus.Ok)
+        {
             return new(accessStatus, [], [], [], false);
+        }
 
         string[] difficulties = Enum.GetNames<LaboratoryDifficulty>();
         string[] types = Enum.GetNames<LaboratoryType>();
         if (metadataStore is null)
+        {
             return new(LabSearchStatus.Ok, difficulties, types, [], false);
+        }
 
         var tags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (Laboratory laboratory in await repository.ListAsync(cancellationToken))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!await CanReadAsync(caller, callerId.Value, laboratory, cancellationToken)) continue;
+            if (!await CanReadAsync(caller, callerId.Value, laboratory, cancellationToken))
+            {
+                continue;
+            }
+
             LaboratoryMetadata? metadata = await metadataStore.GetAsync(laboratory.Id, cancellationToken);
             if (metadata is not null)
+            {
                 tags.UnionWith(metadata.Tags.Where(tag => !string.IsNullOrWhiteSpace(tag) && !tag.Any(char.IsControl)));
+            }
         }
 
         return new(LabSearchStatus.Ok, difficulties, types,
             tags.Order(StringComparer.OrdinalIgnoreCase).ToArray(), true);
     }
 
-    // Keep direct service calls behind the same search permission as the HTTP endpoints.
     private LabSearchStatus CheckSearchAccess(IIdentityContext caller)
     {
         AccessResult decision = accessDecision.Decide(caller, LabActions.Search);
@@ -152,9 +177,10 @@ public sealed class LaboratorySearchService(
     {
         if (!accessDecision.Decide(caller, LabActions.Read, laboratory.Id.ToString()).Allowed
             || laboratory.CourseId == Guid.Empty)
+        {
             return false;
+        }
 
-        // Reuse the opening policy; search does not define its own membership rules.
         CourseRole role = await courseMembership.GetRoleAsync(laboratory.CourseId, callerId, cancellationToken);
         return LabOpenPolicy.DecideOpen(laboratory.CourseId, role,
             isCreator: laboratory.CreatedBy == callerId).Allowed;

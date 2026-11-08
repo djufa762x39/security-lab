@@ -32,10 +32,12 @@ public class ApiEndpointCoverageTests
         "/api/authoring/templates/{templateId:guid}/drafts",
         "/api/laboratories/",
         "/api/laboratories/search",
+        "/api/laboratories/search/filters",
         "/api/laboratories/{id:guid}",
         "/api/laboratories/{id:guid}/title",
         "/api/labs/",
         "/api/labs/search",
+        "/api/labs/search/filters",
         "/api/labs/{id:guid}",
         "/api/labs/{id:guid}/title",
     };

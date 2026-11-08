@@ -6,7 +6,9 @@ import { failureLines, requestIdOf, statusOf } from './messages'
 import ResultMessage from './ResultMessage'
 import './labSearch.css'
 
-interface Props { user: TestUser }
+interface Props {
+  user: TestUser
+}
 type Found = { items: LabSummary[]; truncated: boolean }
 type Failure = { lines: string[]; status?: number; requestId?: string }
 

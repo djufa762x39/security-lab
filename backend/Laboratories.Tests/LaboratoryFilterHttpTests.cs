@@ -27,15 +27,15 @@ public sealed class LaboratoryFilterHttpTests
     {
         using var factory = new FilterHostFactory();
         using var client = factory.CreateClient();
-        LaboratoryResponse first = await CreateLab(client, "Lab A");
-        LaboratoryResponse second = await CreateLab(client, "Lab B");
-        LaboratoryResponse noMetadata = await CreateLab(client, "Lab no metadata");
+        LaboratoryResponse first = await CreateLabAsync(client, "Lab A");
+        LaboratoryResponse second = await CreateLabAsync(client, "Lab B");
+        LaboratoryResponse noMetadata = await CreateLabAsync(client, "Lab no metadata");
         factory.Metadata.Items[first.Id] = new(first.Id, "Objective", LaboratoryDifficulty.Easy, LaboratoryType.LogAnalysis, ["access", "security"]);
         factory.Metadata.Items[second.Id] = new(second.Id, "Objective", LaboratoryDifficulty.Easy, LaboratoryType.LogAnalysis, ["security"]);
 
-        var combined = await Search(client, route + "/search?difficulty=easy&type=loganalysis&tag=SECURITY&tag=access");
-        var removed = await Search(client, route + "/search?difficulty=Easy&type=LogAnalysis&tag=security");
-        var reset = await Search(client, route + "/search");
+        var combined = await SearchAsync(client, route + "/search?difficulty=easy&type=loganalysis&tag=SECURITY&tag=access");
+        var removed = await SearchAsync(client, route + "/search?difficulty=Easy&type=LogAnalysis&tag=security");
+        var reset = await SearchAsync(client, route + "/search");
 
         Assert.Multiple(() =>
         {
@@ -72,10 +72,10 @@ public sealed class LaboratoryFilterHttpTests
     {
         using var factory = new FilterHostFactory();
         using var client = factory.CreateClient();
-        LaboratoryResponse own = await CreateLab(client, "Own lab");
-        await CreateLab(client, "Hidden lab", "jelena:Teacher");
+        LaboratoryResponse own = await CreateLabAsync(client, "Own lab");
+        await CreateLabAsync(client, "Hidden lab", "jelena:Teacher");
 
-        var result = await Search(client, "/api/laboratories/search" + parameters);
+        var result = await SearchAsync(client, "/api/laboratories/search" + parameters);
 
         Assert.That(result.Items.Select(l => l.Id), Is.EqualTo(new[] { own.Id }));
     }
@@ -86,8 +86,8 @@ public sealed class LaboratoryFilterHttpTests
     {
         using var factory = new FilterHostFactory();
         using var client = factory.CreateClient();
-        LaboratoryResponse own = await CreateLab(client, "Own lab");
-        LaboratoryResponse hidden = await CreateLab(client, "Hidden lab", "jelena:Teacher");
+        LaboratoryResponse own = await CreateLabAsync(client, "Own lab");
+        LaboratoryResponse hidden = await CreateLabAsync(client, "Hidden lab", "jelena:Teacher");
         factory.Metadata.Items[own.Id] = new(own.Id, "Objective", LaboratoryDifficulty.Easy, LaboratoryType.LogAnalysis, ["visible"]);
         factory.Metadata.Items[hidden.Id] = new(hidden.Id, "Objective", LaboratoryDifficulty.Hard, LaboratoryType.AccessControl, ["secret"]);
 
@@ -134,7 +134,7 @@ public sealed class LaboratoryFilterHttpTests
     {
         using var factory = new FilterHostFactory();
         using var client = factory.CreateClient();
-        await CreateLab(client, "Own lab");
+        await CreateLabAsync(client, "Own lab");
         factory.Metadata.Fail = true;
 
         using var response = await client.SendAsync(Get(path));
@@ -155,10 +155,10 @@ public sealed class LaboratoryFilterHttpTests
     {
         using var factory = new FilterHostFactory();
         using var client = factory.CreateClient();
-        LaboratoryResponse lab = await CreateLab(client, "Lab membership restricted");
+        LaboratoryResponse lab = await CreateLabAsync(client, "Lab membership restricted");
         factory.Metadata.Items[lab.Id] = new(lab.Id, "Objective", LaboratoryDifficulty.Easy,
             LaboratoryType.LogAnalysis, ["membership-secret"]);
-        Assert.That((await Search(client, route + "/search?q=membership")).Items.Select(item => item.Id),
+        Assert.That((await SearchAsync(client, route + "/search?q=membership")).Items.Select(item => item.Id),
             Is.EqualTo(new[] { lab.Id }));
         using (var options = await client.SendAsync(Get(route + "/search/filters")))
             Assert.That((await options.Content.ReadFromJsonAsync<LaboratorySearchFiltersResponse>())!.Tags,
@@ -189,7 +189,7 @@ public sealed class LaboratoryFilterHttpTests
         public PlatformRole? Role => PlatformRole.Teacher;
     }
 
-    private static async Task<LaboratorySearchResponse> Search(HttpClient client, string path)
+    private static async Task<LaboratorySearchResponse> SearchAsync(HttpClient client, string path)
     {
         using var response = await client.SendAsync(Get(path));
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
@@ -197,7 +197,7 @@ public sealed class LaboratoryFilterHttpTests
         return (await response.Content.ReadFromJsonAsync<LaboratorySearchResponse>())!;
     }
 
-    private static async Task<LaboratoryResponse> CreateLab(HttpClient client, string title, string user = Teacher)
+    private static async Task<LaboratoryResponse> CreateLabAsync(HttpClient client, string title, string user = Teacher)
     {
         using var request = Get("/api/laboratories/", user);
         request.Method = HttpMethod.Post;
@@ -247,6 +247,6 @@ public sealed class LaboratoryFilterHttpTests
         }
 
         public Task SaveAsync(LaboratoryMetadata metadata, CancellationToken ct = default) =>
-            throw new NotSupportedException("LAB-05 must not save metadata.");
+            throw new NotSupportedException("Laboratory search must not save metadata.");
     }
 }

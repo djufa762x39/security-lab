@@ -38,8 +38,8 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('LAB-05 pretraga laboratorija', () => {
-  it('prikazuje rezultate koje je vratio server', async () => {
+describe('LAB-05 laboratory search', () => {
+  it('displays results returned by the server', async () => {
     serverReturns(200, { items: [lab('id-1', 'RBAC i kontrola pristupa'), lab('id-2', 'RBAC napredno')], truncated: false })
     render(<LabSearch user={teacher} />)
 
@@ -52,7 +52,7 @@ describe('LAB-05 pretraga laboratorija', () => {
     expect(screen.getByRole('region', { name: 'Dostupne laboratorije' })).toBeTruthy()
   })
 
-  it('kada nema rezultata, to jasno piše', async () => {
+  it('clearly indicates when no results are available', async () => {
     serverReturns(200, { items: [], truncated: false })
     render(<LabSearch user={student} />)
 
@@ -62,7 +62,7 @@ describe('LAB-05 pretraga laboratorija', () => {
     expect(screen.queryByRole('list')).toBeNull()
   })
 
-  it('prazan naziv prikazuje sve dostupne laboratorije', async () => {
+  it('shows all accessible laboratories when the title is empty', async () => {
     const fetchMock = serverReturns(200, { items: [lab('id-all', 'Analiza logova')], truncated: false })
     render(<LabSearch user={teacher} />)
 
@@ -73,7 +73,7 @@ describe('LAB-05 pretraga laboratorija', () => {
     expect(new URL(searchCall[0], 'http://localhost').searchParams.get('q')).toBe('   ')
   })
 
-  it('HTML u nazivu se prikazuje kao tekst, a ne kao element', async () => {
+  it('renders HTML in a title as text without creating elements', async () => {
     serverReturns(200, { items: [lab('id-x', '<img src=x onerror=alert(1)>')], truncated: false })
     const { container } = render(<LabSearch user={teacher} />)
 
@@ -86,7 +86,7 @@ describe('LAB-05 pretraga laboratorija', () => {
   it.each([
     [401, 'Pristup pretrazi nije potvrđen'],
     [403, 'Pretraga nije dozvoljena'],
-  ])('posle odbijanja (%s) uklanja prethodne rezultate i objašnjava pristup', async (status, heading) => {
+  ])('clears previous results and explains access after denial (%s)', async (status, heading) => {
     serverReturns(200, { items: [lab('id-1', 'RBAC i kontrola pristupa')], truncated: false })
     render(<LabSearch user={teacher} />)
     search('rbac')
@@ -101,7 +101,7 @@ describe('LAB-05 pretraga laboratorija', () => {
     expect(screen.queryByRole('region', { name: 'Dostupne laboratorije' })).toBeNull()
   })
 
-  it('promena korisnika briše rezultate prethodnog korisnika', async () => {
+  it('clears previous results when the user changes', async () => {
     serverReturns(200, { items: [lab('id-1', 'Markov nacrt')], truncated: false })
     const { rerender } = render(<LabSearch user={teacher} />)
     search('nacrt')
@@ -112,7 +112,7 @@ describe('LAB-05 pretraga laboratorija', () => {
     expect(screen.queryByText('Markov nacrt')).toBeNull()
   })
 
-  it('označava kada je server skratio listu rezultata', async () => {
+  it('indicates when the server truncates the results', async () => {
     serverReturns(200, { items: [lab('id-1', 'Lab 001')], truncated: true })
     render(<LabSearch user={teacher} />)
 
@@ -121,7 +121,7 @@ describe('LAB-05 pretraga laboratorija', () => {
     expect(await screen.findByText(/Prikazani su samo prvi rezultati/)).toBeTruthy()
   })
 
-  it('pristupačnost: forma je označena kao pretraga, polje ima label i ograničenje dužine', () => {
+  it('provides a search landmark, input label and length limit', () => {
     serverReturns(200, { items: [], truncated: false })
     render(<LabSearch user={teacher} />)
     expect(screen.getByRole('search')).toBeTruthy()
@@ -131,7 +131,7 @@ describe('LAB-05 pretraga laboratorija', () => {
     expect(input.hasAttribute('required')).toBe(false)
   })
 
-  it('kombinuje težinu, tip i više postojećih oznaka bez obaveznog naziva', async () => {
+  it('combines difficulty, type and existing tags without requiring a title', async () => {
     const fetchMock = serverReturns(200, { items: [lab('id-match', 'Dostupna vežba')], truncated: false })
     render(<LabSearch user={teacher} />)
     await chooseFilters()
@@ -152,7 +152,7 @@ describe('LAB-05 pretraga laboratorija', () => {
     ['Ukloni filter težine: Laka', null, 'AccessControl', ['security', 'access']],
     ['Ukloni filter tipa: Kontrola pristupa', 'Easy', null, ['security', 'access']],
     ['Ukloni oznaku: security', 'Easy', 'AccessControl', ['access']],
-  ] as const)('dugme %s odmah osvežava rezultate uz ostale filtere', async (button, difficulty, type, tags) => {
+  ] as const)('refreshes results immediately after %s while keeping other filters', async (button, difficulty, type, tags) => {
     const fetchMock = serverReturns(200, { items: [lab('id-broader', 'Prošireni rezultat')], truncated: false })
     render(<LabSearch user={teacher} />)
     await chooseFilters()
@@ -169,7 +169,7 @@ describe('LAB-05 pretraga laboratorija', () => {
     expect(screen.queryByRole('button', { name: button })).toBeNull()
   })
 
-  it('resetuje sve filtere, zadržava naziv i prikazuje proširene rezultate', async () => {
+  it('resets all filters, preserves the title and shows broader results', async () => {
     const fetchMock = serverReturns(200, { items: [lab('id-1', 'RBAC početni')], truncated: false })
     render(<LabSearch user={teacher} />)
     await chooseFilters()
@@ -190,7 +190,7 @@ describe('LAB-05 pretraga laboratorija', () => {
     expect(screen.queryByRole('button', { name: /Ukloni/ })).toBeNull()
   })
 
-  it('promena kriterijuma uklanja stare rezultate dok se ne primeni nova pretraga', async () => {
+  it('clears old results when criteria change until the next search', async () => {
     serverReturns(200, { items: [lab('id-old', 'Prethodna vežba')], truncated: false })
     render(<LabSearch user={teacher} />)
     search('vežba')
@@ -202,7 +202,7 @@ describe('LAB-05 pretraga laboratorija', () => {
     expect(screen.queryByText('Prethodna vežba')).toBeNull()
   })
 
-  it('zakašnela pretraga ne prepisuje rezultat resetovanja', async () => {
+  it('ignores a delayed search response after resetting filters', async () => {
     let resolveOld!: (response: Response) => void
     let searches = 0
     vi.stubGlobal('fetch', vi.fn((url: string) => {
@@ -223,7 +223,7 @@ describe('LAB-05 pretraga laboratorija', () => {
     expect(screen.getByText('Posle resetovanja')).toBeTruthy()
   })
 
-  it('promena korisnika odmah briše stare oznake, izbore i zakašnjele odgovore', async () => {
+  it('clears tags and selections and ignores delayed responses when the user changes', async () => {
     let resolveOld!: (response: Response) => void
     vi.stubGlobal('fetch', vi.fn((url: string, init: RequestInit) => {
       const currentTeacher = (init.headers as Record<string, string>)['X-Test-User'] === 'marko:Teacher'
@@ -244,7 +244,7 @@ describe('LAB-05 pretraga laboratorija', () => {
     expect(screen.queryByText('Markov privatni rezultat')).toBeNull()
   })
 
-  it('nedostupni metapodaci onemogućuju filtere, ali pretraga po nazivu radi', async () => {
+  it('disables metadata filters while allowing title search when metadata is unavailable', async () => {
     serverReturns(200, { items: [lab('id-1', 'Analiza logova')], truncated: false }, { ...OPTIONS, tags: [], metadataAvailable: false })
     render(<LabSearch user={teacher} />)
     await screen.findByText(/Filteri po osobinama trenutno nisu dostupni/)
@@ -254,7 +254,7 @@ describe('LAB-05 pretraga laboratorija', () => {
     expect(await screen.findByText('Analiza logova', { selector: '.labs-search-title' })).toBeTruthy()
   })
 
-  it('neuspešno učitavanje filtera može da se ponovi', async () => {
+  it('allows retrying a failed filter options request', async () => {
     let attempts = 0
     vi.stubGlobal('fetch', vi.fn(async () => ++attempts === 1 ? json(503, {}) : json(200, OPTIONS)))
     render(<LabSearch user={teacher} />)
@@ -266,7 +266,7 @@ describe('LAB-05 pretraga laboratorija', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  it('isključivanje oznake ili izbor svih težina odmah proširuje pretragu', async () => {
+  it('broadens the search immediately after clearing a tag or difficulty', async () => {
     const fetchMock = serverReturns(200, { items: [lab('id-1', 'Dostupna vežba')], truncated: false })
     render(<LabSearch user={teacher} />)
     await chooseFilters()

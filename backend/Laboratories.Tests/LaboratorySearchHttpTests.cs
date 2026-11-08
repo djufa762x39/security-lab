@@ -8,8 +8,8 @@ using Microsoft.Extensions.Logging;
 using Platform.Api.Modules.Laboratories.Api;
 using Platform.Api.Modules.Laboratories.Application;
 using Platform.Api.Modules.Laboratories.Domain;
-using Platform.LabVisibility.Contracts;
 using Platform.Api.Modules.Laboratories.Infrastructure;
+using Platform.LabVisibility.Contracts;
 
 namespace Laboratories.Tests;
 
