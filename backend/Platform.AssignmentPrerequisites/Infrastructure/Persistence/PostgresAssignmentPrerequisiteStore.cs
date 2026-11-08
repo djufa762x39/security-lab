@@ -47,7 +47,7 @@ public sealed class PostgresAssignmentPrerequisiteStore : IAssignmentPrerequisit
     {
         ArgumentNullException.ThrowIfNull(prerequisite);
 
-        _db.Prerequisites.Add(ToRow(prerequisite));
+                var entry = _db.Prerequisites.Add(ToRow(prerequisite));
 
         try
         {
@@ -57,8 +57,11 @@ public sealed class PostgresAssignmentPrerequisiteStore : IAssignmentPrerequisit
         catch (DbUpdateException exception)
             when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
         {
-            _db.ChangeTracker.Clear();
             return false;
+        }
+        finally
+        {
+            entry.State = EntityState.Detached;
         }
     }
 
