@@ -162,6 +162,7 @@ public sealed class LaboratoryMetadataApiTests
 
         var laboratory = Laboratory.Rehydrate(
             laboratoryId,
+            MetadataTestData.CourseId,
             "Test laboratorija",
             LabStatus.Draft,
             MetadataTestData.TeacherId,
@@ -312,6 +313,7 @@ public sealed class LaboratoryMetadataApiTests
 
         var laboratory = Laboratory.Rehydrate(
             laboratoryId,
+            MetadataTestData.CourseId,
             "Test laboratorija za POST",
             LabStatus.Draft,
             MetadataTestData.TeacherId,
