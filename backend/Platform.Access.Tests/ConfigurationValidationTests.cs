@@ -467,7 +467,7 @@ public class ConfigurationValidationTests
         services.AddAccessControl();
         services.AddAccessControl();
 
-        Assert.That(services.Count(descriptor => descriptor.ServiceType == typeof(IHostedService)), Is.EqualTo(2));
+        Assert.That(services.Count(descriptor => descriptor.ServiceType == typeof(IHostedService)), Is.EqualTo(1));
     }
 
     private static ServiceProvider BuildProvider(Action<IServiceCollection> configure)

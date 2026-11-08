@@ -90,7 +90,6 @@ public static class AccessServiceCollectionExtensions
         services.TryAddSingleton(new AccessDecisionOptions());
         services.TryAddSingleton(new AccessConfigurationOptions());
         services.TryAddSingleton(TimeProvider.System);
-        services.TryAddSingleton<AccessAuditOptions>();
 
         services.AddSingleton<InMemoryActionCatalog>(sp =>
             new InMemoryActionCatalog(
@@ -130,16 +129,13 @@ public static class AccessServiceCollectionExtensions
         });
         services.AddSingleton<IAccessPolicyRegistry>(sp =>
             sp.GetRequiredService<InMemoryAccessPolicyRegistry>());
-        services.AddSingleton(CreateAggregatingSink);
-        services.AddSingleton<IAccessAuditWriter>(CreateAuditWriter);
-        services.AddSingleton<AccessAuditFlushService>(services =>
-            new AccessAuditFlushService(
-                services.GetRequiredService<AggregatingAccessAuditSink>(),
-                services.GetRequiredService<AccessAuditOptions>(),
-                services.GetRequiredService<TimeProvider>(),
-                services.GetService<ILogger<AccessAuditFlushService>>()
-                    ?? NullLogger<AccessAuditFlushService>.Instance));
-        services.AddSingleton<IHostedService>(services => services.GetRequiredService<AccessAuditFlushService>());
+        services.AddSingleton<IAccessDeniedAuditMapper, AccessDeniedAuditMapper>();
+        services.AddSingleton<IAccessAuditWriter>(sp =>
+            new CentralAccessAuditWriter(
+                sp.GetRequiredService<IAccessDeniedAuditMapper>(),
+                sp.GetRequiredService<IServiceScopeFactory>(),
+                sp.GetService<ILogger<CentralAccessAuditWriter>>()
+                    ?? NullLogger<CentralAccessAuditWriter>.Instance));
         services.AddSingleton<IAccessDecision, DefaultDenyAccessDecision>();
         services.AddSingleton<AccessConfigurationStartupCheck>(services =>
             new AccessConfigurationStartupCheck(
@@ -188,15 +184,6 @@ public static class AccessServiceCollectionExtensions
             .Select(descriptor => descriptor.ImplementationInstance)
             .OfType<AccessPolicyRegistration>();
 
-    private static AggregatingAccessAuditSink CreateAggregatingSink(IServiceProvider services)
-    {
-        var logger = new LoggerAccessAuditSink(
-            services.GetService<ILogger<LoggerAccessAuditSink>>()
-                ?? NullLogger<LoggerAccessAuditSink>.Instance);
-        return new AggregatingAccessAuditSink(
-            logger, services.GetRequiredService<AccessAuditOptions>(), services.GetRequiredService<TimeProvider>());
-    }
-
     internal sealed record AccessPolicyRegistration(
         string Action,
         ActionDefinition? Definition,
@@ -204,23 +191,5 @@ public static class AccessServiceCollectionExtensions
 
     private sealed class AccessControlServicesRegistered
     {
-    }
-
-    private static ResilientAccessAuditWriter CreateAuditWriter(IServiceProvider services)
-    {
-        var options = services.GetRequiredService<AccessAuditOptions>();
-        var clock = services.GetRequiredService<TimeProvider>();
-
-        var filtering = new FilteringAccessAuditWriter(
-            new AccessAuditRecordFactory(clock, options),
-            services.GetRequiredService<AggregatingAccessAuditSink>(),
-            options);
-
-        return new ResilientAccessAuditWriter(
-            filtering,
-            options,
-            clock,
-            services.GetService<ILogger<ResilientAccessAuditWriter>>()
-                ?? NullLogger<ResilientAccessAuditWriter>.Instance);
     }
 }

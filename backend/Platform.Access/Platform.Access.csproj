@@ -10,4 +10,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Platform.Access.Tests" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Platform.Audit\Platform.Audit.csproj" />
+  </ItemGroup>
 </Project>
