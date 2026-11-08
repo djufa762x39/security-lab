@@ -19,6 +19,7 @@ using Platform.Api.Models.Identity;
 using Platform.Api.Services.Identity;
 
 using ISessionManager = Platform.Api.Interfaces.Identity.ISessionManager;
+using Platform.Identity.Entities;
 
 namespace Platform.Authoring.Tests.Api;
 
@@ -186,6 +187,41 @@ public sealed class AuthoringHttpRequests
         Assert.That(decisionRequest.Resource, Is.EqualTo(new ResourceRef(AuthoringActions.TemplateResourceType, templateId.ToString("D"))));
     }
 
+    [Test]
+    public async Task DraftOwner_ComesFromSession_WhenDevelopmentSubjectDiffers()
+    {
+        var templateId = Guid.Parse("a1000000-0000-4000-8000-000000000001");
+        var assistantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var studentId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+
+        using var baseFactory = new AuthoringHostFactory();
+        using var factory = baseFactory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureAppConfiguration((_, config) =>
+            {
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Identity:DevSubjectId"] = studentId.ToString("D"),
+                    ["AuthoringTests:SessionUserId"] = assistantId.ToString("D"),
+                    ["Authoring:AuthorAccountIds:0"] = assistantId.ToString("D")
+                });
+            });
+        });
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("Cookie", $"{SessionCookie.Name}={AuthoringHostFactory.SessionToken}");
+        using var response = await client.PostAsync($"/api/authoring/templates/{templateId}/drafts", null);
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+        
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var draftId = body.RootElement.GetProperty("id").GetGuid();
+        var repository = factory.Services.GetRequiredService<IDraftRepository>();
+        var storedDraft = await repository.GetAsync(draftId);
+        Assert.That(body.RootElement.GetProperty("ownerId").GetGuid(), Is.EqualTo(assistantId));
+        Assert.That(storedDraft, Is.Not.Null);
+        Assert.That(storedDraft!.OwnerId, Is.EqualTo(assistantId));
+    }
+
     private sealed class DenyingAccessDecision : IAccessDecision
     {
         public AccessRequest? Request {get; private set;}
@@ -216,7 +252,9 @@ public sealed class AuthoringHttpRequests
     {
         public Task<ValidateSession?> ValidateAsync(string token, CancellationToken ct = default)
         {
-            if(token == AuthoringHostFactory.SessionToken && Guid.TryParse(configuration["Identity:DevSubjectId"], out var userId))
+            var sessionUserId = configuration["AuthoringTests:SessionUserId"] ?? configuration["Identity:DevSubjectId"];
+
+            if(token == AuthoringHostFactory.SessionToken && Guid.TryParse(sessionUserId, out var userId))
             {
                 return Task.FromResult<ValidateSession?>(new ValidateSession(Guid.NewGuid(), userId, AuthenticationLevel.Active));
             }

@@ -46,7 +46,7 @@ flowchart TD
     CREATE --> |"HTTP status and response body"| CLIENT
 ```
 
-In Development, `DevelopmentSubjectResolver` reads the caller ID from the server setting `Identity:DevSubjectId`. The HTTP tests set that value in their test host configuration.
+AUT-06 endpoints use AuthoringSessionSubjectResolver to resolve the caller from the session validated by SessionCheckMiddleware. The resolver is registered under the AuthoringSession key and uses the existing SessionIdentityContext. The draft owner comes from the validated session.
 
 | Status | Outcome |
 |---|---|
@@ -59,5 +59,4 @@ The `401`, `403` and `404` paths end before a draft is stored
 
 ## HTTP verification
 
-`AuthoringHttpTests.cs` covers: successful creation (`201`), an unknown template required by an authorized assistant(`404`) and
-an existing template required by a student who has no permission to do so(`403`). Both negative tests verify that the draft store stays empty.
+`AuthoringHttpTests.cs` contains five HTTP tests covering successful creation (201), an unknown template requested by an authorized assistant (404), student access denial (403), central authorization denial for an assistant (403), and draft ownership when the session user differs from `Identity:DevSubjectId`
