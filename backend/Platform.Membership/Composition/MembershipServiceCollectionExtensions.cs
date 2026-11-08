@@ -1,3 +1,5 @@
+using Platform.Access.Contracts;
+using Platform.Membership.Infrastructure.AccessControl;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -42,6 +44,7 @@ public static class MembershipServiceCollectionExtensions
             services.AddSingleton<ICourseReader, UnavailableCourseReader>();
         }
         services.AddScoped<IMembershipService, MembershipService>();
+        services.AddSingleton<IMembershipReader, StoreMembershipReader>();
         return services;
     }
 }
