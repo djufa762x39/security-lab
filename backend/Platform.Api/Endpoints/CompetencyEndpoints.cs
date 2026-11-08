@@ -1,28 +1,16 @@
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Routing;
-using Microsoft.Extensions.DependencyInjection;
 using Platform.Access.AspNet;
-using Platform.Api.Interfaces.Identity;
-using Platform.Competencies.Contracts;
+using Platform.Api.Modules.Competencies;
 using Platform.Competencies.Domain;
 
 namespace Platform.Api.Endpoints;
 
 public sealed record CompetencyResponse(Guid Id, string Name, string? Description);
-
 public sealed record CompetencyCatalogResponse(IReadOnlyList<CompetencyResponse> Competencies);
-
-public sealed record LaboratoryCompetenciesResponse(
-    Guid LaboratoryId,
-    IReadOnlyList<CompetencyResponse> Competencies);
-
+public sealed record LaboratoryCompetenciesResponse(Guid LaboratoryId, IReadOnlyList<CompetencyResponse> Competencies);
 public sealed record CompetencyErrorResponse(string Error);
 
-/// <summary>
-/// PRG-04 HTTP boundary. This increment proves only that a caller has an active session identity.
-/// It intentionally does not ask another module whether a laboratory exists or whether
-/// the caller has a right over that laboratory; those checks are a later PRG-04 increment.
-/// </summary>
+// PRG-04 only. Identity, laboratory existence and operation-specific authorization
+// are enforced before a store is accessed. Existing LAB/ACC endpoints are untouched.
 public static class CompetencyEndpoints
 {
     public const string CatalogPath = "/api/competencies";
@@ -30,9 +18,6 @@ public static class CompetencyEndpoints
 
     public static IEndpointRouteBuilder MapCompetencyEndpoints(this IEndpointRouteBuilder app)
     {
-        // SessionCheckMiddleware verifies the session before these handlers execute. The
-        // handlers verify the resolved identity again. Delegated metadata documents that
-        // this is the endpoint's reviewed authorization boundary for this increment.
         Configure(app.MapGet(CatalogPath, ListCatalogAsync));
         Configure(app.MapGet(LaboratoryCompetenciesPath, ListLaboratoryCompetenciesAsync));
         Configure(app.MapPut($"{LaboratoryCompetenciesPath}/{{competencyId:guid}}", AddLaboratoryCompetencyAsync));
@@ -41,107 +26,87 @@ public static class CompetencyEndpoints
     }
 
     public static async Task<IResult> ListCatalogAsync(
-        HttpContext context,
-        IIdentityContext identity,
-        CancellationToken cancellationToken)
+        HttpContext http, Prg04SessionIdentity identity, CompetencyLinkService operations, CancellationToken ct)
     {
-        if (!HasAuthenticatedIdentity(identity))
-            return Error(StatusCodes.Status401Unauthorized, "unauthenticated");
-
-        if (context.RequestServices.GetService<ICompetencyCatalog>() is not { } catalog)
-            return Error(StatusCodes.Status503ServiceUnavailable, "competency_storage_unavailable");
-
-        var competencies = await catalog.ListAsync(cancellationToken);
-        return Results.Ok(new CompetencyCatalogResponse(competencies.Select(ToResponse).ToList()));
+        if (await identity.ResolveAsync(http, ct) is null) return Unauthenticated();
+        var result = await operations.CatalogAsync(ct);
+        return result.Status == CompetencyOperationStatus.Ok
+            ? Results.Ok(new CompetencyCatalogResponse(ToResponses(result.Competencies!))) : Failure(result.Status);
     }
 
     public static async Task<IResult> ListLaboratoryCompetenciesAsync(
-        Guid laboratoryId,
-        HttpContext context,
-        IIdentityContext identity,
-        CancellationToken cancellationToken)
+        Guid laboratoryId, HttpContext http, Prg04SessionIdentity identity,
+        CompetencyLinkService operations, CancellationToken ct)
     {
-        if (!HasAuthenticatedIdentity(identity))
-            return Error(StatusCodes.Status401Unauthorized, "unauthenticated");
-        if (laboratoryId == Guid.Empty)
-            return Error(StatusCodes.Status400BadRequest, "invalid_laboratory_id");
-
-        if (context.RequestServices.GetService<ILaboratoryCompetencyStore>() is not { } store)
-            return Error(StatusCodes.Status503ServiceUnavailable, "competency_storage_unavailable");
-
-        // Deliberately no laboratory lookup or resource-right check in this increment.
-        var competencies = await store.GetForLaboratoryAsync(laboratoryId, cancellationToken);
-        return Results.Ok(new LaboratoryCompetenciesResponse(
-            laboratoryId,
-            competencies.Select(ToResponse).ToList()));
+        if (await identity.ResolveAsync(http, ct) is not { } userId) return Unauthenticated();
+        var result = await operations.ReadAsync(userId, laboratoryId, ct);
+        return result.Status == CompetencyOperationStatus.Ok
+            ? Results.Ok(new LaboratoryCompetenciesResponse(laboratoryId, ToResponses(result.Competencies!)))
+            : Failure(result.Status);
     }
 
-    public static async Task<IResult> AddLaboratoryCompetencyAsync(
-        Guid laboratoryId,
-        Guid competencyId,
-        HttpContext context,
-        IIdentityContext identity,
-        CancellationToken cancellationToken)
+    public static Task<IResult> AddLaboratoryCompetencyAsync(
+        Guid laboratoryId, Guid competencyId, HttpContext http, Prg04SessionIdentity identity,
+        CompetencyLinkService operations, CancellationToken ct) =>
+        ChangeAsync(laboratoryId, competencyId, http, identity, operations, add: true, ct);
+
+    public static Task<IResult> RemoveLaboratoryCompetencyAsync(
+        Guid laboratoryId, Guid competencyId, HttpContext http, Prg04SessionIdentity identity,
+        CompetencyLinkService operations, CancellationToken ct) =>
+        ChangeAsync(laboratoryId, competencyId, http, identity, operations, add: false, ct);
+
+    private static async Task<IResult> ChangeAsync(
+        Guid laboratoryId, Guid competencyId, HttpContext http, Prg04SessionIdentity identity,
+        CompetencyLinkService operations, bool add, CancellationToken ct)
     {
-        if (!HasAuthenticatedIdentity(identity))
-            return Error(StatusCodes.Status401Unauthorized, "unauthenticated");
-        if (laboratoryId == Guid.Empty)
-            return Error(StatusCodes.Status400BadRequest, "invalid_laboratory_id");
-        if (competencyId == Guid.Empty)
-            return Error(StatusCodes.Status400BadRequest, "invalid_competency_id");
-
-        if (context.RequestServices.GetService<ILaboratoryCompetencyStore>() is not { } store)
-            return Error(StatusCodes.Status503ServiceUnavailable, "competency_storage_unavailable");
-
-        try
+        if (await identity.ResolveAsync(http, ct) is not { } userId) return Unauthenticated();
+        var result = await operations.ChangeAsync(userId, laboratoryId, competencyId, add, ct);
+        return result.Status switch
         {
-            // Deliberately no laboratory lookup or resource-right check in this increment.
-            bool created = await store.AddAsync(laboratoryId, competencyId, cancellationToken);
-            return created
-                ? Results.Created(LinkPath(laboratoryId, competencyId), value: null)
-                : Results.NoContent();
-        }
-        catch (KeyNotFoundException)
-        {
-            return Error(StatusCodes.Status404NotFound, "competency_not_found");
-        }
-    }
-
-    public static async Task<IResult> RemoveLaboratoryCompetencyAsync(
-        Guid laboratoryId,
-        Guid competencyId,
-        HttpContext context,
-        IIdentityContext identity,
-        CancellationToken cancellationToken)
-    {
-        if (!HasAuthenticatedIdentity(identity))
-            return Error(StatusCodes.Status401Unauthorized, "unauthenticated");
-        if (laboratoryId == Guid.Empty)
-            return Error(StatusCodes.Status400BadRequest, "invalid_laboratory_id");
-        if (competencyId == Guid.Empty)
-            return Error(StatusCodes.Status400BadRequest, "invalid_competency_id");
-
-        if (context.RequestServices.GetService<ILaboratoryCompetencyStore>() is not { } store)
-            return Error(StatusCodes.Status503ServiceUnavailable, "competency_storage_unavailable");
-
-        // DELETE is idempotent: a missing relationship already has the requested state.
-        _ = await store.RemoveAsync(laboratoryId, competencyId, cancellationToken);
-        return Results.NoContent();
+            CompetencyOperationStatus.Created => Results.Created(
+                $"/api/laboratories/{laboratoryId:D}/competencies/{competencyId:D}", value: null),
+            CompetencyOperationStatus.NoContent => Results.NoContent(),
+            _ => Failure(result.Status)
+        };
     }
 
     private static RouteHandlerBuilder Configure(RouteHandlerBuilder endpoint) => endpoint
         .WithTags("Competencies")
-        .DelegatesToLegacyAuthorization();
+        // Explicit checks above call the ACC engine for the PRG-04 edit action.
+        // No global subject-provider or session-middleware behavior is changed.
+        .DelegatesToLegacyAuthorization()
+        .AddEndpointFilter(async (invocation, next) =>
+        {
+            invocation.HttpContext.Response.Headers.CacheControl = "no-store";
+            try
+            {
+                return await next(invocation);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                var http = invocation.HttpContext;
+                http.RequestServices.GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("Prg04.Competencies")
+                    .LogError(ex, "PRG-04 operation failed, traceId={TraceId}", http.TraceIdentifier);
+                return Results.Problem(statusCode: 503, title: "Competency operation unavailable");
+            }
+        });
 
-    private static bool HasAuthenticatedIdentity(IIdentityContext identity) =>
-        identity.Current is { IsAuthenticated: true, UserId: { } userId } && userId != Guid.Empty;
+    private static IResult Unauthenticated() => Error(401, "unauthenticated");
 
-    private static IResult Error(int statusCode, string error) =>
-        Results.Json(new CompetencyErrorResponse(error), statusCode: statusCode);
+    private static IResult Failure(CompetencyOperationStatus status) => status switch
+    {
+        CompetencyOperationStatus.InvalidLaboratoryId => Error(400, "invalid_laboratory_id"),
+        CompetencyOperationStatus.InvalidCompetencyId => Error(400, "invalid_competency_id"),
+        CompetencyOperationStatus.LaboratoryNotFound => Error(404, "laboratory_not_found"),
+        CompetencyOperationStatus.CompetencyNotFound => Error(404, "competency_not_found"),
+        _ => Error(503, "competency_storage_unavailable")
+    };
 
-    private static string LinkPath(Guid laboratoryId, Guid competencyId) =>
-        $"/api/laboratories/{laboratoryId:D}/competencies/{competencyId:D}";
+    private static IResult Error(int status, string error) =>
+        Results.Json(new CompetencyErrorResponse(error), statusCode: status);
 
-    private static CompetencyResponse ToResponse(Competency competency) =>
-        new(competency.Id, competency.Name, competency.Description);
+    private static IReadOnlyList<CompetencyResponse> ToResponses(IReadOnlyList<Competency> competencies) =>
+        competencies.Select(x => new CompetencyResponse(x.Id, x.Name, x.Description)).ToList();
 }
+

@@ -1,6 +1,7 @@
 using Team21.Acc.Api;
 using Platform.Api.Security.RevisionAuthorization;
 using Platform.Api.Modules.Kt1;
+using Platform.Api.Modules.Competencies;
 using Platform.Api.Modules.RevisionReviews;
 using Platform.Api.Modules.Laboratories.Application;
 using Platform.Api.Modules.Laboratories.Infrastructure;
@@ -143,6 +144,7 @@ else
 
 // Kreiranje aplikacije
 builder.Services.AddRevisionRequestIdentity();
+builder.Services.AddPrg04CompetencyOperations();
 var app = builder.Build();
 app.UseRouting();
 
