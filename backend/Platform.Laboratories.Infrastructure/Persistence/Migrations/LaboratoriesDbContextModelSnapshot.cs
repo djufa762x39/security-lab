@@ -123,6 +123,31 @@ namespace Platform.Laboratories.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_RevisionDecisions_RevisionId", "\"RevisionId\" <> '00000000-0000-0000-0000-000000000000'::uuid");
                         });
                 });
+            modelBuilder.Entity("Platform.Laboratories.Infrastructure.Persistence.ReviewOperation", b =>
+                {
+                    b.Property<Guid>("RevisionId").HasColumnType("uuid");
+                    b.Property<Guid>("ActorId").HasColumnType("uuid");
+                    b.Property<string>("Key").HasMaxLength(128).HasColumnType("character varying(128)");
+                    b.Property<Guid>("Id").HasColumnType("uuid");
+                    b.Property<string>("Action").IsRequired().HasMaxLength(7).HasColumnType("character varying(7)");
+                    b.Property<string>("Hash").IsRequired().HasMaxLength(64).HasColumnType("character varying(64)");
+                    b.Property<long>("Version").HasColumnType("bigint");
+                    b.Property<string>("Comment").HasMaxLength(1000).HasColumnType("character varying(1000)");
+                    b.Property<DateTimeOffset>("At").HasColumnType("timestamp with time zone");
+                    b.Property<Guid?>("LaboratoryId").HasColumnType("uuid");
+                    b.Property<int?>("Number").HasColumnType("integer");
+                    b.Property<byte[]>("Snapshot").HasColumnType("bytea");
+                    b.HasKey("RevisionId", "ActorId", "Key");
+                    b.HasIndex("LaboratoryId", "Number").IsUnique();
+                    b.ToTable("ReviewOperations", "laboratories");
+                });
+
+            modelBuilder.Entity("Platform.Laboratories.Infrastructure.Persistence.ReviewOperation", b =>
+                {
+                    b.HasOne("Platform.Laboratories.Domain.Models.LabRevision", null)
+                        .WithMany().HasForeignKey("RevisionId").OnDelete(DeleteBehavior.Restrict).IsRequired();
+                });
+            AddReviewDefinitions.AddDefinitionModel(modelBuilder);
 #pragma warning restore 612, 618
         }
     }

@@ -1,6 +1,7 @@
 <Solution>
   <Project Path="Laboratories.Tests/Laboratories.Tests.csproj" />
   <Project Path="Platform.Access/Platform.Access.csproj" />
+  <Project Path="Platform.Access.Tests/Platform.Access.Tests.csproj" />
   <Project Path="Platform.Api/Platform.Api.csproj" />
   <Project Path="Platform.Audit/Platform.Audit.csproj" />
   <Project Path="Platform.Assignments/Platform.Assignments.csproj" />
@@ -26,5 +27,11 @@
     <Project Path="Platform.Laboratories.Infrastructure/Platform.Laboratories.Infrastructure.csproj" />
     <Project Path="Platform.Laboratories.IntegrationTests/Platform.Laboratories.IntegrationTests.csproj" />
     <Project Path="Platform.Laboratories.Tests/Platform.Laboratories.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Team21/">
+    <Project Path="Team21.Acc.Core/Team21.Acc.Core.csproj" />
+    <Project Path="Team21.Acc.Infrastructure/Team21.Acc.Infrastructure.csproj" />
+    <Project Path="Team21.Acc.Api/Team21.Acc.Api.csproj" />
+    <Project Path="Team21.Acc.Tests/Team21.Acc.Tests.csproj" />
   </Folder>
 </Solution>

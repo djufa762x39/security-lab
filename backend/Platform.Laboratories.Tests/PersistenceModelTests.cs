@@ -44,7 +44,15 @@ public class PersistenceModelTests
             Assert.That(sql, Does.Contain("^[0-9a-f]{64}$"));
             Assert.That(sql, Does.Contain("CK_RevisionDecisions_Decision"));
             Assert.That(sql, Does.Contain("timestamp with time zone"));
-            Assert.That(sql, Does.Not.Contain("FOREIGN KEY"));
+            Assert.That(sql, Does.Contain("FOREIGN KEY (\"RevisionId\") REFERENCES laboratories.\"LabRevisions\""));
         });
+    }
+
+    [Test]
+    public void ReviewOperationsMigration_MatchesRuntimeModel()
+    {
+        using var context = CreateContext();
+        Assert.That(context.Database.GetMigrations().Last(), Does.EndWith("_AddReviewDefinitions"));
+        Assert.That(context.Database.HasPendingModelChanges(), Is.False);
     }
 }

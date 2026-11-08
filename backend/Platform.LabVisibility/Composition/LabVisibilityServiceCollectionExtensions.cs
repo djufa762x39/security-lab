@@ -1,4 +1,7 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Platform.Access.Domain.Enums;
+using Platform.Access.Domain.Models;
 using Platform.Access.Infrastructure.Catalog;
 using Platform.Access.Infrastructure.Policies;
 using Platform.LabVisibility.Application.EvaluatorKeys;
@@ -15,11 +18,24 @@ public static class LabVisibilityServiceCollectionExtensions
     // Poziva se posle AddAccessControl(). Svako dodaje svoju liniju ovde.
     public static IServiceCollection AddLabVisibility(this IServiceCollection services)
     {
+        // AUT-04 (Antonić): PostgreSQL kad postoji ConnectionStrings:LabVisibility, inače InMemory.
+        // Reader i store su singletoni (koriste ih singleton politike), pa EF ide preko fabrike DbContext-a.
         services.AddSingleton<InMemoryLabPublicContentReader>();
-        services.AddSingleton<ILabPublicContentReader>(sp => sp.GetRequiredService<InMemoryLabPublicContentReader>());
-
         services.AddSingleton<InMemoryEvaluatorKeyStore>();
-        services.AddSingleton<IEvaluatorKeyStore>(sp => sp.GetRequiredService<InMemoryEvaluatorKeyStore>());
+
+        services.AddDbContextFactory<LabVisibilityDbContext>((sp, options) =>
+            options.UseNpgsql(
+                LabVisibilityDatabase.GetConnectionString(sp),
+                LabVisibilityDesignTimeDbContextFactory.Configure));
+        services.AddSingleton<EfLabPublicContentReader>();
+        services.AddSingleton<EfEvaluatorKeyStore>();
+
+        services.AddSingleton<ILabPublicContentReader>(sp => LabVisibilityDatabase.IsConfigured(sp)
+            ? sp.GetRequiredService<EfLabPublicContentReader>()
+            : sp.GetRequiredService<InMemoryLabPublicContentReader>());
+        services.AddSingleton<IEvaluatorKeyStore>(sp => LabVisibilityDatabase.IsConfigured(sp)
+            ? sp.GetRequiredService<EfEvaluatorKeyStore>()
+            : sp.GetRequiredService<InMemoryEvaluatorKeyStore>());
 
         services.AddSingleton<InMemoryCourseMembership>();
         services.AddSingleton<ICourseMembership>(sp => sp.GetRequiredService<InMemoryCourseMembership>());
@@ -37,7 +53,14 @@ public static class LabVisibilityServiceCollectionExtensions
         var catalog = services.GetRequiredService<InMemoryActionCatalog>();
         foreach (var action in LabVisibilityActions.All)
         {
-            catalog.Register(action);
+            // The evaluator key request contains a lab resource; other actions
+            // do not carry a resource in the current LabVisibility contracts.
+            var isKeyRead = action == LabVisibilityActions.KeyRead;
+            catalog.Register(new ActionDefinition(
+                action,
+                isKeyRead ? ActionScope.Course : ActionScope.Authenticated,
+                isKeyRead ? "lab" : null,
+                isKeyRead));
         }
 
         // Politike se dodaju ovde, svako svoju, istim obrascem.
