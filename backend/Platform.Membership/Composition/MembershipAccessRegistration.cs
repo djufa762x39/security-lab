@@ -1,3 +1,5 @@
+using Platform.Access.Domain.Enums;
+using Platform.Access.Domain.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Platform.Access.Infrastructure.Catalog;
 using Platform.Access.Infrastructure.Policies;
@@ -16,7 +18,8 @@ public static class MembershipAccessRegistration
         var registry = services
             .GetRequiredService<InMemoryAccessPolicyRegistry>();
 
-        catalog.Register(MembershipActions.EnrollMember);
+        //catalog.Register(MembershipActions.EnrollMember);
+        catalog.Register(new ActionDefinition(MembershipActions.EnrollMember, ActionScope.Course, MembershipActions.CourseResourceType, true));
 
         registry.Register(
             MembershipActions.EnrollMember,

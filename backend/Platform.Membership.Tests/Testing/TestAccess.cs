@@ -2,7 +2,8 @@ using Platform.Access.Application.Services;
 using Platform.Access.Contracts;
 using Platform.Access.Domain.Enums;
 using Platform.Access.Domain.Models;
-using Platform.Access.Infrastructure.Auditing;
+//using Platform.Access.Infrastructure.Auditing;
+using Platform.Access.Application.Options;
 using Platform.Access.Infrastructure.Catalog;
 using Platform.Access.Infrastructure.Policies;
 using Platform.Membership.Application;
@@ -19,10 +20,12 @@ internal static class TestAccess
         var registry = new InMemoryAccessPolicyRegistry();
         if (enrollPolicy is not null)
         {
-            catalog.Register(MembershipActions.EnrollMember);
+            //catalog.Register(MembershipActions.EnrollMember);
+            catalog.Register(new ActionDefinition(MembershipActions.EnrollMember, ActionScope.Course, MembershipActions.CourseResourceType, true));
             registry.Register(MembershipActions.EnrollMember, enrollPolicy);
         }
-        return new DefaultDenyAccessDecision(catalog, registry, new NullAccessAuditWriter());
+        //return new DefaultDenyAccessDecision(catalog, registry, new NullAccessAuditWriter());
+        return new DefaultDenyAccessDecision(catalog, registry, new NoAuditWriter(), new AccessDecisionOptions());
     }
     public static SubjectRef Subject(Guid accountId, AccountState state = AccountState.Active) =>
     new(accountId.ToString("D"), state);
@@ -36,4 +39,15 @@ internal sealed class AllowAllPolicy : IAccessPolicy
     AccessRequest request,
     CancellationToken cancellationToken = default) =>
     ValueTask.FromResult(true);
+}
+
+
+/// <summary>Prazan audit za testove; Tim 3 je uklonio svoj NullAccessAuditWriter.</summary>
+internal sealed class NoAuditWriter : IAccessAuditWriter
+{
+    public ValueTask WriteAsync(
+    AccessRequest request,
+    AccessDecision decision,
+    CancellationToken cancellationToken = default) =>
+    ValueTask.CompletedTask;
 }

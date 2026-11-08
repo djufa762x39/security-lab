@@ -1,7 +1,9 @@
 using Platform.Access.Domain.Enums;
-using Platform.Api.Services.Identity;
+//using Platform.Api.Services.Identity;
 using Platform.Membership.Contracts;
-using ApiAccountStatus = Platform.Api.Domain.Identity.AccountStatus;
+//using ApiAccountStatus = Platform.Api.Domain.Identity.AccountStatus;
+using Platform.Api.Interfaces.Identity;
+using ApiAccountStatus = Platform.Identity.Enums.AccountStatus;
 namespace Platform.Api.Modules.Membership;
 /// <summary>
 /// PRIVREMENI ADAPTER (ACC-02): status naloga čitamo iz IAccountRepository koji koristi IDN-03.

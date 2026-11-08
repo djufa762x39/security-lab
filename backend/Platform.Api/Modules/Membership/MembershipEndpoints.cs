@@ -1,4 +1,6 @@
-using Platform.Api.Security;
+//using Platform.Api.Security;
+using Platform.Access.AspNet;
+using Platform.Api.Interfaces.Identity;
 using Platform.Membership.Application;
 namespace Platform.Api.Modules.Membership;
 /// <summary>
@@ -11,7 +13,8 @@ public static class MembershipEndpoints
     public static IEndpointRouteBuilder MapMembershipEndpoints(this IEndpointRouteBuilder app)
     {
         // ACC-02: upis studenta u kurs.
-        app.MapPost("/api/courses/{courseId:guid}/members", EnrollStudentAsync);
+        //app.MapPost("/api/courses/{courseId:guid}/members", EnrollStudentAsync);
+        app.MapPost("/api/courses/{courseId:guid}/members", EnrollStudentAsync).DelegateAuthorization();
         return app;
     }
     private static async Task<IResult> EnrollStudentAsync(
