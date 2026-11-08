@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import LabCard from './LabCard'
 import LabCatalog from './LabCatalog'
-import { parseCatalog } from './catalogApi'
+import { parseCatalog, UNKNOWN_PREREQUISITE_TITLE } from './catalogApi'
 import type { CatalogLab } from './catalogTypes'
 
 afterEach(cleanup)
@@ -81,5 +81,16 @@ describe('parseCatalog', () => {
 
   it('odgovor koji nije lista se odbija', () => {
     expect(parseCatalog({ labs: [] })).toBeNull()
+  })
+
+  it('nedostajući preduslov dobija naziv iz kataloga, a nevidljiva laboratorija ne otkriva ID', () => {
+    const labs = parseCatalog([
+      { id: 'a', title: 'Prva', objective: 'C', type: 'AccessControl', difficulty: 'Easy', tags: [], access: { isUnlocked: true, missingPrerequisites: [] } },
+      { id: 'b', title: 'Druga', objective: 'C', type: 'LogAnalysis', difficulty: 'Medium', tags: [], access: { isUnlocked: false, missingPrerequisites: ['a', 'skrivena'] } },
+    ])
+    expect(labs![1].access.missingPrerequisites).toEqual([
+      { id: 'a', title: 'Prva' },
+      { id: 'skrivena', title: UNKNOWN_PREREQUISITE_TITLE },
+    ])
   })
 })

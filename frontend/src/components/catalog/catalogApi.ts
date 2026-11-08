@@ -8,9 +8,11 @@ import {
   type MissingPrerequisite,
 } from './catalogTypes'
 
-export const CATALOG_PATH = '/api/laboratories/catalog'
+export const CATALOG_PATH = '/api/catalog'
 
 export const USE_FAKE_CATALOG = import.meta.env.DEV
+
+export const UNKNOWN_PREREQUISITE_TITLE = 'Laboratorija koja vam trenutno nije dostupna'
 
 export type CatalogOutcome =
   | { ok: true; labs: CatalogLab[] }
@@ -30,10 +32,11 @@ function parseEnum<T extends string>(value: unknown, allowed: readonly T[]): T |
 }
 
 function parseMissing(raw: unknown): MissingPrerequisite | null {
+  if (typeof raw === 'string') return { id: raw, title: '' }
   if (!raw || typeof raw !== 'object') return null
   const m = raw as Record<string, unknown>
   if (typeof m.id !== 'string') return null
-  return { id: m.id, title: typeof m.title === 'string' ? m.title : m.id }
+  return { id: m.id, title: typeof m.title === 'string' ? m.title : '' }
 }
 
 function parseAccess(raw: unknown): LabAccess {
@@ -58,7 +61,18 @@ function parseLab(raw: unknown): CatalogLab | null {
 
 export function parseCatalog(data: unknown): CatalogLab[] | null {
   if (!Array.isArray(data)) return null
-  return data.map(parseLab).filter((lab): lab is CatalogLab => lab !== null)
+  const labs = data.map(parseLab).filter((lab): lab is CatalogLab => lab !== null)
+  const titles = new Map(labs.map(lab => [lab.id, lab.title]))
+  return labs.map(lab => ({
+    ...lab,
+    access: {
+      ...lab.access,
+      missingPrerequisites: lab.access.missingPrerequisites.map(m => ({
+        id: m.id,
+        title: m.title || titles.get(m.id) || UNKNOWN_PREREQUISITE_TITLE,
+      })),
+    },
+  }))
 }
 
 export async function getCatalog(): Promise<CatalogOutcome> {
