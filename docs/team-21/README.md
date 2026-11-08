@@ -1,5 +1,7 @@
 # Team 21: ACC-01 and ACC-06
 
+> This copy describes **local review branch `feature/acc-integration-review-v2`**, integration `00b3c47` plus parent `fe6507f` and the approved Access/IDN patch. Production and test sources match `TestResults/t21-refresh-fe6507f-9e35c7`; the test/build results below are reused evidence, not new executions on review-v2. The original branch and old review merge remain untouched. KT1 design approval is preserved; completing the local merge commit requires separate final authorization. Publication and deployment remain blocked. See [candidate evidence and transfer blockers](acc-integration/MERGE_CANDIDATE.md).
+
 Our two requirements from the specification:
 
 - **ACC-01** Creating and archiving a course. Archiving stops new enrollments and keeps history.
@@ -97,13 +99,15 @@ Without the connection string the api still starts. Only our endpoints fail.
 
 ## Calling our endpoints in Development
 
-No real login yet. Send the user id in a header. For example the demo teacher asking for the demo course's materials:
+Platform.Api now authenticates Team 21 requests through the existing IDN session cookie, `SecurityLab.Session`. The host replaces our temporary actor with `SessionCurrentActor`, which reads the validated `IIdentityContext`. `X-Test-User`, `X-Stub-User` and other identity headers do not sign a caller in or override the session user, including in Development.
+
+Use the existing IDN login flow described in [the platform development guide](../DEVELOPMENT.md). Set `API_BASE_URL` to that local API address and use the cookie jar obtained from that flow; do not weaken the existing secure-cookie settings. For example:
 
 ```bash
-curl -H "X-Test-User: 00000000-0000-0000-0000-000000000001" http://localhost:5080/api/courses/21000000-0000-0000-0000-000000000001/materials
+curl --cookie cookies.txt "$API_BASE_URL/api/courses/21000000-0000-0000-0000-000000000001/materials"
 ```
 
-The demo ids are in `Team21.Acc.Infrastructure/Groups/Fakes/DemoIds.cs`. In Development the groups demo data is seeded at startup once the groups migration is applied. The two demo courses use the same ids as the ACC-01 sample courses.
+The demo ids are in `Team21.Acc.Infrastructure/Groups/Fakes/DemoIds.cs`. They describe the ACC-06 authorization fixtures, not provisioned IDN login accounts or sessions. In Development the groups demo data is seeded at startup once the groups migration is applied. The two demo courses use the same ids as the ACC-01 sample courses. A real session still needs an account and course membership recognized by the current readers; their fake/deny-all implementations have not been integrated yet. A valid login alone therefore does not guarantee a 200 response for these demo ids.
 
 If your local database was seeded before the demo courses moved to the ACC-01 ids, reset it once and apply the migrations again:
 
@@ -125,10 +129,10 @@ docker compose up -d db
 | `…d0a0` | Assignment in the archived course. StudentA gets 404, the teacher still gets 200 |
 
 ```bash
-curl -H "X-Test-User: 00000000-0000-0000-0000-00000000000b" http://localhost:5080/api/materials/assignment/00000000-0000-0000-0000-00000000d00a
+curl --cookie cookies.txt "$API_BASE_URL/api/materials/assignment/00000000-0000-0000-0000-00000000d00a"
 ```
 
-StudentB gets 404 for the material restricted to group A, the same answer as for a material that doesn't exist.
+When the validated session belongs to StudentB and the account/membership fixtures match, the material restricted to group A returns 404, the same answer as for a material that doesn't exist. This is not a way to impersonate StudentB through a header.
 
 The demo teacher manages groups under `/api/courses/{courseId}/groups`:
 
@@ -140,22 +144,20 @@ The demo teacher manages groups under `/api/courses/{courseId}/groups`:
 | `POST /{groupId}/members` with `{ "userId": "..." }` | Adds an active student of the course |
 | `DELETE /{groupId}/members/{userId}` | Removes a member, kept as history. Members of an archived group or course are frozen |
 
-Anyone who isn't the course's teacher gets 404, same as a course that doesn't exist.
+An authenticated caller with an Active account who isn't the course's teacher gets the existing service-level 404. Access rejects a non-active authenticated account with 403 before the service, without disclosing a protected resource.
 
-No header, a bad guid or two headers means nobody is signed in. Outside Development the header is ignored.
-Until real authentication is integrated, the API supports the
-`X-Test-User` header in the Development environment.
+Missing, invalid, expired or revoked sessions return 401 through the existing IDN validation. MFA-pending identities do not become authenticated Team 21 actors. The Development session bypasses for `/api/courses` and `/api/materials` have been removed; bypasses for other modules are unchanged.
 
-Shared development manager ID:
+`HeaderCurrentActor` remains available for isolated Development module tests. The integrated Platform.Api host uses the session adapter in every environment. Services retain their own authorization checks; authentication does not grant course membership or group access.
 
-`00000000-0000-0000-0000-000000000001`
+The HTTP integration tests in `Team21.Acc.Tests/Api/SessionCurrentActorHostIntegrationTests.cs` exercise the real host in Testing with real `SessionManager`, Team 21 services and isolated EF InMemory stores. Separate small Development pipelines verify the removed bypasses without starting the full Development host, its automatic migrations or hosted seeders. These tests do not prove PostgreSQL or complete account/membership integration.
 
 ### List courses
 
 ```bash
 curl -i \
-  -H "X-Test-User: 00000000-0000-0000-0000-000000000001" \
-  http://localhost:5080/api/courses
+  --cookie cookies.txt \
+  "$API_BASE_URL/api/courses"
 ```
 
 Returns `200 OK` with a JSON array of `CourseDto` objects,
@@ -170,29 +172,23 @@ Replace `<course-id>` with an existing course GUID.
 
 ```bash
 curl -i \
-  -H "X-Test-User: 00000000-0000-0000-0000-000000000001" \
-  http://localhost:5080/api/courses/<course-id>
+  --cookie cookies.txt \
+  "$API_BASE_URL/api/courses/<course-id>"
 ```
 
 Responses:
 
 - `200 OK` — the course exists and the user may view it.
 - `401 Unauthorized` — no valid identity was provided.
+- `403 Forbidden` — the authenticated account is not Active at the Access boundary.
 - `404 Not Found` — the course does not exist or access is denied.
 
-Both missing and forbidden courses return the same
+At the course service boundary, both missing and forbidden courses return the same
 `Course not found.` message to avoid revealing resource existence.
 
-### Development authorization
+### Development course authorization
 
-- Any authenticated development user may view courses.
-- Only the shared development manager may create or archive courses.
-- An invalid, missing, or ambiguous `X-Test-User` header does not authenticate a user.
-- The header is ignored outside Development.
-- Outside Development, course permissions currently use a deny-all fallback until real authorization is integrated.
-
-This header is only a development test mechanism and must not
-be treated as production authentication.
+The parent ACC-01 service authorization remains in place. After validated session identity and an Active account pass Access, Development permits viewing courses for a non-empty user ID and permits creating/archiving only for the configured demo manager ID `00000000-0000-0000-0000-000000000001`. This ID is not a login credential; sending it in a header does not authenticate a caller. Outside Development, course permissions retain the parent's deny-all fallback until real permission integration is approved.
 
 ## Adding a table
 
@@ -289,7 +285,7 @@ Whoever first needs one writes the interface and its fake next to their code, re
 
 | Fake | Stands in for | Owner | Status |
 |---|---|---|---|
-| `X-Test-User` header | Login and sessions | IDN teams | done |
+| `X-Test-User` header | Isolated Development actor fake | IDN teams own real login/sessions | retained for module tests; Platform.Api uses the validated session adapter |
 | `FakeAccountStatusReader` | Blocked / active accounts | IDN-03 team | done, `DenyAllAccountStatusReader` outside Development |
 | `FakeCourseMembershipReader` | Enrollment and teacher assignment | ACC-02 / ACC-03 teams | done, `NoCourseMembershipReader` outside Development |
 | `LoggingVisibilityAuditWriter` | Audit log storage | AUD team | done, writes to the application log in every environment |
@@ -314,6 +310,8 @@ The decision rules behind both diagrams are in `Team21.Acc.Infrastructure/Groups
 
 The test component uses real ACC-01/06 services, controlled external interface doubles and isolated test stores. It does not claim completed IDN, ACC-02/03, LAB/ASN, PostgreSQL or platform HTTP integration.
 
+After the approved Part 8 handoff in `3fca69c`, 39 additional cases originally authored in Part 9 were exported for the member responsible for comprehensive security and integration testing. Part 9 retains 40 essential cases; all 118 earlier cases, including other members' Part 5 coverage, remain unchanged. Part 5 owns ACC-06 backend group management, while Part 9 owns integration, contracts and audit. Complete original sources remain in Git history before the reduction (`0c05a16`) and in the external `Team21-Part8-Handoff.zip`, available from the handoff owner. See [the handoff inventory and evidence](acc-integration/KT1_READINESS.md#predaja-testova-delu-8) before integrating the exported cases, to avoid duplicate fixtures.
+
 ## Commits
 
 Short, area in brackets:
@@ -334,3 +332,19 @@ dotnet test backend/Team21.Acc.Tests
 
 Each rule gets a positive and a negative test (spec chapter 8). For access rules the negative ones are the important part: wrong user, swapped id, removed member.
 The tests in `Infrastructure/` use the EF in memory provider. Filtered indexes and real SQL need a test on Postgres.
+
+## Member 9 — integration, contracts and audit (KT1)
+
+The integrated host now uses the validated IDN session identity. The older header actor in the project tree above remains a module test double. The candidate runs session validation before Access only on server-marked Team 21 endpoints. A scoped provider maps the validated actor and account status into the parent's RequireAccess policies; other routes retain the original provider and middleware order. Account status and membership remain Development fakes / non-Development deny-all defaults. The parent already supplies the real scoped CourseStateReader in every environment; a valid session alone does not grant access.
+
+- [Integration plan and ownership](acc-integration/INTEGRATION_PLAN.md).
+- [Component architecture](acc-integration/ARCHITECTURE.md) and [request data flow](acc-integration/DFD.md) — exactly two Part 9 Mermaid diagrams, showing current and pending connections.
+- [KT1 readiness and demonstration](acc-integration/KT1_READINESS.md) — authorization matrix, threats, reproducible tests, local results and publication blockers.
+
+The current integration branch was explicitly created from `feature/acc06-groups`; its recommended PR target is that parent, rather than the original future integration-from-main plan above. The parent ACC-01 implementation and CourseStateReader are present in this isolated candidate. They remain absent from the actual integration branch; no parent/PoC change has been transferred to it. Do not implement a duplicate course model or reader.
+
+For this milestone use the isolated test commands in the readiness document. The database setup instructions above describe a separate development workflow: no migrations were executed during these checks. The unchanged real branch at `00b3c47` retains the `3fca69c` test reduction and has **158/158 passing Team 21 cases**, with none skipped; the Team 21 Release build passed with zero warnings and errors. The earlier 197/197 result is historical evidence from before the handoff. Neither result proves a passing full CI or an authoritative IDN account-status integration.
+
+The previous 295-case Team 21 selection belongs to a separate temporary merged worktree with an Access/IDN proof of concept. That PoC has not been transferred or merged into the actual integration branch. Its test count and behavior must be assessed separately from the current 158 cases. Full CI, publication and merge readiness remain blocked; reducing passing tests did not resolve those blockers.
+
+The updated `fe6507f` candidate passes **259/259 safe Team 21 cases**: 182 parent cases + 40 retained Part 9 cases + 34 PoC cases + 3 new environment-composition cases. The 39 exported cases have not been restored. Production is still blocked: DenyAllAccountStatusReader returns Inactive, membership is absent, and ACC-01 permissions deny all outside Development. Neither the EF-backed IDN status source nor its synchronization with status writes has owner approval.

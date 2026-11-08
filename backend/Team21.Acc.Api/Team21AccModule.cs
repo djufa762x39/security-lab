@@ -57,8 +57,9 @@ public static class Team21AccModule
 
     public static IEndpointRouteBuilder MapTeam21Acc(this IEndpointRouteBuilder app)
     {
-        app.MapCourses();
-        app.MapGroups();
+        var endpoints = app.MapGroup("").WithMetadata(new Team21SessionRequiredMetadata());
+        endpoints.MapCourses();
+        endpoints.MapGroups();
 
         return app;
     }
