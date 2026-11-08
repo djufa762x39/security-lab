@@ -1,11 +1,15 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { setFetcher } from '../../api/http'
 import LabCard from './LabCard'
 import LabCatalog from './LabCatalog'
-import { parseCatalog, UNKNOWN_PREREQUISITE_TITLE } from './catalogApi'
+import { fetchCatalogFromServer, parseCatalog, UNKNOWN_PREREQUISITE_TITLE } from './catalogApi'
 import type { CatalogLab } from './catalogTypes'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  setFetcher((input, init) => fetch(input, init))
+})
 
 const OPEN: CatalogLab = {
   id: 'lab-open',
@@ -28,6 +32,10 @@ const LOCKED: CatalogLab = {
 }
 
 const loadBoth = () => Promise.resolve({ ok: true as const, labs: [OPEN, LOCKED] })
+
+function json(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+}
 
 describe('LabCard', () => {
   it('kartica prikazuje metapodatke laboratorije', () => {
@@ -92,5 +100,37 @@ describe('parseCatalog', () => {
       { id: 'a', title: 'Prva' },
       { id: 'skrivena', title: UNKNOWN_PREREQUISITE_TITLE },
     ])
+  })
+})
+
+describe('fetchCatalogFromServer', () => {
+  it('za svaku laboratoriju pita server za stanje, a neuspešan odgovor ostavlja laboratoriju zaključanom', async () => {
+    setFetcher(async input => {
+      if (input === '/api/catalog') return json(200, [
+        { id: 'a', title: 'Prva', objective: 'C', type: 'AccessControl', difficulty: 'Easy', tags: [] },
+        { id: 'b', title: 'Druga', objective: 'C', type: 'LogAnalysis', difficulty: 'Medium', tags: [] },
+        { id: 'c', title: 'Treća', objective: 'C', type: 'IncidentResponse', difficulty: 'Hard', tags: [] },
+      ])
+      if (input === '/api/laboratories/a/access') return json(200, { isUnlocked: true, missingPrerequisites: [] })
+      if (input === '/api/laboratories/b/access') return json(200, { isUnlocked: false, missingPrerequisites: ['a'] })
+      return json(500, {})
+    })
+
+    const result = await fetchCatalogFromServer()
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const [a, b, c] = result.labs
+    expect(a.access.isUnlocked).toBe(true)
+    expect(b.access).toEqual({ isUnlocked: false, missingPrerequisites: [{ id: 'a', title: 'Prva' }] })
+    expect(c.access.isUnlocked).toBe(false)
+  })
+
+  it('neprijavljen korisnik dobija poruku umesto kataloga', async () => {
+    setFetcher(async () => json(401, {}))
+
+    const result = await fetchCatalogFromServer()
+
+    expect(result).toEqual({ ok: false, message: 'Niste prijavljeni.' })
   })
 })

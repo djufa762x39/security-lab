@@ -10,6 +10,10 @@ import {
 
 export const CATALOG_PATH = '/api/catalog'
 
+export function accessPath(labId: string): string {
+  return `/api/laboratories/${encodeURIComponent(labId)}/access`
+}
+
 export const USE_FAKE_CATALOG = import.meta.env.DEV
 
 export const UNKNOWN_PREREQUISITE_TITLE = 'Laboratorija koja vam trenutno nije dostupna'
@@ -23,6 +27,10 @@ function messageFor(status: number): string {
   if (status === 401) return 'Niste prijavljeni.'
   if (status === 403) return 'Nemate pristup katalogu.'
   return 'Katalog trenutno nije moguće učitati.'
+}
+
+function lockedAccess(): LabAccess {
+  return { isUnlocked: false, missingPrerequisites: [] }
 }
 
 function parseEnum<T extends string>(value: unknown, allowed: readonly T[]): T | null {
@@ -40,7 +48,7 @@ function parseMissing(raw: unknown): MissingPrerequisite | null {
 }
 
 function parseAccess(raw: unknown): LabAccess {
-  if (!raw || typeof raw !== 'object') return { isUnlocked: false, missingPrerequisites: [] }
+  if (!raw || typeof raw !== 'object') return lockedAccess()
   const a = raw as Record<string, unknown>
   const missing = Array.isArray(a.missingPrerequisites)
     ? a.missingPrerequisites.map(parseMissing).filter((m): m is MissingPrerequisite => m !== null)
@@ -59,9 +67,7 @@ function parseLab(raw: unknown): CatalogLab | null {
   return { id: r.id, title: r.title, objective: r.objective, type, difficulty, tags, access: parseAccess(r.access) }
 }
 
-export function parseCatalog(data: unknown): CatalogLab[] | null {
-  if (!Array.isArray(data)) return null
-  const labs = data.map(parseLab).filter((lab): lab is CatalogLab => lab !== null)
+export function resolveTitles(labs: CatalogLab[]): CatalogLab[] {
   const titles = new Map(labs.map(lab => [lab.id, lab.title]))
   return labs.map(lab => ({
     ...lab,
@@ -75,15 +81,33 @@ export function parseCatalog(data: unknown): CatalogLab[] | null {
   }))
 }
 
+export function parseCatalog(data: unknown): CatalogLab[] | null {
+  if (!Array.isArray(data)) return null
+  return resolveTitles(data.map(parseLab).filter((lab): lab is CatalogLab => lab !== null))
+}
+
+async function loadAccess(labId: string): Promise<LabAccess> {
+  const result = await apiRequest<unknown>('GET', accessPath(labId))
+  return result.ok ? parseAccess(result.data) : lockedAccess()
+}
+
+export async function fetchCatalogFromServer(): Promise<CatalogOutcome> {
+  const result = await apiRequest<unknown>('GET', CATALOG_PATH)
+  if (!result.ok) return { ok: false, message: messageFor(result.error.status) }
+
+  const labs = parseCatalog(result.data)
+  if (!labs) return { ok: false, message: messageFor(500) }
+
+  const withAccess = await Promise.all(
+    labs.map(async lab => ({ ...lab, access: await loadAccess(lab.id) })),
+  )
+  return { ok: true, labs: resolveTitles(withAccess) }
+}
+
 export async function getCatalog(): Promise<CatalogOutcome> {
   if (USE_FAKE_CATALOG) {
     const labs = parseCatalog(FAKE_CATALOG)
     return labs ? { ok: true, labs } : { ok: false, message: messageFor(500) }
   }
-
-  const result = await apiRequest<unknown>('GET', CATALOG_PATH)
-  if (!result.ok) return { ok: false, message: messageFor(result.error.status) }
-
-  const labs = parseCatalog(result.data)
-  return labs ? { ok: true, labs } : { ok: false, message: messageFor(500) }
+  return fetchCatalogFromServer()
 }
