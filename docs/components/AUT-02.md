@@ -88,7 +88,7 @@ Pokretanje testova:
 
 - Backend (uz pokrenut Docker Desktop):
 ```powershell
-dotnet test
+dotnet test SecurityLab.slnx
 ```
 
 - Frontend:
@@ -97,7 +97,7 @@ npm test
 ```
 
 Lokalna provera (Novembar 2026):
-- Backend testovi: **1059 uspešnih, 0 neuspešnih**.
+- Backend testovi: **1599 uspešnih, 0 neuspešnih**.
 - Frontend testovi: **60 uspešnih kroz 8 test fajlova**.
 - Build rešenja je potpuno stabilan i bez grešaka.
 
