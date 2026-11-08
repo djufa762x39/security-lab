@@ -4,7 +4,7 @@
 |---|---|
 | Tim | Tim 6 |
 | Zahtevi | AUT-04 (J), AUT-07 (П); povezano: AUD-03, LAB-04 |
-| Status | KT1: kostur, domen i pristup ključu su na `main`; baza, pregled i ekrani su u otvorenim PR-ovima; API za studentski prikaz je u izradi |
+| Status | KT1: kostur, domen, baza i pristup ključu su na `main`; pregled i ekrani su u otvorenim PR-ovima; API za studentski prikaz je u izradi |
 | Projekat | `backend/Platform.LabVisibility` |
 | Studenti | PR 6/2023 Kovačević Dušan (koordinator)<br>PR 22/2023 Vladimir Gajić<br>PR 7/2023 Antonić Luka<br>PR 20/2023 Stojanović Uroš<br>PR 67/2023 Cvetojević Ninko<br>PR 73/2023 Danilo Ferjuc |
 
@@ -98,7 +98,7 @@ flowchart LR
 |---|---|---|---|
 | Kovačević | kostur modula, pristup evaluator ključu, audit bez tajni | `feature/AUT-04-skeleton`, `feature/AUT-04-evaluator-key-access` | [evaluator-key-access.md](AUT-04-AUT-07/evaluator-key-access.md) |
 | Gajić | domen i `StudentViewProjector` | `feature/AUT-04-domain-split` | [domain-split.md](AUT-04-AUT-07/domain-split.md) |
-| Antonić | EF Core, migracija, odvojene tabele | `feature/AUT-04-persistence` | `persistence.md` (u PR-u) |
+| Antonić | EF Core, migracija, odvojene tabele | `feature/AUT-04-persistence` | [persistence.md](AUT-04-AUT-07/persistence.md) |
 | Stojanović | API za studentski prikaz | `feature/AUT-04-student-view-api` | u izradi |
 | Cvetojević | pregled pre objave (backend) | `feature/AUT-07-preview` | `preview.md` (u PR-u) |
 | Ferjuc | ekrani za prikaz i pregled | `feature/AUT-07-frontend` | `frontend.md` (u PR-u) |
