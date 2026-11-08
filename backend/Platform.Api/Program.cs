@@ -1,3 +1,4 @@
+using Team21.Acc.Api;
 using Platform.Api.Security.RevisionAuthorization;
 using Platform.Api.Modules.Kt1;
 using Platform.Api.Modules.RevisionReviews;
@@ -34,6 +35,7 @@ using PlatformAccessDecision = Platform.Access.Contracts.IAccessDecision;
 using LabVisibilityCourseRole = Platform.LabVisibility.Contracts.CourseRole;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.AddTeam21Acc();
 builder.Host.UseDefaultServiceProvider(options =>
 {
     options.ValidateScopes = true;
@@ -200,6 +202,7 @@ app.UseMiddleware<SessionCheckMiddleware>();
 
 app.MapControllers();
 app.MapLaboratories();
+app.MapTeam21Acc();
 app.MapRevisionReviews();
 
 if (app.Environment.IsDevelopment())
