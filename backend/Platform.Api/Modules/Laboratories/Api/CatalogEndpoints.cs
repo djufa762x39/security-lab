@@ -1,20 +1,23 @@
 ﻿
-using AccountState = Platform.Access.Domain.Enums.AccountState;
-using Platform.Api.Interfaces.Identity;
+using Platform.Access.AspNet;
+using Platform.Api.Enums.Identity;
+using Platform.Api.Middleware;
+using Platform.Api.Models.Identity;
 using Platform.Api.Modules.Laboratories.Application;
+using Platform.Identity.Enums;
+using Platform.Identity.Interfaces;
 using Platform.LabVisibility.Contracts;
 
 namespace Platform.Api.Modules.Laboratories.Api;
 
-// LAB-02: API kataloga.
-// Zasebne rute, bez izmene postojecih LAB-01 endpointa.
 public static class CatalogEndpoints
 {
     public static IEndpointRouteBuilder MapCatalogEndpoints(
         this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/catalog")
-            .WithTags("Laboratory catalog");
+            .WithTags("Laboratory catalog")
+            .WithMetadata(new DelegatedAuthorizationAttribute());
 
         group.MapGet("/", ListAsync);
         group.MapGet("/{id:guid}", DetailAsync);
@@ -28,17 +31,26 @@ public static class CatalogEndpoints
         string? type,
         string? tag,
         HttpContext http,
-        IRequestSubjectResolver subjects,
         CatalogService catalog,
         ILabPublicContentReader contentReader,
         ICourseMembership membership,
+        IAccountStatusReader accounts,
         CancellationToken ct)
     {
-        var subject = subjects.Resolve(http);
+        var session = http.Items[SessionCheckMiddleware.SessionItemKey]
+            as ValidateSession;
 
-        if (subject is not { State: AccountState.Active } ||
-            !Guid.TryParse(subject.Id, out var userId) ||
-            userId == Guid.Empty)
+        if (session is not { Level: AuthenticationLevel.Active } ||
+            session.UserId == Guid.Empty)
+        {
+            return Results.Unauthorized();
+        }
+
+        var userId = session.UserId;
+
+        var account = await accounts.FindAsync(userId, ct);
+
+        if (account is not { Status: AccountStatus.Active })
         {
             return Results.Unauthorized();
         }
@@ -60,7 +72,9 @@ public static class CatalogEndpoints
                 content.CourseId, userId, ct);
 
             if (CatalogVisibilityPolicy.CanView(content, role))
+            {
                 visible.Add(lab);
+            }
         }
 
         return Results.Ok(visible);
@@ -69,17 +83,26 @@ public static class CatalogEndpoints
     private static async Task<IResult> DetailAsync(
         Guid id,
         HttpContext http,
-        IRequestSubjectResolver subjects,
         CatalogService catalog,
         ILabPublicContentReader contentReader,
         ICourseMembership membership,
+        IAccountStatusReader accounts,
         CancellationToken ct)
     {
-        var subject = subjects.Resolve(http);
+        var session = http.Items[SessionCheckMiddleware.SessionItemKey]
+            as ValidateSession;
 
-        if (subject is not { State: AccountState.Active } ||
-            !Guid.TryParse(subject.Id, out var userId) ||
-            userId == Guid.Empty)
+        if (session is not { Level: AuthenticationLevel.Active } ||
+            session.UserId == Guid.Empty)
+        {
+            return Results.Unauthorized();
+        }
+
+        var userId = session.UserId;
+
+        var account = await accounts.FindAsync(userId, ct);
+
+        if (account is not { Status: AccountStatus.Active })
         {
             return Results.Unauthorized();
         }
@@ -87,13 +110,17 @@ public static class CatalogEndpoints
         var content = await contentReader.GetAsync(id, ct);
 
         if (content is null)
+        {
             return Results.NotFound();
+        }
 
         var role = await membership.GetRoleAsync(
             content.CourseId, userId, ct);
 
         if (!CatalogVisibilityPolicy.CanView(content, role))
+        {
             return Results.NotFound();
+        }
 
         var laboratories = await catalog.GetCatalogAsync(
             new CatalogLaboratoryFilter(null, null, null, null),
