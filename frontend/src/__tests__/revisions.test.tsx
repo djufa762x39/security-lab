@@ -144,7 +144,7 @@ describe('RevisionDetailPage', () => {
 
   it('komentar u istoriji se prikazuje kao tekst, ne kao HTML', async () => {
     const evil = '<img src=x onerror="alert(1)">'
-    await openDetail({ ...base, decisions: [{ id: 'd', type: 'Returned', actor: { id: 'p', displayName: 'P' }, at: base.updatedAt, comment: evil, contentHash: base.contentHash, revisionNumber: null }] }, () => json(200, base))
+    await openDetail({ ...base, decisions: [{ id: 'd', type: 'Returned', actor: { id: 'p', displayName: 'P' }, at: '2026-11-05T10:00:00Z', comment: evil, contentHash: base.contentHash, revisionNumber: null }] }, () => json(200, base))
     expect(screen.getByText(evil)).toBeTruthy()
     expect(document.querySelector('img')).toBeNull()
   })

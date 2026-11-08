@@ -1,3 +1,4 @@
+using Platform.Access.AspNet;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Modules.Laboratories.Application;
@@ -9,7 +10,7 @@ namespace Platform.Api.Modules.Laboratories.Api;
 //   1. SafeErrors          - neocekivana greska postaje genericki 500, bez stack trace-a
 //   2. RequireLabAccess    - identitet (401) i uloga/poznata radnja (403), pre citanja tela
 //   3. citanje i provera tela zahteva (400)
-//   4. LaboratoryService   - vlasnistvo (404), domen i skladiste
+//   4. LaboratoryService   - kurs pri kreiranju (400/403, LAB-03), vlasnistvo (404), domen i skladiste
 public static class LaboratoriesEndpoints
 {
     // Kanonska putanja (koriste je frontend i postojeci testovi).
@@ -32,7 +33,10 @@ public static class LaboratoriesEndpoints
 
     private static void MapRoutes(RouteGroupBuilder group)
     {
+        // Every handler below has the existing RequireLabAccess filter, executed
+        // before its body, and LaboratoryService additionally checks ownership.
         group.WithTags("Laboratories")
+            .DelegatesToLegacyAuthorization()
             .AddEndpointFilter(SafeErrors);
 
         group.MapGet("/", () => Results.Ok(Array.Empty<object>()))
@@ -47,7 +51,7 @@ public static class LaboratoriesEndpoints
                 return InvalidBody();
             }
 
-            LabResult result = await service.CreateAsync(request?.Title, caller, http.RequestAborted);
+            LabResult result = await service.CreateAsync(request?.CourseId, request?.Title, caller, http.RequestAborted);
             return result.Status switch
             {
                 LabResultStatus.Ok => Results.Created(
@@ -82,13 +86,17 @@ public static class LaboratoriesEndpoints
     }
 
     private static LaboratoryResponse ToResponse(Laboratory lab) =>
-        new(lab.Id, lab.Title, lab.Status.ToString(), lab.CreatedBy, lab.CreatedAt);
+        new(lab.Id, lab.CourseId, lab.Title, lab.Status.ToString(), lab.CreatedBy, lab.CreatedAt);
 
     private static IResult ToFailure(LabResultStatus status) => status switch
     {
         LabResultStatus.InvalidTitle => Results.BadRequest(new ApiErrorResponse(
             LabErrorCodes.InvalidTitle,
             $"Laboratory title is required and must not exceed {Laboratory.MaxTitleLength} characters.")),
+        LabResultStatus.InvalidCourse => Results.BadRequest(new ApiErrorResponse(
+            LabErrorCodes.InvalidCourse, "Laboratory course is required.")),
+        // LAB-03: isti odgovor kao AccessCheckFilter; ne otkriva da li kurs postoji ni koju ulogu korisnik ima.
+        LabResultStatus.Forbidden => Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "Access denied"),
         // Isti tekst za nepostojecu i tudju laboratoriju; bez ID-a i internih detalja.
         LabResultStatus.NotFound => Results.NotFound(new ApiErrorResponse(
             LabErrorCodes.NotFound, "Laboratory was not found.")),
