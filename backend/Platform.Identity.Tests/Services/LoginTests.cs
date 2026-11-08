@@ -95,6 +95,25 @@ public class LoginTests
         Assert.That(_events.Single().Outcome, Is.EqualTo("failure"));
     }
 
+    [Test]
+    [Category("IDN-05")]
+    public async Task LockedAccount_IsRefused_LikeAWrongPassword_AndOnlyTheAuditDiffers()
+    {
+        var id = Guid.NewGuid();
+        GivenCredentials(CredentialResult.LockedOut(id));
+
+        var result = await _login.ExecuteAsync(Email, Password, "corr-locked");
+
+        Assert.That(result.Outcome, Is.EqualTo(LoginOutcome.InvalidCredentials));
+        Assert.That(result.Session, Is.Null);
+        VerifyNoSessionCreated();
+        var e = _events.Single();
+        Assert.That(e.Outcome, Is.EqualTo("failure"));
+        Assert.That(e.Detail, Is.EqualTo("account locked"));
+        Assert.That(e.Target, Is.EqualTo(id.ToString()));
+        Assert.That(e.ActorId, Is.Null, "the caller is not proven to own the account");
+    }
+
     [TestCase(AccountStatus.Blocked)]
     [TestCase(AccountStatus.Archived)]
     public async Task BlockedOrArchived_WithCorrectPassword_IsRefused_LikeAWrongPassword(AccountStatus status)
