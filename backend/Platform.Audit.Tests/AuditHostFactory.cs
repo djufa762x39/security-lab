@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -43,6 +44,8 @@ public sealed class AuditTestProbeController : ControllerBase
 {
     // Only exists in the Testing application-part; its trusted synthetic context
     // performs the identity binding, with no route in production.
+    // AllowAnonymous: the IDN-02 session check is skipped too, as for the ACC-05 check above.
+    [AllowAnonymous]
     [DelegatedAuthorization]
     [HttpPost(AuditHostFactory.ProbePath)]
     public async Task<IActionResult> Write(

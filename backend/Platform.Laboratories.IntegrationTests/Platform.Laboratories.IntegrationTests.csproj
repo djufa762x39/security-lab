@@ -11,9 +11,11 @@
     <PackageReference Include="NUnit.Analyzers" Version="4.7.0" />
     <PackageReference Include="NUnit3TestAdapter" Version="5.0.0" />
     <PackageReference Include="Testcontainers.PostgreSql" Version="4.16.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.14" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Platform.Laboratories.Infrastructure\Platform.Laboratories.Infrastructure.csproj" />
+    <ProjectReference Include="..\Platform.Api\Platform.Api.csproj" />
     <Using Include="NUnit.Framework" />
   </ItemGroup>
 </Project>
