@@ -1,5 +1,7 @@
 # Team 21: ACC-01 and ACC-06
 
+> This copy describes **local review branch `feature/acc-integration-review-v2`**, integration `00b3c47` plus parent `fe6507f` and the approved Access/IDN patch. Production and test sources match `TestResults/t21-refresh-fe6507f-9e35c7`; the test/build results below are reused evidence, not new executions on review-v2. The original branch and old review merge remain untouched. KT1 design approval is preserved; completing the local merge commit requires separate final authorization. Publication and deployment remain blocked. See [candidate evidence and transfer blockers](acc-integration/MERGE_CANDIDATE.md).
+
 Our two requirements from the specification:
 
 - **ACC-01** Creating and archiving a course. Archiving stops new enrollments and keeps history.
@@ -142,13 +144,51 @@ The demo teacher manages groups under `/api/courses/{courseId}/groups`:
 | `POST /{groupId}/members` with `{ "userId": "..." }` | Adds an active student of the course |
 | `DELETE /{groupId}/members/{userId}` | Removes a member, kept as history. Members of an archived group or course are frozen |
 
-An authenticated caller who isn't the course's teacher gets 404, same as a course that doesn't exist.
+An authenticated caller with an Active account who isn't the course's teacher gets the existing service-level 404. Access rejects a non-active authenticated account with 403 before the service, without disclosing a protected resource.
 
 Missing, invalid, expired or revoked sessions return 401 through the existing IDN validation. MFA-pending identities do not become authenticated Team 21 actors. The Development session bypasses for `/api/courses` and `/api/materials` have been removed; bypasses for other modules are unchanged.
 
 `HeaderCurrentActor` remains available for isolated Development module tests. The integrated Platform.Api host uses the session adapter in every environment. Services retain their own authorization checks; authentication does not grant course membership or group access.
 
 The HTTP integration tests in `Team21.Acc.Tests/Api/SessionCurrentActorHostIntegrationTests.cs` exercise the real host in Testing with real `SessionManager`, Team 21 services and isolated EF InMemory stores. Separate small Development pipelines verify the removed bypasses without starting the full Development host, its automatic migrations or hosted seeders. These tests do not prove PostgreSQL or complete account/membership integration.
+
+### List courses
+
+```bash
+curl -i \
+  --cookie cookies.txt \
+  "$API_BASE_URL/api/courses"
+```
+
+Returns `200 OK` with a JSON array of `CourseDto` objects,
+sorted by course code.
+
+Only courses the current user is authorized to view are returned.
+Archived courses remain readable with `status: "Archived"`.
+
+### Get a single course
+
+Replace `<course-id>` with an existing course GUID.
+
+```bash
+curl -i \
+  --cookie cookies.txt \
+  "$API_BASE_URL/api/courses/<course-id>"
+```
+
+Responses:
+
+- `200 OK` — the course exists and the user may view it.
+- `401 Unauthorized` — no valid identity was provided.
+- `403 Forbidden` — the authenticated account is not Active at the Access boundary.
+- `404 Not Found` — the course does not exist or access is denied.
+
+At the course service boundary, both missing and forbidden courses return the same
+`Course not found.` message to avoid revealing resource existence.
+
+### Development course authorization
+
+The parent ACC-01 service authorization remains in place. After validated session identity and an Active account pass Access, Development permits viewing courses for a non-empty user ID and permits creating/archiving only for the configured demo manager ID `00000000-0000-0000-0000-000000000001`. This ID is not a login credential; sending it in a header does not authenticate a caller. Outside Development, course permissions retain the parent's deny-all fallback until real permission integration is approved.
 
 ## Adding a table
 
@@ -226,6 +266,19 @@ group.MapGet("/{id:guid}", async (Guid id, ICourseService courses, CancellationT
 
 The error message goes to the client as written, keep ids and database details out of it. Access is checked in the service on every request, hiding a button in the frontend doesn't count.
 
+## Access control (ACC-05)
+
+Main denies every route without access metadata, so each of our routes names an action from the central catalog:
+
+```csharp
+group.MapGet("/{id:guid}", GetCourse)
+    .RequireAccess(AccessActions.CourseRead.Id);
+```
+
+The policies in `Team21.Acc.Api/Access` only check for an active account. Who may do what in a course or a group is still decided in our services.
+
+In Development, `/api/courses` and `/api/materials` skip the session check in `SessionCheckMiddleware` so `X-Test-User` keeps working.
+
 ## What is faked
 
 Whoever first needs one writes the interface and its fake next to their code, registered in Development only. Outside Development the readers that stand in for other teams deny everyone.
@@ -235,7 +288,6 @@ Whoever first needs one writes the interface and its fake next to their code, re
 | `X-Test-User` header | Isolated Development actor fake | IDN teams own real login/sessions | retained for module tests; Platform.Api uses the validated session adapter |
 | `FakeAccountStatusReader` | Blocked / active accounts | IDN-03 team | done, `DenyAllAccountStatusReader` outside Development |
 | `FakeCourseMembershipReader` | Enrollment and teacher assignment | ACC-02 / ACC-03 teams | done, `NoCourseMembershipReader` outside Development |
-| `FakeCourseStateReader` | Active / archived course | ACC-01, us | done, `NoCourseStateReader` outside Development. The real reader over `CoursesDbContext` comes once ACC-01 and ACC-06 are both in main |
 | `LoggingVisibilityAuditWriter` | Audit log storage | AUD team | done, writes to the application log in every environment |
 | `DemoGroupsSeeder` | Groups demo data | us | done, Development only |
 | Material catalog | Labs and assignments | LAB / ASN teams | not needed while the visibility write side is not ours |
@@ -283,14 +335,16 @@ The tests in `Infrastructure/` use the EF in memory provider. Filtered indexes a
 
 ## Member 9 — integration, contracts and audit (KT1)
 
-The integrated host now uses the validated IDN session identity. The older header actor in the project tree above remains a module test double. Account status, membership and course state readers remain fakes in Development and deny-all defaults elsewhere; a valid session alone does not grant access.
+The integrated host now uses the validated IDN session identity. The older header actor in the project tree above remains a module test double. The candidate runs session validation before Access only on server-marked Team 21 endpoints. A scoped provider maps the validated actor and account status into the parent's RequireAccess policies; other routes retain the original provider and middleware order. Account status and membership remain Development fakes / non-Development deny-all defaults. The parent already supplies the real scoped CourseStateReader in every environment; a valid session alone does not grant access.
 
 - [Integration plan and ownership](acc-integration/INTEGRATION_PLAN.md).
 - [Component architecture](acc-integration/ARCHITECTURE.md) and [request data flow](acc-integration/DFD.md) — exactly two Part 9 Mermaid diagrams, showing current and pending connections.
 - [KT1 readiness and demonstration](acc-integration/KT1_READINESS.md) — authorization matrix, threats, reproducible tests, local results and publication blockers.
 
-The current integration branch was explicitly created from `feature/acc06-groups`; its recommended PR target is that parent, rather than the original future integration-from-main plan above. At the earlier KT1 fetch, remote `main` contained ACC-01, but this branch still has its skeleton. A real course-state reader waits for the team's approved common base; it must not copy the course model. Parent and PoC changes have not been merged into this actual branch, and it has not been rebased.
+The current integration branch was explicitly created from `feature/acc06-groups`; its recommended PR target is that parent, rather than the original future integration-from-main plan above. The parent ACC-01 implementation and CourseStateReader are present in this isolated candidate. They remain absent from the actual integration branch; no parent/PoC change has been transferred to it. Do not implement a duplicate course model or reader.
 
-For this milestone use the isolated test commands in the readiness document. The database setup instructions above describe a separate development workflow: no migrations were executed during these checks. The current real branch at `3fca69c` has **158/158 passing Team 21 cases**, with none skipped; the Team 21 Release build passed with zero warnings and errors. The earlier 197/197 result is historical evidence from before the handoff. Neither result proves a passing full CI or an authoritative IDN account-status integration.
+For this milestone use the isolated test commands in the readiness document. The database setup instructions above describe a separate development workflow: no migrations were executed during these checks. The unchanged real branch at `00b3c47` retains the `3fca69c` test reduction and has **158/158 passing Team 21 cases**, with none skipped; the Team 21 Release build passed with zero warnings and errors. The earlier 197/197 result is historical evidence from before the handoff. Neither result proves a passing full CI or an authoritative IDN account-status integration.
 
 The previous 295-case Team 21 selection belongs to a separate temporary merged worktree with an Access/IDN proof of concept. That PoC has not been transferred or merged into the actual integration branch. Its test count and behavior must be assessed separately from the current 158 cases. Full CI, publication and merge readiness remain blocked; reducing passing tests did not resolve those blockers.
+
+The updated `fe6507f` candidate passes **259/259 safe Team 21 cases**: 182 parent cases + 40 retained Part 9 cases + 34 PoC cases + 3 new environment-composition cases. The 39 exported cases have not been restored. Production is still blocked: DenyAllAccountStatusReader returns Inactive, membership is absent, and ACC-01 permissions deny all outside Development. Neither the EF-backed IDN status source nor its synchronization with status writes has owner approval.

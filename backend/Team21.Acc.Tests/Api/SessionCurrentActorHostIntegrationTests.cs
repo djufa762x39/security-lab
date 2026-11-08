@@ -236,7 +236,7 @@ public class SessionCurrentActorHostIntegrationTests
         using var deniedRequest = Request(HttpMethod.Get, path, token);
         using var denied = await _client.SendAsync(deniedRequest);
 
-        Assert.That(denied.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
+        Assert.That(denied.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
         await AssertNoProtectedResourceData(denied);
 
         _world.SetAccountStatus(userId, AccountStatus.Active);
@@ -256,7 +256,7 @@ public class SessionCurrentActorHostIntegrationTests
 
         using var response = await _client.SendAsync(request);
 
-        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
         await AssertNoProtectedResourceData(response);
         await using var db = new GroupsDbContext(_world.GroupOptions);
         Assert.That(await db.Groups.CountAsync(), Is.EqualTo(2));

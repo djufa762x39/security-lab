@@ -18,12 +18,6 @@ public sealed class FakeDirectory
         [DemoIds.Outsider] = AccountStatus.Active
     };
 
-    private readonly Dictionary<Guid, CourseState> _courses = new()
-    {
-        [DemoIds.Course] = CourseState.Active,
-        [DemoIds.ArchivedCourse] = CourseState.Archived
-    };
-
     private readonly Dictionary<(Guid AccountId, Guid CourseId), CourseMembership> _memberships = new()
     {
         [(DemoIds.Teacher, DemoIds.ArchivedCourse)] = new(DemoIds.ArchivedCourse, CourseRole.Teacher, Active: true, CanReview: true),
@@ -39,9 +33,6 @@ public sealed class FakeDirectory
     public AccountStatus StatusOf(Guid accountId) =>
         _accounts.GetValueOrDefault(accountId, AccountStatus.Inactive);
 
-    // Unknown courses have no state
-    public CourseState? StateOf(Guid courseId) =>
-        _courses.TryGetValue(courseId, out var state) ? state : null;
 
     public CourseMembership? MembershipOf(Guid accountId, Guid courseId) =>
         _memberships.GetValueOrDefault((accountId, courseId));

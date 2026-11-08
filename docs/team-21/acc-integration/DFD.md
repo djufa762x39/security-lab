@@ -1,72 +1,54 @@
-# Team 21, deo 9 — tok podataka za KT1
+# Team 21, deo 9 — tok izolovanog KT1 kandidata
 
-Tok stvarnih ACC-06 HTTP endpointa na implementacionom HEAD-u `c94882e`. Cookie je nepoverljiv ulaz dok ga IDN ne validira. Team 21 ne implementira login, skladište sesija ili opoziv.
+Ovo je tok lokalnog `feature/acc-integration-review-v2`: `fe6507f` + `00b3c47` + odobreni Access/IDN patch, sa istim produkcionim/testnim izvorima kao testirana detached proba. Originalna i stara review grana ostaju neizmenjene; merge commit čeka posebno odobrenje. [Izveštaj](MERGE_CANDIDATE.md) razdvaja 158 testova stvarne grane, prethodnih 295 i dokaz 259 bezbednih slučajeva kandidata.
 
-```mermaid
+~~~mermaid
 flowchart TB
-    client["Spoljašnji klijent<br/>autentifikovan ili anoniman"]
-    request["HTTP zahtev: SecurityLab.Session cookie<br/>metod, putanja, ID i telo<br/>X-Test-User / X-Stub-User / druga zaglavlja<br/>NISU pouzdan identitet"]
+    client["Nepouzdan klijent: zahtev, cookie, zaglavlja i ID"]
+    routing["Routing: Team21SessionRequiredMetadata bira granu"]
+    corr["AUD: serverski TraceIdentifier i scope"]
+    session{"Postojeći IDN SessionCheck: prihvaćena sesija?"}
+    actor{"IIdentityContext / SessionCurrentActor: authenticated, Active, neprazan ID?"}
+    account["Scoped Team21AccessSubjectProvider čita status naloga"]
+    access{"RequireAccess: Active subject i dozvoljena radnja?"}
+    services["CourseService / GroupService / MaterialVisibilityService"]
+    decision{"Servis: dozvole, vlasništvo, kurs i pravila grupa?"}
+    courses[("ACC-01 courses: stvarni CourseStateReader")]
+    groups[("ACC-06 groups: stvarni EF čitači")]
+    external["Status / članstvo / course permissions: fake ili deny-all"]
+    allowed["200 / 201 / 204: dozvoljen DTO, referenca ili promena"]
+    denied["Servisni 404: tuđi ili skriveni resurs"]
+    unauthorized["401: nema prihvaćene sesije / identiteta"]
+    forbidden["403: non-Active / unknown nalog ili Access zabrana"]
+    audit["Odabrani serverski Team 21 audit događaji"]
+    logs[("ILogger: bez cookie-ja, tokena i sadržaja zahteva")]
+    other["Ostale rute: originalni provider i Access pre kasnije session provere"]
+    client --> routing --> corr
+    corr -->|"označena Team 21 ruta"| session
+    corr -->|"ostale rute"| other
+    session -->|"ne"| unauthorized --> client
+    session -->|"validirani rezultat u HttpContext.Items"| actor
+    actor -->|"ne"| unauthorized
+    actor -->|"da: samo serverski UserId"| account --> access
+    access -->|"ne"| forbidden --> client
+    access -->|"da"| services --> decision
+    external --> account
+    external --> decision
+    courses --> decision
+    groups --> decision
+    decision -->|"da"| allowed --> client
+    decision -->|"ne"| denied --> client
+    allowed -->|"odabrane promene"| audit
+    denied -->|"odabrana odbijanja"| audit
+    corr -->|"Team 21 ICorrelationContext"| audit --> logs
+~~~
 
-    subgraph platform["Granica poverenja — zajednički serverski host / IDN"]
-        correlation["1. AUD middleware generiše korelacioni ID<br/>TraceIdentifier, scope, odgovor X-Correlation-ID<br/>klijentska vrednost se ignoriše"]
-        validate["2. SessionCheckMiddleware / SessionManager<br/>proveravaju cookie, istek i opoziv"]
-        sessionstore[("IDN podaci sesije")]
-        valid{"Važeća sesija?"}
-        actor["3. IIdentityContext → SessionCurrentActor<br/>samo authenticated + Active + neprazan UserId<br/>bez fallback-a na zaglavlja"]
-        authenticated{"Autentifikovan actor?"}
-    end
+Servisne operacije ne koriste sve iste izvore: grupni read proverava nastavnika i aktivno članstvo, upisi dodatno stanje kursa/grupe. Materijalni servis određuje kurs i publiku iz serverskog pravila. Nastavnik i reviewing assistant zadržavaju dozvoljen pristup arhiviranom kursu, dok student nema taj pristup. Filtrirana lista može biti prazna, bez otkrivanja skrivenih referenci. Nevažeći ulaz može dati 422, a konflikt/arhivirana promena 409.
 
-    subgraph team["Team 21 — servisna autorizacija i podaci ACC-06"]
-        inputs["4. Endpoint bira radnju i resurs<br/>GroupService / MaterialVisibilityService<br/>ne veruje klijentskoj ulozi ili grupi"]
-        state["Čitači statusa, članstva i stanja kursa<br/>Development: fakes<br/>ostala okruženja: Inactive / null / null<br/>HTTP testovi: kontrolisane zamene"]
-        groupstore[("groups: članstva i pravila publike<br/>stvarni EF čitači, upis preko GroupService")]
-        decision{"5. Actor + action + resource<br/>aktivan nalog i članstvo / uloga<br/>stanje kursa i relevantna grupna pravila<br/>dozvoljavaju operaciju?"}
-        allow["ALLOW: čitanje / dozvoljeni upis<br/>filtrirana lista ili DTO / referenca<br/>200 / 201 / 204 prema endpointu"]
-        deny["DENY: zaštićeni resurs nije otkriven<br/>404 kao za nepostojeći resurs"]
-        events["6. Odabrani serverski audit događaji<br/>actor, action, resource, ishod ili razlog<br/>UTC vreme i serverska korelacija"]
-        logger["LoggingAuditTrail / LoggingVisibilityAuditWriter"]
-    end
+401, Access 403 i servisni 404 imaju različite uzroke. Access odbija neaktivan nalog pre pristupa konkretnoj grupi/materijalu; njegov generički ProblemDetails ne sadrži zaštićene identifikatore ili nazive. Nepoznato stanje mapira se na Unknown; izuzetak reader-a ne daje Active fallback, nego ga postojeći Access catch odbija. Kvar kasnijeg servisnog čitanja nije unapred obećan kao 403/404.
 
-    unauthorized["401 — sesija ili Team 21 identitet nisu prihvaćeni"]
-    logs[("Strukturisani ILogger izlaz<br/>bez cookie-ja, tokena i sadržaja zahteva")]
-    pending["KT2 — nepovezani autoritativni izvori<br/>IDN status, ACC članstvo/delegacije, ACC-01 stanje"]
-    auditpending["KT2 — dogovor i adapter za centralni AUD<br/>ovaj tok ga još ne upisuje"]
+Kandidat zadržava roditeljski `CourseStateReader`. Production status reader ostaje deny-all; odsutna članstva i course permissions su dodatne blokade. Uspešni testovi sa kontrolisanim čitačima zato ne dokazuju legitimni produkcioni pristup, autoritativni IDN status ili PostgreSQL.
 
-    client --> request
-    request --> correlation
-    correlation -->|"zahtev; Access delegira autorizaciju servisima"| validate
-    validate -->|"čitanje validacionih podataka"| sessionstore
-    sessionstore -->|"podaci za validaciju"| validate
-    validate -->|"rezultat provere"| valid
-    valid -->|"ne"| unauthorized
-    valid -->|"da: validirani rezultat u HttpContext.Items"| actor
-    actor --> authenticated
-    authenticated -->|"ne: npr. MFA pending"| unauthorized
-    authenticated -->|"da: samo serverski UserId"| inputs
-    inputs --> decision
-    state -->|"status / članstvo / uloga / stanje"| decision
-    groupstore -->|"pravila materijala i aktivne grupe"| decision
-    decision -->|"da"| allow
-    decision -->|"ne"| deny
-    allow -->|"samo dozvoljene promene grupa / članova"| groupstore
-    allow -->|"odabrane uspešne promene grupa"| events
-    deny -->|"odabrana odbijanja"| events
-    correlation -->|"isti serverski ID preko ICorrelationContext"| events
-    events --> logger
-    logger --> logs
-    unauthorized --> client
-    deny --> client
-    allow --> client
-    pending -.->|"buduće zamene postojećih čitača"| state
-    logger -.->|"buduće mapiranje i pouzdan upis"| auditpending
-```
-
-**Legenda:** pune strelice su postojeći tokovi, uključujući testne zamene; isprekidane su isključivo buduće zavisnosti. Pravougaonici predstavljaju procese/podatke, rombovi odluke, a cilindri skladišta ili log izlaz. Serverska granica pretvara cookie u validirani identitet; granica Team 21 označava vlasništvo nad poslovnim odlukama, ne novu mrežnu zonu.
-
-Ovo je sažet autorizacioni tok, ne univerzalni model svih odgovora. Nije svaka operacija zavisna od svih izvora: čitanje grupa proverava nastavnika i aktivan nalog/članstvo, dok promene dodatno traže aktivan kurs/grupu. Materijalni servis kurs i dozvoljene grupe uzima iz serverskog pravila materijala. Za `Read` i aktivan kurs pristup imaju odgovarajući članovi; arhiviranom kursu pristup zadržavaju nastavnik i asistent sa `CanReview`. Student dobija samo CourseWide ili reference dozvoljene njegovim aktivnim grupama. Uspešna lista može biti prazna; skriveni materijal se izostavlja, bez posebnog 404 za svaki element.
-
-Nevažeći ulaz može dati 422, arhiviranje/sukob promene 409, a neispravna putanja može biti odbijena pre servisa. Nisu svi 404 niti uspešna čitanja auditovani. `LoggingAuditTrail` emituje `Outcome` za odabrane promene/odbijanja; visibility writer emituje samo odbijanja sa `Reason`, bez posebnog polja `Outcome`. Session 401 nije obećanje Team 21 audit događaja. Ovi logger-i ne čitaju zaglavlja/telo, ali nisu opšti sanitizer: pozivaoci moraju slati samo dogovorene metapodatke.
-
-Korelacija je generisana na serveru i ostaje ista kroz zahtev i log. Testovi ne koriste stvarne kredencijale: zamenjuju skladišta EF InMemory providerom i spoljne čitače kontrolisanim podacima, uz stvarni IDN validator i Team 21 servise. Time se ne dokazuje status iz autoritativnog IDN repozitorijuma, PostgreSQL ponašanje, stvarni sadržaj LAB/ASN ili centralna AUD perzistencija.
+Nije svaka zabrana auditovana Team 21 writer-om. `LoggingAuditTrail` ima Outcome za odabrane događaje; visibility writer ima samo odbijanja sa Reason. Access može vratiti svoj correlationId, dok Team 21/AUD logovi koriste serverski TraceIdentifier; nije dokazan jedinstven ID kroz sve module. Centralni AUD upis i transakciona garancija ostaju KT2.
 
 Izvori: [IDN ugovor](../../contracts/IIdentityContext.md), [session middleware](../../../backend/Platform.Api/Middleware/SessionCheckMiddleware.cs), [adapter](../../../backend/Platform.Api/Modules/Team21/Integration/SessionCurrentActor.cs), [GroupService](../../../backend/Team21.Acc.Infrastructure/Groups/Services/GroupService.cs), [MaterialVisibilityService](../../../backend/Team21.Acc.Infrastructure/Groups/Services/MaterialVisibilityService.cs), [HTTP mapiranje](../../../backend/Team21.Acc.Api/Extensions/ResultHttpExtensions.cs), [HTTP testovi](../../../backend/Team21.Acc.Tests/Api/SessionCurrentActorHostIntegrationTests.cs). [Matrica odluka i pretnje](KT1_READINESS.md).

@@ -3,10 +3,18 @@
 - **Vlasnik:** član 9, Team 21.
 - **Zahtevi:** ACC-01 i ACC-06; saradnja sa IDN, ACC-02/03, ACC-05, delegacijama, LAB/ASN/AUT i AUD.
 - **Datum pregleda:** 2026-11-07.
-- **Status:** sesijski adapter je implementiran i povezan uz odobrene minimalne host/IDN izmene; ostali adapteri ostaju predlozi ili blokirani, kako je navedeno pojedinačno.
+- **Status lokalnog review-a (2026-11-08):** `feature/acc-integration-review-v2`, pending spoj `00b3c47` + `fe6507f`, bez commit-a. Produkcioni/testni izvori odgovaraju testiranoj detached probi; njeni rezultati se koriste kao postojeći dokazi. KT1 dizajn je odobren, a merge commit čeka zasebno završno odobrenje. Stari review i njegove četiri dokumentacione korekcije ostaju nepromenjeni. Produkcione i pune CI zavisnosti ostaju otvorene.
 - **Radna grana:** `feature/acc-integration`, izvedena iz `feature/acc06-groups`; početni pregled na `736b8f2`, aktuelna osnova posle predaje testova na `3fca69c`.
 
-## 1. Obuhvat i izvori
+> **Lokalni review-v2:** roditelj `fe6507f` + svih devet commitova do `00b3c47`. Originalna grana, stari review i raniji PoC ostaju sačuvani. [Izveštaj kandidata](MERGE_CANDIDATE.md) odvaja proveru prenosa na review-v2 od testiranja detached probe i istorijskih provera protiv `3b1e6ff`.
+
+## 0. Stanje izolovanog kandidata
+
+Kandidat ima ACC-01 i ACC-06 iz roditelja, stvarni `CourseStateReader` i mali host adapter za Access subject. Za označene Team 21 rute važi routing → AUD korelacija → IDN session validacija → scoped `SessionCurrentActor` / `Team21AccessSubjectProvider` → postojeći `RequireAccess` → servisne provere. Originalni REV subject dekorator ostaje unutrašnji provider za ostale rute; njihov redosled nije promenjen. Nema duplog poziva session middleware-a za Team 21.
+
+Na osveženom kandidatu prolazi 259/259 bezbednih Team 21 slučajeva. Ranijih 182/182 odnosi se na stari samostalni roditeljski baseline `3b1e6ff`, ne na novo pokretanje baseline-a `fe6507f`. To nije broj 158 sa stvarne grane niti starih 295 iz prethodnog eksperimenta. Predatih 39 nije vraćeno. Produkcioni account reader ostaje deny-all; status iz IDN EF čitača nije automatski prihvaćen kao autoritativan. KT1 dizajn selektivnog host/Access spoja odobren je prema potvrdi korisnika; IDN dogovor o autoritativnom izvoru i sinhronizaciji statusa i stvarna ACC članstva/dozvole i dalje su KT2 zavisnosti. Detalji, tačni testovi i preostala ograničenja su u izveštaju kandidata.
+
+## 1. Obuhvat i izvori — istorija stvarne grane
 
 Ovaj dokument priprema povezivanje modula. Ne uvodi nove javne ugovore, ne menja poslovna pravila i ne preuzima autentifikaciju, upis studenata, delegacije, isporuku materijala ili audit skladište od njihovih vlasnika.
 
@@ -64,22 +72,22 @@ Putanje u nastavku su relativne u odnosu na koren repozitorijuma. Putanja označ
 
 Na **ACC-01 referenci**, `Courses/ICourseAuthorization.cs` definiše `CanCreateAsync`, `CanArchiveAsync` i `CanViewAsync`, svaki sa `Guid` identitetima i `Task<bool>` rezultatom. `Courses/ICourseService.cs` predstavlja poslovni servis. Ovi ugovori nisu trenutno prisutni na radnoj grani.
 
-## 3. Matrica zavisnosti i odgovornosti
+## 3. Matrica zavisnosti i odgovornosti kandidata
 
 Broj tima naveden je samo gde je potvrđen pregledanim dokumentima. Ostali vlasnici označeni su zahtevom/modulom; broj i kontakt treba potvrditi u dogovoru.
 
 | Zavisnost / potrošač | Odgovorni tim i izvor podataka | Postojeći ugovor | Potrebno povezivanje — predlog | Trenutno stanje |
 | --- | --- | --- | --- | --- |
 | Pozivalac ACC-01/06 | IDN login/sesije; validirana serverska sesija | Team 21 `ICurrentActor`; `Platform.Api.Interfaces.Identity.IIdentityContext.Current` | `SessionCurrentActor` u host integracionom sloju | Host u svim okruženjima koristi scoped sesijski adapter; početni fake/anonymous izbor ostaje samo pri samostalnom pozivu Team 21 modula |
-| Status naloga ACC-06 | IDN-03; autoritativni status naloga | Team 21 `IAccountStatusReader`; host `IAccountRepository.Find(Guid)` | Adapter potvrđenog IDN izvora statusa | Fake / deny-all; host registruje `InMemoryAccountRepository`, pa trajni izvor statusa nije potvrđen |
+| Status naloga ACC-06 | IDN-03; autoritativni status naloga | Team 21 `IAccountStatusReader`; IDN `Platform.Identity.Interfaces.IAccountStatusReader.FindAsync`; host `IAccountRepository.Find(Guid)` | Adapter potvrđenog IDN izvora statusa | Fake / deny-all u Team 21; IDN ima scoped `EfAccountStatusReader` nad `PlatformIdentityDbContext.Accounts`, ali status write ide kroz host `InMemoryAccountRepository`. Autoritativnost i sinhronizacija nisu odobrene |
 | Članstvo i uloga ACC-06 | ACC-02/03; članstva kursa | Team 21 `ICourseMembershipReader`; Access `IMembershipReader.GetAsync`; na ACC-02 grani `IMembershipStore.FindActiveAsync` | Čitač koji eksplicitno mapira aktivnost, kurs i ulogu | Nema stvarnog izvora na radnoj grani; ACC-02 kod postoji zasebno |
 | Delegirani pregled | Vlasnici delegacija ACC-07 i prava pregleda; serversko važeće pravo | Team 21 `CourseMembership.CanReview`; Access `DelegatedActions` | Mapiranje tačno dogovorene radnje i važenja prava | Nije potvrđen izvor ni dogovor koja radnja znači `CanReview`; ne pretpostavljati ga iz same uloge Assistant |
-| Stanje kursa ACC-06 | Team 21, ACC-01; `courses.Courses` | `ICourseStateReader`; ACC-01 `ICoursesDbContext.Courses` | Stvarni EF čitač stanja kursa | Ugovor spreman; model i DbSet nedostaju na radnoj grani |
-| Dozvole ACC-01 | ACC-01 vlasnik i Access/ACC pravila; sistemsko pravo kreiranja i kursna prava | ACC-01 `ICourseAuthorization`; `Platform.Access.Contracts.IAccessDecision` | Adapter odobrenih pravila za create/archive/view | Na ACC-01 grani Development hardkodovana dozvola i deny-all drugde; Team 21 radnje/politike nisu završene u Access katalogu |
+| Stanje kursa ACC-06 | Team 21, ACC-01; `courses.Courses` | `ICourseStateReader`; ACC-01 `ICoursesDbContext.Courses` | Stvarni EF čitač stanja kursa | Roditelj već daje model, DbSet i stvarni scoped `CourseStateReader`; ne implementirati duplikat |
+| Dozvole ACC-01 | ACC-01 vlasnik i Access/ACC pravila; sistemsko pravo kreiranja i kursna prava | ACC-01 `ICourseAuthorization`; `Platform.Access.Contracts.IAccessDecision` | Adapter odobrenih pravila za create/archive/view | Roditeljski Development course authorization i deny-all drugde su sačuvani; postojeće Team 21 Access politike proveravaju aktivan nalog, ne kursne dozvole |
 | Zabrana novog upisa posle arhiviranja | ACC-02 servis upisa, stanje daje Team 21 | ACC-02 `Platform.Membership.Contracts.ICourseReader.FindAsync` → `CourseInfo(Id, IsArchived)` | Adapter stvarnog ACC-01 stanja u postojeći ACC-02 ugovor | ACC-02 servis već proverava arhiviranje, ali njegov čitač kursa je privremen; modul nije na radnoj grani |
 | Članstva grupa i pravila publike | Team 21 ACC-06; `groups` tabele | `IGroupMembershipReader`, `IMaterialAccessRuleReader` | Nije potreban novi čitač istih podataka | Stvarni EF čitači postoje; ne izlagati ih direktno kao nezaštićene endpointe |
 | Stvarni materijali i prilozi | ASN/LAB, za priloge AUT-05; vlasnički repozitorijumi/sadržaj | Team 21 `IMaterialVisibilityService`; ASN ima `IAssignmentRepository`; LabVisibility ima `ICourseMembership` | Pozivanje provere pre sadržaja i filtriranje liste; dogovor upisa publike | Team 21 endpointi vraćaju reference. Nije pronađena primena Team 21 provere u pregledanim vlasničkim tokovima; ugovor za upis publike nije pronađen |
-| HTTP autorizacija | Access, Team 3 / ACC-05; routing metadata i odluke | `DelegatesToLegacyAuthorization()`, `IAccessDecision` | Zadržati eksplicitno delegiranje servisima ili usaglasiti centralne radnje/politike | Delegiranje već postoji, ali Team 21 rute nisu u testnoj listi odobrenih delegiranja; centralna integraciona provera ne prolazi |
+| HTTP autorizacija | Access, Team 3 / ACC-05; routing metadata i odluke | `RequireAccess`, `IAccessDecision`, `Team21SessionRequiredMetadata` | Scoped `Team21AccessSubjectProvider` i selektivni raniji IDN middleware | Implementirano samo u kandidatu; Access proverava Active, servisi zadržavaju vlasništvo/grupe; puni Development inventar nije izvršen |
 | Audit promena | AUD, Team 12; centralno append-only skladište | Team 21 `IAuditTrail`; `Platform.Audit.Contracts.IAuditWriter` | Adapter događaja nakon usaglašavanja kataloga i pouzdanog upisa | Samo `LoggingAuditTrail`; centralni događaji kurseva/grupa nedostaju |
 | Audit odbijanja vidljivosti | AUD, Team 12, uz Access saradnju | `IVisibilityAuditWriter`, `VisibilityDenial`; centralni `IAuditWriter` | Adapter razloga i resursa prema prihvaćenoj šemi | Samo logger; centralni katalog nije dovoljan za sve razloge/resurse |
 | Korelacija i vreme | Platform/AUD i Team 21; serverski zahtev i UTC časovnik | Oba modula imaju svoj `ICorrelationContext`; `TimeProvider` | Zadržati zajedničku serversku vrednost, bez kastovanja interfejsa | Već povezano kroz `TraceIdentifier`; AUD middleware postavlja novi ID, Team 21 ga čita |
@@ -146,32 +154,11 @@ Izvori: Team 21 `Core/Groups/MaterialType.cs`, `Api/Groups/MaterialEndpoints.cs`
 
 ## 5. Prva integracija: ACC-01 → ACC-06
 
-**Status: ugovor je spreman, implementacija blokirana nedostajućim ACC-01 kodom na ovoj grani.** Ovo je unutrašnja zavisnost Tima 21, a ne čekanje drugog tima.
+**Status u kandidatu: implementirano u roditelju, bez novog Part 9 čitača.** Stvarna integraciona grana još nije sinhronizovana.
 
-Postojeći ugovor ostaje:
+`Team21.Acc.Infrastructure/Courses/Services/CourseStateReader.cs` implementira postojeći `GetStateAsync(Guid, CancellationToken)` nad `ICoursesDbContext.Courses`. Koristi `AsNoTracking`, soft-delete filter i prosleđuje cancellation token. Active mapira u `CourseState.Active`, Archived u `CourseState.Archived`, a odsutan/nepoznat status u `null`. Ne kopira model, ne poziva korisnički autorizovan servis i ne menja podatke.
 
-```csharp
-Task<CourseState?> GetStateAsync(Guid courseId, CancellationToken ct = default);
-```
-
-Predložena klasa `CourseStateReader` u `Team21.Acc.Infrastructure/Courses/Services/` implementira ovaj interfejs i ubrizgava `ICoursesDbContext`. Naziv klase i putanja su predlog, ne postojeća implementacija. Čita samo ACC-01 podatke, sa `AsNoTracking`, normalnim soft-delete filterom i prosleđenim tokenom. Ne poziva korisnički autorizovan `ICourseService.GetCourseAsync`, ne pravi HTTP poziv i ne menja stanje kursa.
-
-| ACC-01 izvor | Rezultat čitača | Postojeći efekat u ACC-06 |
-| --- | --- | --- |
-| `CourseStatus.Active` | `CourseState.Active` | Dozvoljava nastavak ostalih provera |
-| `CourseStatus.Archived` | `CourseState.Archived` | Nakon prethodnih provera prava i ulaza, promene grupa/članstva daju Conflict; vidljivost prati tabelu iz odeljka 4 |
-| Nepostojeći / soft-deleted kurs | `null` | UnknownCourse / NotFound, bez davanja prava |
-| `Guid.Empty` | Predlog: `null` bez upita | Bez davanja prava |
-| Nepoznat status | Predlog: `null`, bez podrazumevanog Active | Bez davanja prava; dijagnostiku usaglasiti |
-
-Zameniti registracije `FakeCourseStateReader` i `NoCourseStateReader` jednom scoped registracijom stvarnog čitača kada model bude dostupan. Ne zamenjivati druge fake-ove u istom zahvatu. Proveriti demo seeding: poklapanje fiksnih ID-jeva nije dokaz da stvarni ACC-01 redovi postoje. Ne uvoditi fallback na `FakeDirectory` ako baza nije dostupna.
-
-Preduslovi i dokazi:
-
-- Radna grana: `backend/Team21.Acc.Infrastructure/Courses/Data/ICoursesDbContext.cs` i `CoursesDbContext.cs` imaju kostur bez aktivnog `Courses` DbSet-a.
-- ACC-01 referenca: isti kontekst izlaže `DbSet<Course>`; `backend/Team21.Acc.Core/Courses/Course.cs` sadrži `Status`, `CanEnroll` i `Archive`; `CourseStatus.cs` ima Active/Archived.
-- `backend/Team21.Acc.Api/Groups/GroupsModule.cs` još bira fake/deny-all.
-- Objedinjavanje zavisnosti mora biti posebno odobreno; ovaj zadatak ne kopira tuđi model i ne radi merge.
+`GroupsModule.AddGroups` registruje taj čitač kao scoped u svim okruženjima. Grupni i material EF čitači ostaju isti. HTTP fixture kontrolisano zamenjuje course reader, pa njegov prolaz ne dokazuje stvarni PostgreSQL upit niti arhiviranje kroz bazu; pet migracionih/seeder slučajeva izostavljeno je iz bezbednog skupa. Autoritativni status, članstvo i upis studenata ostaju zasebne zavisnosti.
 
 Za sam čitač nije potrebna nova tabela niti nova migracija. Test izvršavanja zavisi od postojeće ACC-01 šeme. Naknadna ACC-02 integracija koristi njegov postojeći `ICourseReader`, zasebnim adapterom. `Course.CanEnroll` nije automatska zabrana upisa u drugom modulu. Konkurentni upis tokom arhiviranja traži dogovor vlasnika o transakciji/zaključavanju; običan read adapter to ne garantuje.
 
@@ -224,8 +211,8 @@ Izvori: `backend/Team21.Acc.Infrastructure/Common/LoggingAuditTrail.cs`, `Groups
 - `SessionCurrentActor` je u `Platform.Api/Modules/Team21/Integration/`, uz eksplicitnu scoped zamenu registracije u hostu. Team21.Acc.Api ne referencira Platform.Api; test projekat referencira host radi izolovanih i HTTP integracionih testova, bez kružne zavisnosti.
 - Stvarni scoped kontekst ne ubrizgavati u singleton Access politike. Access trenutno koristi singleton politike i `EmptyMembershipReader`; eventualni adapter zahteva lifetime rešenje sa vlasnikom.
 - Registraciju zamene uraditi eksplicitno, bez oslanjanja na slučajan redosled više `AddScoped` registracija. Testirati Development i Production.
-- Team 21 endpointi već koriste `DelegatesToLegacyAuthorization()`. Ne označavati ih javnim da bi prošli middleware. Nova centralna politika ne sme ukinuti grupna ograničenja.
-- `backend/Platform.Access.Tests/ApiEndpointCoverageTests.cs` ima zasebnu listu `ApprovedDelegatedRoutes` bez Team 21 ruta. Pregled mora obuhvatiti servisnu autorizaciju i odobravanje inventara sa Access vlasnikom; sam atribut ne znači da ova CI provera prolazi.
+- Kandidat zadržava roditeljski `RequireAccess` na svih 12 Team 21 ruta, uz zajednički serverski marker. Nema public/delegated zaobilaska; servisna pravila grupa i vlasništva ostaju aktivna.
+- Team 21 rute sa `RequireAccess` ne zahtevaju unos u `ApprovedDelegatedRoutes`. Novi Testing metadata test potvrđuje 12 ruta i odsustvo public/delegated oznaka. Originalni ACC-05 Development inventar nije pokrenut zbog seedera; to ostaje CI ograničenje.
 - `TimeProvider` i server-generated korelaciju zadržati. `HttpCorrelationContext` čita `TraceIdentifier` koji AUD middleware postavlja i vraća kao `X-Correlation-ID`.
 - Proveriti konfiguracioni redosled: `AddTeam21Acc()` trenutno čita konekciju pre kasnijeg host `AddLocalEnvFile()`. Dokument ne proverava niti objavljuje tajne.
 
@@ -260,6 +247,8 @@ Postojeći dokazi i ograničenja: `backend/Team21.Acc.Tests/Groups/*.cs`, `Api/H
 
 ### 9.1. Zatečene integracione blokade van dokumentacionog zadatka
 
+**Istorijski nalazi sa stvarne grane.** Prethodna osnova `3b1e6ff` i stari kandidat imali su AUD 17/17 i REV 5/5. Nova detached proba protiv `fe6507f` ponavlja 17/17 i 5/5; novi samostalni roditeljski baseline nije pokretan. Te roditeljske izmene nisu delo ovog PoC-a. ACC-05 Development inventar nije izvršen; ne tvrdi se prolaz punog CI-ja. Detalje poređenja daje [izveštaj kandidata](MERGE_CANDIDATE.md). Preostali tekst odeljka beleži tadašnje stanje.
+
 Pregled 2026-11-07 potvrdio je uspešan backend Release build (0 upozorenja, 0 grešaka) i 118 uspešnih Team 21 testova. Širi izbor backend testova, uz izostavljanje scenarija koji mogu primeniti migracije, dao je 1.205 prolaznih, 9 neuspešnih i 10 preskočenih testova. Team 21 testovi uključeni su i u taj širi zbir. Dokazi izvršavanja lokalno su u ignorisanom direktorijumu `TestResults/acc-integration-review/` i nisu deo ovog dokumentacionog commita.
 
 Sledećih devet padova predstavljaju zatečene integracione blokade; ne popravljaju se u ovom zadatku. **Nije izvršeno poređenje sa neizmenjenom roditeljskom granom ili drugim baseline-om, pa nije dokazano da su padovi postojali pre ove dokumentacione izmene. Puna CI provera ne prolazi i push nije odobren.**
@@ -285,8 +274,8 @@ Izvori: `backend/Platform.Access.Tests/ApiEndpointCoverageTests.cs`, `backend/La
 | Redosled | Rezultat | Spremnost / vlasnik sledećeg koraka |
 | --- | --- | --- |
 | 1 | Pregled ovog nacrta i potvrda vlasnika/semantike | Spremno za pregled; član 9 i vlasnici zavisnosti |
-| 2 | Zajednička ACC-01/06 osnova bez kopiranja modela | Blokada unutar Tima 21: na radnoj grani nedostaje ACC-01; način uključivanja posebno odobrava tim |
-| 3 | Stvarni CourseStateReader, DI i fokusirani testovi | Prvi konkretan adapter; tehnički ugovor spreman, čeka korak 2 |
+| 2 | Zajednička ACC-01/06 osnova bez kopiranja modela | Osvežena `fe6507f` osnova postoji samo u novoj detached probi; prethodno odobren KT1 dizajn je očuvan, ali novi commit ovim zadatkom nije odobren |
+| 3 | Stvarni CourseStateReader, DI i fokusirani testovi | Roditelj ga već implementira i registruje; ne duplirati. PostgreSQL dokaz nije izvršen |
 | 4 | Sesijski identitet i status naloga | Sesijski adapter aktiviran uz odobrene host/IDN izmene i testiran izolovanim HTTP tokom; autoritativni/trajni status naloga ostaje zavisnost IDN-03 |
 | 5 | Članstva, delegacije i ACC-01 autorizacija | Blokirano dostupnošću/usaglašavanjem ACC-02/03/07 izvora, prava i Access politika |
 | 6 | Zabrana upisa u arhiviran kurs kroz ACC-02 | Blokirano dostupnošću ACC-02 modula i dogovorom konkurentnosti; član 9 pravi adapter, ne enrollment |

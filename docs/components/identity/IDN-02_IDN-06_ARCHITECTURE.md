@@ -21,7 +21,7 @@
 | `ISessionCreator` | internal dependency | Implemented by `StoreSessionCreator`; creates sessions through `ISessionStore`. |
 | `IAuditWriter` | we use, owned by AUD | `LoggerAuditWriter` writes structured application logs. Login and logout record events; no secrets are included. |
 | Account status | we use, owned by IDN-03 | `LoginService` denies non-active accounts. IDN-03 requests revocation on blocked/archived status, but currently does not await the asynchronous revocation call. Its account repository remains in-memory. |
-| Attempt limiting | we use, owned by IDN-05 | Not integrated yet. |
+| Attempt limiting | we use, owned by IDN-05 | Per-account lockout runs inside `CredentialVerifier`, see [IDN-05 lockout](IDN-05-lockout.md). |
 | User credentials | we use, owned by IDN-01 | `ICredentialVerifier`/`EfCredentialStore` read the account and password hash; passwords are checked with the configured BCrypt hasher. ASP.NET Core Identity is not used. |
 
 Not our responsibility: user registration (IDN-01), account status rules (IDN-03), session list screen (IDN-07), shared attempt limiting (IDN-05), and audit persistence (AUD).
@@ -97,7 +97,6 @@ The cookie token and its hash, passwords, and password hashes are not included i
 
 ### Not implemented or not enforced by this component yet
 
-- IDN-05 attempt limiting is not wired into login.
 - IDN-06 MFA policy, enrollment, verification, TOTP storage, and routing of `MfaPending` sessions to MFA-only endpoints are not implemented. Current successful login sessions are `Active`.
 - `SessionCheckMiddleware` validates the session but does not enforce authentication level or endpoint authorization. Consumers must check `IIdentityContext.Current` and `IsAuthenticated`; it is not a global default-deny authorization policy.
 - No explicit anti-CSRF token validation is implemented. SameSite Strict is configured on the cookie but should not be treated as a complete substitute for a CSRF control.
@@ -119,7 +118,7 @@ dotnet test backend\Platform.Identity.Tests\Platform.Identity.Tests.csproj
 
 ## Next steps
 
-1. Integrate the shared IDN-05 attempt limiter and confirm account-status persistence with IDN-03.
+1. Confirm account-status persistence with IDN-03.
 2. Implement IDN-06 MFA policy, enrollment, verification, and endpoint restrictions before claiming MFA protection.
 3. Add explicit authorization/CSRF controls where required by ACC-05 and SEC-03.
 4. Align session lifetime and inactivity behavior with US-14.

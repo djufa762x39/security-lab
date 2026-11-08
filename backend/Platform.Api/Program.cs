@@ -1,4 +1,5 @@
 using Team21.Acc.Api;
+using Platform.Api.Security.RevisionAuthorization;
 using Team21.Acc.Core.Interfaces;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Platform.Api.Modules.Team21.Integration;
@@ -37,6 +38,11 @@ using LabVisibilityCourseRole = Platform.LabVisibility.Contracts.CourseRole;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddTeam21Acc();
+builder.Host.UseDefaultServiceProvider(options =>
+{
+    options.ValidateScopes = true;
+    options.ValidateOnBuild = true;
+});
 
 if (builder.Environment.IsDevelopment())
 {
@@ -45,8 +51,10 @@ if (builder.Environment.IsDevelopment())
 }
 
 // Access module
+
 builder.Services.AddAccessControl();
 builder.Services.AddAccessAspNet();
+builder.Services.AddRevisionAuthorization();
 
 if (builder.Environment.IsDevelopment())
 {
@@ -79,6 +87,7 @@ else
 }
 
 builder.Services.AddAudit();
+builder.Services.AddAuditPersistence(builder.Configuration.GetConnectionString("Laboratories"));
 builder.Services.AddAuthoring();
 builder.Services.AddLabVisibility();
 builder.Services.AddIdentityRateLimiting(builder.Configuration);
@@ -89,6 +98,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddLaboratoriesPersistence(
     builder.Configuration.GetConnectionString("Laboratories"));
 builder.Services.AddRevisionReviews();
+builder.Services.AddRevisionSecurityPersistence(builder.Configuration.GetConnectionString("Laboratories"));
 
 builder.Services.AddSingleton<IAccountRepository, InMemoryAccountRepository>(); // TODO: zameniti trajnim repozitorijumom (PostgreSQL)
 builder.Services.AddScoped<ISessionManager, StoreSessionManager>();   // zameniti kad IDN-02 bude gotov
@@ -125,13 +135,18 @@ else
 }
 
 // Kreiranje aplikacije
+builder.Services.AddRevisionRequestIdentity();
+builder.Services.AddTeam21SessionAccess();
 var app = builder.Build();
+app.UseRouting();
+
+app.Services.RegisterRevisionPolicies();
 
 // AUD-01/AUD-04 (S-10): correlation ID za svaki zahtev; mora biti prvi middleware
 app.UseCorrelationContext();
-
-app.UseRouting();
+app.UseTeam21SessionBeforeAccess();
 app.UseAccessControl();
+
 
 // Identity Rate Limiting
 app.UseIdentityRateLimiting();
@@ -170,6 +185,10 @@ if (app.Environment.IsDevelopment())
     // US-02 and US-09: migrate and seed the identity database (skipped without a connection string).
     if (await app.ApplyIdentityMigrationsAsync())
         await app.SeedDevelopmentAccountsAsync();
+    // LAB-03 drugi demo kurs: 3333 je student samo ovde, ne na prvom kursu.
+    // Primer: X-Test-User: 11111111-1111-1111-1111-111111111111:Teacher pravi laboratoriju na prvom kursu.
+    var secondDemoCourse = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    membership.Set(secondDemoCourse, Guid.Parse("33333333-3333-3333-3333-333333333333"), LabVisibilityCourseRole.Student);
 }
 
 // Health endpoint
@@ -182,7 +201,7 @@ app.MapGet("/api/health", () => Results.Ok(new
 .AllowAnonymous()   // IDN-02 SessionCheckMiddleware
 .AllowPublic();     // ACC-05 AccessControlMiddleware
 
-app.UseMiddleware<SessionCheckMiddleware>();
+app.UseSessionForOtherEndpoints();
 
 app.MapControllers();
 app.MapLaboratories();

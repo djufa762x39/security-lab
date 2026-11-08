@@ -11,6 +11,7 @@ import LabsSection from './components/labs/LabsSection'
 import ProtectedRoute from './components/ProtectedRoute'
 import ProtectedApp from './components/ProtectedApp'
 import LoginPage from './login/page'
+import CoursesPage from './pages/CoursesPage'
 import RevisionDetailPage from './pages/RevisionDetailPage'
 import RevisionListPage from './pages/RevisionListPage'
 
@@ -91,6 +92,7 @@ export default function App() {
           <CourseworkKt1 />
           <LabsSection />
           <Acc06 />
+          <CoursesPage />
         </>} />
         <Route path="login" element={<LoginRoute />} />
         <Route element={<ProtectedRoute />}>
