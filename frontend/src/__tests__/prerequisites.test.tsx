@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 import PrerequisitesEditor from '../components/prerequisites/PrerequisitesEditor'
+import PrerequisitesList from '../components/prerequisites/PrerequisitesList'
 import {
   getPrerequisites,
   addPrerequisite,
@@ -143,3 +144,68 @@ describe('LAB-06 - nastavnicki ekran za preduslove', () => {
     expect(mockRemove).not.toHaveBeenCalled()
   })
 })
+
+describe('LAB-06 - prikaz preduslova na detaljima laboratorije', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('prikazuje preduslove laboratorije', async () => {
+    mockGet.mockResolvedValue({
+      ok: true,
+      data: ['lab-2'],
+    })
+
+    render(<PrerequisitesList laboratoryId="lab-1" />)
+
+    expect(
+      await screen.findByText('Laboratorija: lab-2')
+    ).toBeTruthy()
+
+    expect(mockGet).toHaveBeenCalledWith('lab-1')
+  })
+
+  it('prikazuje nazive laboratorija kada su dostupni', async () => {
+    mockGet.mockResolvedValue({
+      ok: true,
+      data: ['lab-2'],
+    })
+
+    render(
+      <PrerequisitesList
+        laboratoryId="lab-1"
+        laboratoryNames={{
+          'lab-2': 'Osnove informacione bezbednosti',
+        }}
+      />
+    )
+
+    expect(
+      await screen.findByText('Osnove informacione bezbednosti')
+    ).toBeTruthy()
+  })
+
+  it('prikazuje gresku kada server odbije citanje', async () => {
+    mockGet.mockResolvedValue({
+      ok: false,
+      error: {
+        status: 403,
+        code: 'forbidden',
+        message: 'Nemate dozvolu za ovu radnju.',
+      },
+    })
+
+    render(<PrerequisitesList laboratoryId="lab-1" />)
+
+    const alert = await screen.findByRole('alert')
+
+    expect(alert.textContent).toContain(
+      'Nemate dozvolu za ovu radnju.'
+    )
+  })
+})
+
