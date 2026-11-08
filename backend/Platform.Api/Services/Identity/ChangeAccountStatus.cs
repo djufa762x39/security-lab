@@ -64,7 +64,9 @@ public sealed class ChangeAccountStatus(
         }
 
         if (newStatus is AccountStatus.Blocked or AccountStatus.Archived)
-            await sessions.RevokeAllForUser(targetId, "status_changed", cancellationToken);
+            // The status and its mandatory Audit record have already been accepted. A client
+            // disconnect must not leave sessions active for an account that is now inactive.
+            await sessions.RevokeAllForUser(targetId, "status_changed", CancellationToken.None);
 
         return new ChangeStatusResult(ChangeStatusOutcome.Success, newStatus);
     }

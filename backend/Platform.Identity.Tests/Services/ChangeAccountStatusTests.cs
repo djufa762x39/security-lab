@@ -28,6 +28,7 @@ public class ChangeAccountStatusTests
     private sealed class RecordingRevoker : ISessionManager
     {
         public List<Guid> Revoked { get; } = new();
+        public List<CancellationToken> RevocationTokens { get; } = new();
 
         private readonly HashSet<(Guid UserId, Guid SessionHandle)> _activeSessions = new();
 
@@ -37,6 +38,8 @@ public class ChangeAccountStatusTests
 
         public Task<int> RevokeAllForUser(Guid userId, string reason, CancellationToken ct = default)
         {
+            RevocationTokens.Add(ct);
+            ct.ThrowIfCancellationRequested();
             _activeSessions.RemoveWhere(session => session.UserId == userId);
             Revoked.Add(userId);
             int count = Revoked.Count;
@@ -129,6 +132,25 @@ public class ChangeAccountStatusTests
         Assert.That(result.Outcome, Is.EqualTo(ChangeStatusOutcome.Success));
         Assert.That(repo.Find(StudentId)!.Status, Is.EqualTo(AccountStatus.Archived));
         Assert.That(revoker.Revoked, Is.EqualTo(new[] { StudentId }));
+    }
+
+    [Test]
+    public async Task ClientCancellation_AfterStatusAndAudit_DoesNotCancelSessionRevocation()
+    {
+        var (sut, repo, revoker, _) = Build(Admin);
+        using var request = new CancellationTokenSource();
+        request.Cancel();
+
+        var result = await sut.ExecuteAsync(
+            StudentId, "BLOCKED", null, "corr-disconnected", request.Token);
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(result.Outcome, Is.EqualTo(ChangeStatusOutcome.Success));
+            Assert.That(repo.Find(StudentId)!.Status, Is.EqualTo(AccountStatus.Blocked));
+            Assert.That(revoker.Revoked, Is.EqualTo(new[] { StudentId }));
+            Assert.That(revoker.RevocationTokens.Single().CanBeCanceled, Is.False);
+        }
     }
 
     [Test]
