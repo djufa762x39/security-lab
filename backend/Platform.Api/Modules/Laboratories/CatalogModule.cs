@@ -23,8 +23,10 @@ public static class CatalogModule
         this IEndpointRouteBuilder app,
         IConfiguration configuration)
     {
-        if (!string.IsNullOrWhiteSpace(
-            configuration.GetConnectionString("Authoring")))
+        // Test hosts can apply configuration after service registration. Only map
+        // routes when AddCatalog actually registered their required service.
+        if (app.ServiceProvider.GetRequiredService<IServiceProviderIsService>()
+            .IsService(typeof(CatalogService)))
         {
             app.MapCatalogEndpoints();
         }
