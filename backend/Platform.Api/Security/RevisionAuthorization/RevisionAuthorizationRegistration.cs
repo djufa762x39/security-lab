@@ -23,8 +23,6 @@ public static class RevisionAuthorizationRegistration
         services.AddSingleton<RevisionApprovalPolicy>();
         services.AddSingleton<RevisionActionPolicy>();
 
-        services.AddRevisionAuditForwarding();
-
         return services;
     }
 
