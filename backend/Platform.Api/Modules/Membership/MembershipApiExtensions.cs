@@ -14,8 +14,8 @@ public static class MembershipApiExtensions
     IHostEnvironment environment)
     {
         services.AddMembershipModule(environment);
-        // PRIVREMENO: status naloga iz podataka koje koristi IDN-03 (vidi AccountRepositoryStatusReader).
-        services.AddSingleton<IAccountStatusReader, AccountRepositoryStatusReader>();
+        // Status naloga iz Identity modula (IDN-03). Scoped, jer Identity citac koristi DbContext.
+        services.AddScoped<IAccountStatusReader, IdentityAccountStatusReader>();
         return services;
     }
     public static async Task MapMembershipAsync(this WebApplication app)

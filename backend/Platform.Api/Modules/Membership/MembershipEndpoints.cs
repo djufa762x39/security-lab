@@ -2,7 +2,6 @@
 using Platform.Access.AspNet;
 using Platform.Api.Interfaces.Identity;
 using Platform.Membership.Application;
-using Platform.Api.Interfaces.Identity;
 using Platform.Audit.Contracts;
 namespace Platform.Api.Modules.Membership;
 /// <summary>
@@ -15,8 +14,10 @@ public static class MembershipEndpoints
     public static IEndpointRouteBuilder MapMembershipEndpoints(this IEndpointRouteBuilder app)
     {
         // ACC-02: upis studenta u kurs.
-        //app.MapPost("/api/courses/{courseId:guid}/members", EnrollStudentAsync);
-        app.MapPost("/api/courses/{courseId:guid}/members", EnrollStudentAsync).DelegateAuthorization();
+        // Pravo proverava Access middleware (ugovor Tima 3, ACC-05) pre ulaska u handler;
+        // servis proveru ponavlja (spec. 2.1).
+        app.MapPost("/api/courses/{courseId:guid}/members", EnrollStudentAsync)
+            .RequireAccess(MembershipActions.EnrollMember, MembershipActions.CourseResourceType, "courseId");
         return app;
     }
     private static async Task<IResult> EnrollStudentAsync(

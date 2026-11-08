@@ -13,6 +13,7 @@ using Platform.Membership.Tests.Testing;
 using Platform.Membership.Infrastructure.Courses;
 using Platform.Access.Domain.Enums;
 using Platform.Membership.Contracts;
+using Platform.Access.AspNet;
 
 namespace Platform.Membership.Tests.Application;
 
@@ -54,7 +55,12 @@ public sealed class MembershipEndpointAuthorizationTests
                 services.RemoveAll<IMembershipStore>();
                 services.AddSingleton<IMembershipStore>(store);
 
-                services.RemoveAll<IAccountStatusReader>();
+
+            // Isti pozivalac za Access middleware (RequireAccess) i za servis.
+            services.RemoveAll<IAccessSubjectProvider>();
+            services.AddSingleton<IAccessSubjectProvider>(new TestAccessSubjectProvider(callerId));
+
+            services.RemoveAll<IAccountStatusReader>();
                 services.AddSingleton<IAccountStatusReader>(
                    new FakeAccountStatusReader()
                         .With(StudentId, AccountState.Active)
