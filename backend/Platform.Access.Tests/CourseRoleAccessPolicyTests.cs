@@ -100,6 +100,7 @@ public sealed class CourseRoleAccessPolicyTests
 
     [TestCase(MembershipStatus.Left)]
     [TestCase(MembershipStatus.Suspended)]
+    [TestCase(MembershipStatus.Unknown)]
     public async Task NonActiveMembership_IsDenied(MembershipStatus status)
     {
         AddMembership(CourseRole.Teacher, status: status);

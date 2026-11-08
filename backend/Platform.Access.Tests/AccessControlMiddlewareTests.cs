@@ -41,8 +41,23 @@ public class AccessControlMiddlewareTests
             Throw ? throw new InvalidOperationException("boom") : new(Subject);
     }
 
+    private sealed class FakeAuditWriter : IAccessAuditWriter
+    {
+        public List<(AccessRequest Request, AccessDecision Decision)> Writes { get; } = new();
+
+        public ValueTask WriteAsync(
+            AccessRequest request,
+            AccessDecision decision,
+            CancellationToken cancellationToken = default)
+        {
+            Writes.Add((request, decision));
+            return ValueTask.CompletedTask;
+        }
+    }
+
     private FakeDecision _decision = null!;
     private FakeSubjects _subjects = null!;
+    private FakeAuditWriter _audit = null!;
     private int _handlerCalls;
     private WebApplication _app = null!;
     private HttpClient _client = null!;
@@ -55,12 +70,14 @@ public class AccessControlMiddlewareTests
     {
         _decision = new FakeDecision();
         _subjects = new FakeSubjects();
+        _audit = new FakeAuditWriter();
         _handlerCalls = 0;
 
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = Environments.Production });
         builder.WebHost.UseTestServer();
         builder.Services.AddSingleton<IAccessDecision>(_decision);
         builder.Services.AddSingleton<IAccessSubjectProvider>(_subjects);
+        builder.Services.AddSingleton<IAccessAuditWriter>(_audit);
 
         _app = builder.Build();
         _app.UseRouting();
@@ -72,6 +89,10 @@ public class AccessControlMiddlewareTests
         _app.MapGet("/public", Handler).AllowPublic();
         _app.MapGet("/forgotten", Handler);                                   // no metadata
         _app.MapGet("/both", Handler).AllowPublic().RequireAccess("lab.read", "laboratory", "id");
+        _app.MapGet("/legacy", Handler).DelegatesToLegacyAuthorization();
+        _app.MapGet("/duplicate", Handler)
+            .RequireAccess("public.info.read")
+            .RequireAccess("public.info.read");
         _app.MapGet("/labs/{id}", HandlerId).RequireAccess("lab.read", "laboratory", "id");
         _app.MapGet("/noresource", Handler).RequireAccess("public.info.read");
 
@@ -108,11 +129,13 @@ public class AccessControlMiddlewareTests
     }
 
     [Test]
-    public async Task ACC05_Public_endpoint_passes_without_calling_engine()
+    public async Task ACC05_Public_marker_does_not_bypass_access_middleware()
     {
         var res = await _client.GetAsync("/public");
-        Assert.That(res.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(res.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
+        Assert.That(_handlerCalls, Is.Zero);
         Assert.That(_decision.Calls, Is.Empty);
+        Assert.That(_audit.Writes.Single().Decision.DenialReason, Is.EqualTo(AccessDenialReason.PolicyError));
     }
 
     [Test]
@@ -177,12 +200,50 @@ public class AccessControlMiddlewareTests
     }
 
     [Test]
+    public async Task ACC05_Legacy_delegation_marker_is_denied_and_audited()
+    {
+        _decision.Handler = (r, _) => Allow(r);
+
+        var res = await _client.GetAsync("/legacy");
+
+        Assert.That(res.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
+        Assert.That(_handlerCalls, Is.Zero);
+        Assert.That(_decision.Calls, Is.Empty);
+        Assert.That(_audit.Writes.Single().Decision.DenialReason, Is.EqualTo(AccessDenialReason.PolicyError));
+    }
+
+    [Test]
+    public async Task ACC05_Multiple_requirements_are_denied_and_audited()
+    {
+        _decision.Handler = (r, _) => Allow(r);
+
+        var res = await _client.GetAsync("/duplicate");
+
+        Assert.That(res.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
+        Assert.That(_handlerCalls, Is.Zero);
+        Assert.That(_decision.Calls, Is.Empty);
+        Assert.That(_audit.Writes.Single().Decision.DenialReason, Is.EqualTo(AccessDenialReason.PolicyError));
+    }
+
+    [Test]
     public async Task ACC05_Contradictory_metadata_is_denied()
     {
         _decision.Handler = (r, _) => Allow(r);
         var res = await _client.GetAsync($"/both?id={Id()}");
         Assert.That(res.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
         Assert.That(_handlerCalls, Is.Zero);
+    }
+
+    [Test]
+    public async Task ACC05_Public_and_access_metadata_are_denied()
+    {
+        _decision.Handler = (r, _) => Allow(r);
+
+        var res = await _client.GetAsync($"/both?id={Id()}");
+
+        Assert.That(res.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
+        Assert.That(_handlerCalls, Is.Zero);
+        Assert.That(_decision.Calls, Is.Empty);
     }
 
     [Test]

@@ -1,8 +1,8 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Platform.Access.Contracts;
-using Platform.Access.Domain.Enums;
 using Platform.Access.Domain.Models;
+using Platform.Access.Domain.Enums;
 using Platform.Access.Domain.ValueObjects;
 
 namespace Platform.Access.AspNet;
@@ -23,7 +23,8 @@ public sealed class AccessControlMiddleware
     public async Task InvokeAsync(
         HttpContext context,
         IAccessDecision decider,
-        IAccessSubjectProvider subjectProvider)
+        IAccessSubjectProvider subjectProvider,
+        IAccessAuditWriter auditWriter)
     {
         var endpoint = context.GetEndpoint();
 
@@ -33,26 +34,22 @@ public sealed class AccessControlMiddleware
             return;
         }
 
-        var requirement = endpoint.Metadata.GetMetadata<IAccessRequirementMetadata>();
+        var requirements = endpoint.Metadata.GetOrderedMetadata<IAccessRequirementMetadata>();
+        var requirement = requirements.Count == 1 ? requirements[0] : null;
         var isPublic = endpoint.Metadata.GetMetadata<PublicEndpointMetadata>() is not null
                        || endpoint.Metadata.GetMetadata<AllowPublicAttribute>() is not null;
         var delegated = endpoint.Metadata.GetMetadata<DelegatedAuthorizationAttribute>() is not null;
-
-        // Explicitly reviewed legacy endpoints retain their own tested authorization.
-        // Conflicting or missing metadata fails closed as before.
-        if (requirement is null && (isPublic != delegated))
-        {
-            await _next(context);
-            return;
-        }
 
         var correlationId = context.TraceIdentifier;
         if (requirement is null || isPublic || delegated)
         {
             _logger.LogWarning(
-                "Fallback deny for endpoint {Endpoint} (requirement: {HasRequirement}, public: {IsPublic}). CorrelationId: {CorrelationId}",
-                endpoint.DisplayName, requirement is not null, isPublic, correlationId);
-
+                "Endpoint {Endpoint} does not have exactly one access requirement. CorrelationId: {CorrelationId}",
+                endpoint.DisplayName, correlationId);
+            await AuditMiddlewareDenialAsync(
+                auditWriter,
+                new AccessRequest(null, string.Empty, null, correlationId),
+                AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId));
             await AccessProblemDetailsWriter.WriteAsync(context, unauthenticated: false, correlationId);
             return;
         }
@@ -69,6 +66,10 @@ public sealed class AccessControlMiddleware
         catch (Exception ex)
         {
             _logger.LogError(ex, "Subject resolution failed. CorrelationId: {CorrelationId}", correlationId);
+            await AuditMiddlewareDenialAsync(
+                auditWriter,
+                new AccessRequest(null, requirement.Action, null, correlationId),
+                AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId));
             await AccessProblemDetailsWriter.WriteAsync(context, unauthenticated: false, correlationId);
             return;
         }
@@ -80,7 +81,10 @@ public sealed class AccessControlMiddleware
             _logger.LogError(
                 "Invalid action declared by endpoint {Endpoint}. CorrelationId: {CorrelationId}",
                 endpoint.DisplayName, correlationId);
-
+            await AuditMiddlewareDenialAsync(
+                auditWriter,
+                new AccessRequest(subject, requirement.Action, null, correlationId),
+                AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId));
             await AccessProblemDetailsWriter.WriteAsync(context, unauthenticatedSubject, correlationId);
             return;
         }
@@ -96,6 +100,10 @@ public sealed class AccessControlMiddleware
                        Convert.ToString(rawId, System.Globalization.CultureInfo.InvariantCulture),
                        out var resourceId))
             {
+                await AuditMiddlewareDenialAsync(
+                    auditWriter,
+                    new AccessRequest(subject, requirement.Action, null, correlationId),
+                    AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId));
                 await AccessProblemDetailsWriter.WriteAsync(context, unauthenticatedSubject, correlationId);
                 return;
             }
@@ -104,6 +112,10 @@ public sealed class AccessControlMiddleware
         }
         else if (requirement.IdRouteParam is not null)
         {
+            await AuditMiddlewareDenialAsync(
+                auditWriter,
+                new AccessRequest(subject, requirement.Action, null, correlationId),
+                AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId));
             await AccessProblemDetailsWriter.WriteAsync(context, unauthenticatedSubject, correlationId);
             return;
         }
@@ -124,12 +136,28 @@ public sealed class AccessControlMiddleware
         catch (Exception ex)   
         {
             _logger.LogError(ex, "Access decision failed. Access denied. CorrelationId: {CorrelationId}", correlationId);
+            await AuditMiddlewareDenialAsync(
+                auditWriter,
+                new AccessRequest(subject, requirement.Action, resource, correlationId),
+                AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId));
             await AccessProblemDetailsWriter.WriteAsync(context, unauthenticatedSubject, correlationId);
             return;
         }
 
         if (decision is null || decision.Outcome != AccessOutcome.Allow)
         {
+            if (decision is null || decision.Outcome != AccessOutcome.Deny)
+            {
+                await AuditMiddlewareDenialAsync(
+                    auditWriter,
+                    new AccessRequest(subject, requirement.Action, resource, correlationId),
+                    AccessDecision.Deny(
+                        AccessDenialReason.PolicyError,
+                        correlationId,
+                        decision?.PolicyVersion ?? "v0",
+                        decision?.PolicyId));
+            }
+
             var unauthenticated = unauthenticatedSubject
                                   || decision?.DenialReason == AccessDenialReason.Unauthenticated;
 
@@ -142,5 +170,20 @@ public sealed class AccessControlMiddleware
         }
 
         await _next(context);
+    }
+
+    private async Task AuditMiddlewareDenialAsync(
+        IAccessAuditWriter auditWriter,
+        AccessRequest request,
+        AccessDecision decision)
+    {
+        try
+        {
+            await auditWriter.WriteAsync(request, decision, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Authorization audit failed. CorrelationId: {CorrelationId}", decision.CorrelationId);
+        }
     }
 }

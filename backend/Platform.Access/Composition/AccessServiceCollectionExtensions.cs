@@ -95,7 +95,8 @@ public static class AccessServiceCollectionExtensions
             new InMemoryActionCatalog(
                 sp.GetServices<AccessPolicyRegistration>()
                     .Where(registration => registration.Definition is not null)
-                    .Select(registration => registration.Definition!)));
+                    .Select(registration => registration.Definition!),
+                freezeAfterConstruction: true));
         services.AddSingleton<IActionCatalog>(sp => sp.GetRequiredService<InMemoryActionCatalog>());
         services.TryAddSingleton<IMembershipReader, EmptyMembershipReader>();
         services.TryAddSingleton<IResourceDescriptorResolver, EmptyResourceDescriptorResolver>();
@@ -125,6 +126,7 @@ public static class AccessServiceCollectionExtensions
                     policy);
             }
 
+            registry.Freeze();
             return registry;
         });
         services.AddSingleton<IAccessPolicyRegistry>(sp =>

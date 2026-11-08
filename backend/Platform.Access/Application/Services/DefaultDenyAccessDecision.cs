@@ -106,7 +106,7 @@ public sealed class DefaultDenyAccessDecision : IAccessDecision
         var permitted = await EvaluatePolicyAsync(policy, request, cancellationToken).ConfigureAwait(false);
         return permitted
             ? AccessDecision.Allow(policyId, correlationId, policyVersion)
-            : AccessDecision.Deny(AccessDenialReason.PolicyDenied, correlationId, policyVersion);
+            : AccessDecision.Deny(AccessDenialReason.PolicyDenied, correlationId, policyVersion, policyId);
     }
 
     private async Task<bool> EvaluatePolicyAsync(
@@ -150,8 +150,14 @@ public sealed class DefaultDenyAccessDecision : IAccessDecision
             TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default);
 
-    private static string NormalizeCorrelationId(string? correlationId) =>
-        string.IsNullOrWhiteSpace(correlationId)
-            ? Guid.NewGuid().ToString("N")
-            : Regex.Replace(correlationId, @"[^\u0021-\u007E]", "_")[..Math.Min(correlationId.Length, 64)];
+    private static string NormalizeCorrelationId(string? correlationId)
+    {
+        if (string.IsNullOrWhiteSpace(correlationId))
+        {
+            return Guid.NewGuid().ToString("N");
+        }
+
+        var bounded = correlationId[..Math.Min(correlationId.Length, 64)];
+        return Regex.Replace(bounded, @"[^\u0021-\u007E]", "_");
+    }
 }

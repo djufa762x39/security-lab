@@ -1,5 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.AspNetCore.Builder;
+using Platform.Access.AspNet;
 using Platform.Access.Application.Options;
 using Platform.Access.Application.Services;
 using Platform.Access.Composition;
@@ -239,6 +241,34 @@ public class ConfigurationValidationTests
 
         Assert.That(() => catalog.Register(new ActionDefinition("lab.export", ActionScope.Course, null, false)),
             Throws.InstanceOf<ActionCatalogValidationException>());
+    }
+
+    [Test]
+    public void ACC05_Catalog_RejectsUnknownScope()
+    {
+        var catalog = new InMemoryActionCatalog();
+
+        Assert.That(
+            () => catalog.Register(new ActionDefinition("lab.unknown.scope", ActionScope.Unknown, null, false)),
+            Throws.InstanceOf<ActionCatalogValidationException>());
+    }
+
+    [Test]
+    public void ACC05_Catalog_RejectsInvalidResourceTypeUsingMetadataRules()
+    {
+        var catalog = new InMemoryActionCatalog();
+
+        Assert.That(
+            () => catalog.Register(new ActionDefinition(
+                "lab.invalid.resource",
+                ActionScope.Course,
+                new string('a', 65),
+                false)),
+            Throws.InstanceOf<ActionCatalogValidationException>());
+
+        var app = WebApplication.CreateBuilder().Build();
+        Assert.Throws<ArgumentException>(
+            () => app.MapGet("/a", () => "x").RequireAccess("lab.read", new string('a', 65), "id"));
     }
 
     

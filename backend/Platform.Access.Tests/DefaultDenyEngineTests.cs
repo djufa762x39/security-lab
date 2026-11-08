@@ -208,7 +208,8 @@ public class DefaultDenyEngineTests
 
         Assert.That(decision.Outcome, Is.EqualTo(AccessOutcome.Deny));
         Assert.That(decision.DenialReason, Is.EqualTo(AccessDenialReason.PolicyDenied));
-        Assert.That(decision.PolicyId, Is.Null);
+        Assert.That(decision.PolicyId, Is.EqualTo("fake-policy"));
+        Assert.That(decision.PolicyVersion, Is.EqualTo("v1"));
     }
 
     [Test]

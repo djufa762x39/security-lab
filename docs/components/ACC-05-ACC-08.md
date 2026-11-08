@@ -4,7 +4,7 @@
 |---|---|
 | Tim | Tim 3 |
 | Zahtevi | ACC-05, ACC-08 |
-| Status | ACC-05 jezgro implementirano|
+| Status | ACC-05 jezgro implementirano; vlasničke integracije članstva i resursa su fail-closed dok ih timovi ne isporuče |
 | Projekat | `backend/Platform.Access` |
 | Studenti | PR 1/2023 Živanović Jovana<br>PR 16/2023 Musli Danijel<br>PR 18/2023 Spasić Veljko<br>PR 30/2023 Pavlović Sara<br>PR 32/2023 Stanković Pavle<br>PR 53/2023 Matić Željana<br>PR 60/2023 Todorović Nikolina |
 
@@ -26,8 +26,10 @@ Ugovor trenutno obuhvata:
 - `ResourceRef` — tip i identifikator resursa;
 - `AccessRequest` — subjekt, akcija, resurs i korelacioni ID;
 - `AccessDecision` — ishod, razlog, politika, verzija i korelacioni ID;
-- `IActionCatalog`, `IAccessPolicyRegistry` i `IAccessAuditWriter` — granice za buduće adaptere.
+- `IActionCatalog` i `IAccessPolicyRegistry` — granice katalog/registar;
+  `IAccessAuditWriter` — ugovor za Access audit adapter.
 - `IResourceOwnershipResolver` — server-side granica za potvrdu vlasništva resursa.
+- `IAccessSubjectProvider` — server-side izvor subjekta za ASP.NET middleware.
 
 `IActionCatalog` izlaže tipizovane `ActionDefinition` zapise.
 
@@ -82,13 +84,23 @@ eksplicitnu `ActionDefinition` kroz `AddAccessAction<TPolicy>(definition)`;
 njihovo uvođenje zahteva code review centralnog ugovora. Nepoznata akcija daje
 `UnknownAction`, a akcija bez politike `NoPolicy`.
 
-Postojeći moduli još imaju privremeni composition adapter koji registruje
-akcije/politike nakon `Build()`, ali pre `app.Run()`. To je migraciona
-kompatibilnost, ne obrazac za nove integracije. `AccessConfigurationStartupCheck`
-zamrzava katalog i registar pri pokretanju hosta; posle toga registracije
-bacaju grešku. Konkretni registry/catalog adapteri dostupni su postojećim
-modulima samo radi tog privremenog composition koraka; ne smeju se koristiti
-za autorizacione izmene tokom obrade zahteva.
+API dodaje identitetske, Authoring i Revision akcije/politike kroz ovaj ugovor
+pre `Build()`. DI kreirani katalog i registar se zamrzavaju pri sastavljanju
+kompozicije, pre nego što se mogu koristiti nakon izgradnje hosta. Registracija
+akcija ili politika preko konkretnih runtime registry-ja nije podržana.
+Preostale `RegisterIdentityAccess`, `RegisterAuthoringAccess` i
+`RegisterLabVisibilityAccess` metode u vlasničkim projektima nisu više deo
+API host kompozicije i moraju biti migrirane/uklonjene od strane tih timova;
+poziv na zamrznutom Access katalogu/registu namerno baca grešku.
+
+API host zahteva potpunu pokrivenost politika za sve akcije koje se mogu
+koristiti. Jedine izuzetke eksplicitno navodi `ActionsWithoutPolicy`; oni ostaju
+bez politike i zato se i dalje odbijaju (`NoPolicy`). Trenutni izuzeci su
+`public.info.read`, `public.catalog.read`, `system.config.manage`,
+`results.sensitive.read` i `evaluation.task.process`. Izuzetak nije dozvola.
+`ActionScope.Unknown` i nevažeći resource type odbacuju se prilikom validacije.
+Resource type je case-sensitive ASCII obrazac `[a-z][a-z0-9-]{0,63}`; isti
+validator koriste katalog i ASP.NET endpoint metadata.
 
 Politike su singleton-i jer su i decision engine i registry singleton-i.
 Zato politika, kao i svi servisi koje ona koristi, mora biti thread-safe i ne
@@ -137,12 +149,22 @@ Dok politika nije registrovana, zahtev se odbija sa `NoPolicy`;
 Membership/delegation status, uključujući istek i opoziv, ostaje garancija
 vlasnika stvarnog `IMembershipReader` adaptera.
 
-## Implementacija 
+## Implementacija
 
 Registracija zavisnosti je deo `Platform.Access/Composition`. `Program.cs`
-poziva `AddAccessControl()`; moduli dodaju svoje akcije/politike kroz javni
-composition API pre `Build()`. Trenutni API još ne registruje konkretnu Audit
-politiku niti menja fail-closed membership/resource fallback-e.
+poziva `AddAccessControl()`; identitetske, Authoring i Revision akcije/politike
+registruje kroz javni composition API pre `Build()`. API koristi
+`SessionCheckMiddleware` pre Access middleware-a i `SessionAccessSubjectProvider`
+mapira samo server-side validiranu sesiju u aktivan `SubjectRef`. Razvojni
+header nije izvor Access identiteta.
+
+Auth login/logout i health su eksplicitno javne rute. `/api/auth/me` je javna
+samo za centralni Access sloj, ali i dalje zahteva validnu sesiju kroz
+`SessionCheckMiddleware`. Administratorske, kreiranje naloga, Authoring i
+Revision rute koriste `RequireAccess`. Legacy delegation marker nikada ne
+dozvoljava prolaz; rute sa markerom, bez zahteva ili sa više/konfliktnim
+zahtevima se odbijaju. Odbijanja pre evaluacije politike se takođe šalju na
+audit.
 
 Fail-closed tok:
 
@@ -155,36 +177,29 @@ Fail-closed tok:
 7. neusklađen scope ili tip resursa → `PolicyError`;
 8. samo uspešna politika može vratiti `Allow`.
 
-Audit se izvršava kroz lanac `ResilientAccessAuditWriter` →
-`FilteringAccessAuditWriter` → `AggregatingAccessAuditSink` →
-`LoggerAccessAuditSink`. Odbijanja se agregiraju po akteru, akciji, ciljnom resursu
-i razlogu odbijanja; prvi događaj se emituje odmah, a ponovljena odbijanja se
-objavljuju kao ograničeni summary zapisi nakon isteka aggregation prozora.
-`AccessAuditFlushService` periodično i pri gašenju aplikacije flush-uje otvorene
-summary zapise. Pipeline ima ograničene aggregation ključeve i pending retry
-zapise, tako da rast broja događaja ne postane neograničen.
+API šalje Access odbijanja kroz `CentralAccessAuditWriter` do
+`ITrustedAuditWriter`. Ako Audit odbije zapis ili ne uspe, Access odluka ostaje
+deny, a greška se beleži. `AccessDeniedAuditMapper` prosleđuje samo validne
+`action`, `policyId` i `policyVersion` vrednosti koje prihvata Audit šema.
 
-`ResilientAccessAuditWriter` izoluje audit od odluke: audit ima timeout,
-prosleđuje cancellation token i greške audit adaptera ne menjaju već izračunati
-`Allow` ili `Deny` ishod. Neuspeh i timeout se prijavljuju kao zasebni alarmi.
-Audit record factory i sanitizer dozvoljavaju samo definisana polja, ograničavaju
-dužinu vrednosti i odbacuju kontrolne/hostile vrednosti; tajne, telo zahteva i
-studentski odgovori se ne upisuju.
+Uspešne Access odluke se trenutno ne upisuju kao Access audit događaj: Audit
+katalog prihvata `AccessDenied`, ali nema odgovarajući događaj za odluku
+`Allow`. Do izmene vlasničkog ugovora `Platform.Audit`, dozvole se ne smeju
+mapirati na događaj odbijanja.
 
-`LoggerAccessAuditSink` je lokalni adapter preko host `ILogger` ugovora. Centralni
-`Platform.Audit` ugovor još nije direktno integrisan; integracija se radi nakon
-stabilizacije Audit modula. Testovi koriste eksplicitne recording/throwing
+`LoggerAccessAuditWriter` je lokalni fallback preko host `ILogger` ugovora. Centralni
+`Platform.Audit` ugovor je integrisan za odbijanja kroz `CentralAccessAuditWriter`;
+za uspešne odluke još nije definisan odgovarajući Audit event. Testovi koriste eksplicitne recording/throwing
 audit fake-ove. `EmptyMembershipReader`
 i `EmptyResourceDescriptorResolver` ostaju namerni fail-closed fallback-i za slučaj
 da domenski adapteri nisu registrovani; ne predstavljaju placeholder poslovnu
 logiku i ne mogu odobriti zahtev.
 
-`AddAccessControl()` registruje katalog, policy registry, decision engine, audit
-pipeline i flush servis kao singleton komponente. Politike i membership/resource
-readeri moraju biti singleton-safe. U composition fazi katalog i registar mogu
-se koristiti kroz postojeće adapterske API-je; host startup ih zamrzava pre
-prvog zahteva, pa naknadna izmena nije moguća. Moduli koji se integrišu treba da
-koriste javni `AddAccessAction`/`AddAccessPolicy` hook pre `Build()`.
+`AddAccessControl()` registruje katalog, policy registry, decision engine i
+audit adapter kao singleton komponente. Politike i membership/resource readere
+moraju biti singleton-safe. DI kreirani katalog/registar se zamrzavaju pre
+prvog zahteva; moduli koriste isključivo `AddAccessAction`/`AddAccessPolicy`
+pre `Build()`.
 Audit loggers koriste host
 logger kada je dostupan, a `NullLogger` fallback u minimalnim kontejnerima; modul
 ne konfiguriše globalni logging hosta.
@@ -266,44 +281,14 @@ Ako se API pokrene bez `ASPNETCORE_ENVIRONMENT=Development`, `/api/health` će r
 
 Ovim se proveravaju pokretanje API-ja i početni ACC-05 tok. Demo ruta je samo razvojna i namerno nije dostupna u produkciji.
 
+## Legacy authorization metadata
 
-## Planirani tok razvoja
-
-1. Dogovor sa Identity, Laboratories, Attempts i Audit timovima.
-2. Registrovane akcije i konkretne politike.
-3. Endpoint metadata i fallback-deny.
-4. Integracija sa centralnim `Platform.Audit` modulom nakon stabilizacije njegovog composition ugovora.
-5. Domenski ownership adapteri i preostala ACC-08 pravila.
-6. Jedinični, integracioni i negativni testovi u CI-ju.
-## Integracija razvojne KT1 demonstracije (ACC-04/ADM-08)
-
-KT1 endpoint-i su dostupni isključivo u Development okruženju uz eksplicitno
-`Kt1Demo:Enabled`. KT1 koristi **izolovan** `DefaultDenyAccessDecision` sa sopstvenim
-katalogom i registracijom svojih `AttemptPolicy` i `AdministrationPolicy` pravila.
-KT1 servisi dobijaju taj imenovani decision engine kroz DI fabrike, dok ostatak
-API-ja nastavlja da koristi globalni `IAccessDecision` iz ACC-05.
-
-Razlog je što KT1 simulacija i produkciona matrica imaju isto ime akcije
-`attempt.read`, ali različite izvore članstva i provere vlasništva. Ne sme se
-preskočiti konflikt registracije tako da jedan modul neprimetno nasledi politiku
-drugog. Oba engine-a zadržavaju fail-closed proveru opsega, resursa,
-identiteta i konkretne politike; KT1 ne postaje alternativna dozvola na
-produkcijskim endpoint-ima.
-
-Za konačnu integraciju svih timova ostaje obavezno da rute eksplicitno
-deklariraju `RequireAccess` ili odobreni `AllowPublic`; test endpoint
-coverage-a se ne isključuje radi zelenog CI-a.
-
-Integraciona provera 2026-11-05: resursne akcije Authoring i LabVisibility sada se registruju sa eksplicitnim tipom resursa i opsegom u kompoziciji pripadajućih modula; provera scope-a i dalje ostaje fail-closed.
-
-## Migracija postojećih rutera bez promene njihovih autorizacionih pravila
-
-`DelegatedAuthorizationAttribute` i `DelegateAuthorization()` su privremeni
-migracioni most za proverene postojeće endpoint-e. Ne predstavljaju `Allow`,
-ne kreiraju Access politiku i ne zamenjuju `RequireAccess`; endpoint owner je
-odgovoran za nezavisno testirani guard, a delegacija zahteva eksplicitnu
-reviziju. Novi endpoint-i ne smeju koristiti adapter. ACC-05 coverage test
-proverava odobreni inventar ruta i odbija nepoznate/neodobrene delegacije.
+`DelegatedAuthorizationAttribute` i `DelegateAuthorization()` ostaju samo zbog
+source compatibility-ja. Access middleware ih uvek odbija; marker nikada nije
+dozvola niti migracioni bypass. Rute moraju koristiti jedan `RequireAccess`
+zahtev ili eksplicitno odobreni `AllowPublic`. Nedostajući, višestruki ili
+konfliktni zahtevi se odbijaju i audituju. ACC-05 coverage test odbacuje svaku
+rutu sa legacy markerom.
 
 Audit probni `/__test/audit-events` postoji isključivo u `Testing` hostu
 i oslanja se na testovima definisan sintetički kontekst. Ne postoji u
