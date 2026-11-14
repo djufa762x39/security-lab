@@ -180,6 +180,7 @@ if (kt1Enabled) builder.Services.AddKt1RequestIdentity();
 
 //AUT-06: register the resolver that identifies the caller from the validated session
 builder.Services.AddKeyedScoped<IRequestSubjectResolver, AuthoringSessionSubjectResolver>("AuthoringSession");
+AuthoringAccessSubjectProvider.Register(builder.Services);
 
 var app = builder.Build();
 app.UseRouting();
@@ -188,6 +189,10 @@ app.UseRouting();
 app.UseCorrelationContext();
 // Preserve KT1's non-enumerating public denial contract using the same central decider.
 if (kt1Enabled) app.UseMiddleware<Kt1AccessContractMiddleware>();
+
+//AUT-06: Access needs the validated session to identify the Authoring caller
+app.UseWhen(AuthoringAccessSubjectProvider.AppliesTo, authoring => authoring.UseMiddleware<SessionCheckMiddleware>());
+
 app.UseAccessControl();
 
 
@@ -253,7 +258,7 @@ app.MapGet("/api/health", () => Results.Ok(new
 .AllowAnonymous()   // IDN-02 SessionCheckMiddleware
 .RequireAccess(AccessActions.PublicInfoRead.Id);
 
-app.UseMiddleware<SessionCheckMiddleware>();
+app.UseWhen(context => !AuthoringAccessSubjectProvider.AppliesTo(context), otherRoutes => otherRoutes.UseMiddleware<SessionCheckMiddleware>());
 
 app.MapControllers();
 app.MapLaboratories();
