@@ -118,25 +118,10 @@ builder.Services
             AuthoringActions.TemplateCopy,
             ActionScope.Course,
             AuthoringActions.TemplateResourceType,
-            false))
-    .AddAccessAction<ExplicitDenyAccessPolicy>(
-        new ActionDefinition(
-            LabVisibilityActions.StudentView,
-            ActionScope.Authenticated,
-            null,
-            false))
-    .AddAccessAction<ExplicitDenyAccessPolicy>(
-        new ActionDefinition(
-            LabVisibilityActions.Preview,
-            ActionScope.Authenticated,
-            null,
-            false))
-    .AddAccessAction<EvaluatorKeyPolicy>(
-        new ActionDefinition(
-            LabVisibilityActions.KeyRead,
-            ActionScope.Course,
-            "lab",
-            true));
+            false));
+
+// AUT-04 / AUT-07 / #185: LabVisibility radnje i politike, pre AddAccessControl() (strogi ACC-05).
+builder.Services.AddLabVisibilityAccess();
 
 // IDN-03: status naloga se pise u identity.accounts (isti izvor koji cita prijava), u jednoj transakciji sa opozivom sesija i Audit zapisom.
 builder.Services.AddScoped<IAccountStatusStore, EfAccountStatusStore>();
