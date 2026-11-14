@@ -1,5 +1,7 @@
 using Platform.Access.AspNet;
 using Platform.Access.Composition;
+using Platform.Access.Domain.Enums;
+using Platform.Access.Domain.Models;
 using Platform.Api.Interfaces.Identity;
 
 namespace Platform.Api.Security.IdentityAccess;
@@ -7,14 +9,22 @@ namespace Platform.Api.Security.IdentityAccess;
 public static class IdentitySessionAccessRegistration
 {
     /// <summary>
-    /// IDN-03 on the central Access module: its policy and the session-based subject provider.
-    /// Call before <c>AddAccessControl()</c>; <c>ISessionManager</c> and <c>IAdminDirectory</c>
+    /// IDN-03 and IDN-07 on the central Access module: policies and actions, and the session-based subject
+    /// provider. Call before <c>AddAccessControl()</c>; <c>ISessionManager</c> and <c>IAdminDirectory</c>
     /// are registered by Program.cs.
     /// </summary>
     public static IServiceCollection AddIdentitySessionAccess(this IServiceCollection services)
     {
         // IDN-03: central action, so only its policy is added (it is no longer in ActionsWithoutPolicy).
         services.AddAccessPolicy<AccountStatusChangePolicy>(IdentityAccessActions.AccountStatusChange);
+
+        // IDN-07: session review and revocation. Authenticated scope and no resource type: the owner is the
+        // caller, not a course.
+        services
+            .AddAccessAction<SessionSelfServicePolicy>(
+                new ActionDefinition(IdentityAccessActions.SessionList, ActionScope.Authenticated, null, false))
+            .AddAccessAction<SessionSelfServicePolicy>(
+                new ActionDefinition(IdentityAccessActions.SessionRevoke, ActionScope.Authenticated, null, false));
 
         // Decorator around the currently registered subject provider (anonymous if there is none yet).
         var original = services.LastOrDefault(d => d.ServiceType == typeof(IAccessSubjectProvider));

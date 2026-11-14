@@ -26,11 +26,6 @@ public class ApiEndpointCoverageTests
     private static readonly HashSet<string> ApprovedDelegatedRoutes = new(StringComparer.OrdinalIgnoreCase)
     {
         "/api/admin/accounts",
-        "/api/admin/accounts/{id:guid}/status",
-        "/api/auth/logout",
-        "/api/auth/me",
-        "/api/auth/sessions",
-        "/api/auth/sessions/{handle:guid}",
         "/api/authoring/templates",
         "/api/authoring/templates/{templateId:guid}/drafts",
         "/api/laboratories/",

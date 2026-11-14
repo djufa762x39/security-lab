@@ -2,6 +2,7 @@ using System.Data.Common;
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -10,6 +11,7 @@ using Platform.Api.Enums.Identity;
 using Platform.Api.Interfaces.Identity;
 using Platform.Api.Models.Identity;
 using Platform.Api.Services.Identity;
+using Platform.Audit.Application;
 using Platform.Audit.Composition;
 using Platform.Audit.Contracts;
 using Platform.Identity.Entities;
@@ -110,7 +112,21 @@ public class AccountStatusChangeIntegrationTests : IntegrationTestBase
         var other = await UserTestData.AddAsync(Factory, "other@example.com", Password);
         var studentSession = await SessionTestData.CreateAsync(Factory, student.Id);
 
-        var response = await SendAsync(HttpMethod.Put, StatusUrl(other.Id), studentSession.RawToken, new { status = "BLOCKED" });
+        // #113: the shared factory replaces ITrustedAuditWriter with a fake that stores nothing. This test reads
+        // the real access.denied row, so it restores the real writer; ConnectionStrings:Audit is the test database.
+        using var audited = Factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<ITrustedAuditWriter>();
+            services.AddScoped<ITrustedAuditWriter>(provider => provider.GetRequiredService<AuditWriter>());
+        }));
+        using var client = audited.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Put, StatusUrl(other.Id))
+        {
+            Content = JsonContent.Create(new { status = "BLOCKED" })
+        };
+        request.Headers.Add("Cookie", $"{SessionCookie.Name}={studentSession.RawToken}");
+
+        var response = await client.SendAsync(request);
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
         Assert.That((await UserTestData.GetAsync(Factory, other.Id))!.Status, Is.EqualTo(AccountStatus.Active));
