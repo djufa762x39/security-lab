@@ -46,7 +46,11 @@ public sealed partial class AccessDeniedAuditMapper : IAccessDeniedAuditMapper
             details["policyVersion"] = version;
         }
 
-        return new AuditEventDraft(AuditEventTypes.AccessDenied, AuditOutcome.Denied, Details: details);
+        return new AuditEventDraft(
+            AuditEventTypes.AccessDenied,
+            AuditOutcome.Denied,
+            CourseId: CourseOf(request.Resource),
+            Details: details);
     }
 
     public AuditContext CreateContext(AccessRequest request)
@@ -59,6 +63,14 @@ public sealed partial class AccessDeniedAuditMapper : IAccessDeniedAuditMapper
 
         return new AuditContext(actor, request.CorrelationId);
     }
+
+    // A course resource id is already normalised to "D" format by the access middleware.
+    private static Guid? CourseOf(ResourceRef? resource) =>
+        resource is { Type: "course" }
+        && Guid.TryParseExact(resource.Id, "D", out var courseId)
+        && courseId != Guid.Empty
+            ? courseId
+            : null;
 
     private static string DenialReasonOf(AccessDenialReason reason) => reason switch
     {
