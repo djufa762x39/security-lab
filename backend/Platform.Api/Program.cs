@@ -191,6 +191,7 @@ builder.Services.AddSingleton(new AccessConfigurationOptions
 builder.Services.AddAccessControl();
 builder.Services.AddAccessAspNet();
 builder.Services.AddRevisionRequestIdentity();
+if (kt1Enabled) builder.Services.AddKt1RequestIdentity();
 
 //AUT-06: register the resolver that identifies the caller from the validated session
 builder.Services.AddKeyedScoped<IRequestSubjectResolver, AuthoringSessionSubjectResolver>("AuthoringSession");
@@ -200,6 +201,8 @@ app.UseRouting();
 
 // AUD-01/AUD-04 (S-10): correlation ID za svaki zahtev; mora biti prvi middleware
 app.UseCorrelationContext();
+// Preserve KT1's non-enumerating public denial contract using the same central decider.
+if (kt1Enabled) app.UseMiddleware<Kt1AccessContractMiddleware>();
 app.UseAccessControl();
 
 
@@ -208,7 +211,7 @@ app.UseIdentityRateLimiting();
 if (kt1Enabled)
 {
     app.UseAuthentication();
-    // KT1 policy registrations are isolated within AddCourseworkKt1().
+    // Only the explicitly enabled simulator maps these namespaced Access actions.
     app.MapCourseworkKt1();
 }
 
