@@ -152,7 +152,18 @@ public sealed class Kt1AccessContractMiddleware(RequestDelegate next, ILogger<Kt
         var requirement = requirements[0];
         var resourceType = requirement.ResourceType!;
         var subject = await subjects.GetSubjectAsync(http, http.RequestAborted);
-        if (subject is null) { await next(http); return; } // central middleware returns 401
+        if (subject is null)
+        {
+            // The central middleware returns 401 before either KT1 service runs.
+            // Keep that authoritative decision/audit AND record the module's probe.
+            // Read only bounded route metadata: no account/resource lookup or body/cookie logging.
+            Guid.TryParse(Convert.ToString(http.Request.RouteValues[requirement.IdRouteParam!]), out var target);
+            securityAudit.Write(new(clock.GetUtcNow(), http.TraceIdentifier, null,
+                requirement.Action, target, resourceType == "course" && target != Guid.Empty ? target : null,
+                "DENY", "UNAUTHENTICATED", "v0"));
+            await next(http);
+            return;
+        }
         if (!Guid.TryParse(Convert.ToString(http.Request.RouteValues[requirement.IdRouteParam!]), out var id) || id == Guid.Empty)
         {
             await Results.BadRequest(new { code = "INVALID_REQUEST" }).ExecuteAsync(http);
