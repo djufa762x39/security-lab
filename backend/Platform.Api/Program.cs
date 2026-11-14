@@ -184,6 +184,7 @@ if (kt1Enabled) builder.Services.AddKt1RequestIdentity();
 
 //AUT-06: register the resolver that identifies the caller from the validated session
 builder.Services.AddKeyedScoped<IRequestSubjectResolver, AuthoringSessionSubjectResolver>("AuthoringSession");
+AuthoringAccessSubjectProvider.Register(builder.Services);
 
 var app = builder.Build();
 app.UseRouting();
@@ -195,6 +196,10 @@ if (kt1Enabled) app.UseMiddleware<Kt1AccessContractMiddleware>();
 // IDN-07 / ACC-05: Access answers a bad session with a generic 401. On the Identity module's own routes the stable
 // 401 session_invalid contract (cookie cleared, no-store) is decided first; other modules keep Access's response.
 app.UseWhen(IdentitySessionSubjectProvider.IsIdentityRoute, identity => identity.UseMiddleware<SessionCheckMiddleware>());
+
+//AUT-06: Access needs the validated session to identify the Authoring caller
+app.UseWhen(AuthoringAccessSubjectProvider.AppliesTo, authoring => authoring.UseMiddleware<SessionCheckMiddleware>());
+
 app.UseAccessControl();
 
 
@@ -260,7 +265,7 @@ app.MapGet("/api/health", () => Results.Ok(new
 .AllowAnonymous()   // IDN-02 SessionCheckMiddleware
 .RequireAccess(AccessActions.PublicInfoRead.Id);
 
-app.UseMiddleware<SessionCheckMiddleware>();
+app.UseWhen(context => !AuthoringAccessSubjectProvider.AppliesTo(context), otherRoutes => otherRoutes.UseMiddleware<SessionCheckMiddleware>());
 
 app.MapControllers();
 app.MapLaboratories();
