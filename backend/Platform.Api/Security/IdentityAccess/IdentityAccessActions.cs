@@ -1,3 +1,5 @@
+using Platform.LabVisibility.Contracts;
+
 namespace Platform.Api.Security.IdentityAccess;
 
 /// <summary>
@@ -17,5 +19,11 @@ public static class IdentityAccessActions
 
     /// <summary>Actions whose subject is the caller identified by the server-side session cookie.</summary>
     public static IReadOnlySet<string> SessionBound { get; } =
-        new HashSet<string>(StringComparer.Ordinal) { AccountStatusChange, SessionRead };
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            AccountStatusChange,
+            SessionRead,
+            // #185: /student-view i /preview (tim 6) dobijaju subjekat iz prave sesije, ne iz razvojnog zaglavlja.
+            LabVisibilityActions.Entry,
+        };
 }
