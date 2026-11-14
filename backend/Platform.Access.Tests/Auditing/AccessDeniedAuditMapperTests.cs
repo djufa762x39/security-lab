@@ -77,6 +77,37 @@ public sealed class AccessDeniedAuditMapperTests
     }
 
     [Test]
+    [Property("RequirementId", "AUD-06")]
+    public void DenyOnACourse_CarriesTheCourseForTheCourseAuditView()
+    {
+        var course = Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+
+        var draft = mapper.CreateDraft(Request(resource: new ResourceRef("course", course.ToString("D"))), Denied());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(draft.CourseId, Is.EqualTo(course));
+            Assert.That(draft.Resource, Is.Null);
+        });
+    }
+
+    [TestCase("revision", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")]
+    [TestCase("course", "not-a-guid")]
+    [TestCase("course", "00000000-0000-0000-0000-000000000000")]
+    public void DenyWithoutAValidCourseResource_HasNoCourse(string type, string id)
+    {
+        var draft = mapper.CreateDraft(Request(resource: new ResourceRef(type, id)), Denied());
+
+        Assert.That(draft.CourseId, Is.Null);
+    }
+
+    [Test]
+    public void DenyWithoutResource_HasNoCourse()
+    {
+        Assert.That(mapper.CreateDraft(Request(), Denied()).CourseId, Is.Null);
+    }
+
+    [Test]
     public void GuidSubject_IsUserActorWithRequestCorrelation()
     {
         var context = mapper.CreateContext(Request());
