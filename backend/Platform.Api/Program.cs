@@ -192,6 +192,9 @@ app.UseRouting();
 app.UseCorrelationContext();
 // Preserve KT1's non-enumerating public denial contract using the same central decider.
 if (kt1Enabled) app.UseMiddleware<Kt1AccessContractMiddleware>();
+// IDN-07 / ACC-05: Access answers a bad session with a generic 401. On the Identity module's own routes the stable
+// 401 session_invalid contract (cookie cleared, no-store) is decided first; other modules keep Access's response.
+app.UseWhen(IdentitySessionSubjectProvider.IsIdentityRoute, identity => identity.UseMiddleware<SessionCheckMiddleware>());
 app.UseAccessControl();
 
 

@@ -22,6 +22,15 @@ public sealed class IdentitySessionSubjectProvider(IAccessSubjectProvider inner,
         http.GetEndpoint()?.Metadata.GetMetadata<IAccessRequirementMetadata>()?.Action is { } action
         && IdentityAccessActions.SessionBound.Contains(action);
 
+    /// <summary>
+    /// IDN-07: a route of the Identity module itself (see <see cref="IdentityAccessActions.IdentityOwned"/>).
+    /// <c>SessionCheckMiddleware</c> runs ahead of Access for these, so a bad session gets the stable
+    /// <c>401 session_invalid</c> instead of Access's generic 401.
+    /// </summary>
+    public static bool IsIdentityRoute(HttpContext http) =>
+        http.GetEndpoint()?.Metadata.GetMetadata<IAccessRequirementMetadata>()?.Action is { } action
+        && IdentityAccessActions.IdentityOwned.Contains(action);
+
     public async ValueTask<SubjectRef?> GetSubjectAsync(
         HttpContext httpContext,
         CancellationToken cancellationToken = default)
