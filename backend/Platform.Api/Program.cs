@@ -110,7 +110,6 @@ builder.Services.AddIdentityRateLimiting(builder.Configuration);
 builder.Services.AddControllers();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddSingleton<IPrerequisiteRepository, InMemoryPrerequisiteRepository>();
 
 builder.Services.AddLaboratoriesPersistence(
 builder.Configuration.GetConnectionString("Laboratories"));
@@ -142,15 +141,18 @@ if (!string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("Author
 {
     builder.Services.AddLaboratoryPersistence(builder.Configuration);
     builder.Services.AddScoped<ILaboratoryRepository, PostgresLaboratoryRepository>();
+    builder.Services.AddScoped<IPrerequisiteRepository, LabPrerequisiteStoreAdapter>();
 }
 else if (builder.Environment.IsDevelopment())
 {
     builder.Services.AddSingleton<ILaboratoryRepository, InMemoryLaboratoryRepository>();
+    builder.Services.AddSingleton<IPrerequisiteRepository, InMemoryPrerequisiteRepository>();
 }
 else
 {
     // Keep unrelated API routes available, but never silently write laboratories to memory.
     builder.Services.AddSingleton<ILaboratoryRepository, UnavailableLaboratoryRepository>();
+    builder.Services.AddSingleton<IPrerequisiteRepository, UnavailablePrerequisiteRepository>();
 }
 
 // Kreiranje aplikacije

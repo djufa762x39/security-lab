@@ -5,6 +5,7 @@ using Platform.Access.Domain.Models;
 using Platform.Api.Interfaces.Identity;
 using Platform.Prerequisites.Contracts;
 using Platform.Prerequisites.Domain;
+using Platform.Prerequisites.Infrastructure;
 using Platform.Access.AspNet;
 
 namespace Platform.Api.Controllers;
@@ -45,10 +46,23 @@ public sealed class PrerequisitesController(
             return StatusCode(403, new { code = "forbidden" });
         }
 
-        var prerequisites = await repository.GetForLaboratoryAsync(
-            laboratoryId, cancellationToken);
 
-        return Ok(prerequisites.Select(p => p.RequiredLaboratoryId));
+        try
+        {
+            var prerequisites = await repository.GetForLaboratoryAsync(
+                laboratoryId, cancellationToken);
+
+            return Ok(prerequisites.Select(p => p.RequiredLaboratoryId));
+        }
+        catch (InvalidOperationException)
+            when (repository is UnavailablePrerequisiteRepository)
+        {
+            return StatusCode(503, new
+            {
+                code = "prerequisite_storage_unavailable"
+            });
+        }
+
     }
 
     [HttpPost]
@@ -87,8 +101,23 @@ public sealed class PrerequisitesController(
             return BadRequest(new { code = "invalid_prerequisite" });
         }
 
-        var result = await repository.AddAsync(
-            prerequisite, cancellationToken);
+
+        AddPrerequisiteResult result;
+
+        try
+        {
+            result = await repository.AddAsync(
+                prerequisite, cancellationToken);
+        }
+        catch (InvalidOperationException)
+            when (repository is UnavailablePrerequisiteRepository)
+        {
+            return StatusCode(503, new
+            {
+                code = "prerequisite_storage_unavailable"
+            });
+        }
+
 
         return result switch
         {
@@ -147,10 +176,26 @@ public sealed class PrerequisitesController(
 
             return NoContent();
         }
+
+
         catch (ArgumentException)
         {
-            return BadRequest(new { code = "invalid_prerequisite" });
+            return BadRequest(new
+            {
+                code = "invalid_prerequisite"
+            });
         }
+
+
+        catch (InvalidOperationException)
+            when (repository is UnavailablePrerequisiteRepository)
+        {
+            return StatusCode(503, new
+            {
+                code = "prerequisite_storage_unavailable"
+            });
+        }
+
     }
 
     public sealed record AddPrerequisiteRequest(Guid RequiredLaboratoryId);

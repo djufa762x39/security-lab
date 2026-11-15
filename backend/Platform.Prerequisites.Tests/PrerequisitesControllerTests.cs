@@ -83,6 +83,7 @@ public class PrerequisitesControllerTests
                 AccessDecision.Deny(
                     default,
                     request.CorrelationId));
+
         }
     }
     [Test]
@@ -136,4 +137,102 @@ public class PrerequisitesControllerTests
                 Platform.Access.Domain.Enums.AccountState.Active);
         }
     }
+
+
+    [Test]
+    public async Task Get_StorageUnavailable_Returns503()
+    {
+        var controller = CreateControllerWithUnavailableStorage();
+
+        var result = await controller.Get(
+            Guid.NewGuid(),
+            CancellationToken.None);
+
+        AssertStorageUnavailable(result);
+    }
+
+    [Test]
+    public async Task Add_StorageUnavailable_Returns503()
+    {
+        var controller = CreateControllerWithUnavailableStorage();
+
+        var result = await controller.Add(
+            Guid.NewGuid(),
+            new PrerequisitesController.AddPrerequisiteRequest(
+                Guid.NewGuid()),
+            CancellationToken.None);
+
+        AssertStorageUnavailable(result);
+    }
+
+    [Test]
+    public async Task Remove_StorageUnavailable_Returns503()
+    {
+        var controller = CreateControllerWithUnavailableStorage();
+
+        var result = await controller.Remove(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            CancellationToken.None);
+
+        AssertStorageUnavailable(result);
+    }
+
+    private static PrerequisitesController CreateControllerWithUnavailableStorage()
+    {
+        var controller = new PrerequisitesController(
+            new UnavailablePrerequisiteRepository(),
+            new AllowAccessDecision(),
+            new AuthenticatedSubjectResolver());
+
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext()
+        };
+
+        return controller;
+    }
+
+    private static void AssertStorageUnavailable(IActionResult result)
+    {
+        Assert.That(result, Is.TypeOf<ObjectResult>());
+
+        var response = (ObjectResult)result;
+
+        Assert.That(response.StatusCode, Is.EqualTo(503));
+    }
+
+    private sealed class AllowAccessDecision
+        : Platform.Access.Contracts.IAccessDecision
+    {
+        public ValueTask<AccessDecision> DecideAsync(
+            AccessRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult(
+                AccessDecision.Allow(
+                    "prerequisites-test-policy",
+                    request.CorrelationId));
+        }
+    }
+
+
+    [Test]
+    public async Task Remove_SelfPrerequisite_Returns400()
+    {
+        var controller = CreateControllerWithUnavailableStorage();
+        var laboratoryId = Guid.NewGuid();
+
+        var result = await controller.Remove(
+            laboratoryId,
+            laboratoryId,
+            CancellationToken.None);
+
+        Assert.That(result, Is.TypeOf<BadRequestObjectResult>());
+
+        var response = (BadRequestObjectResult)result;
+        Assert.That(response.StatusCode, Is.EqualTo(400));
+    }
+
+
 }
