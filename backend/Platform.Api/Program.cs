@@ -4,6 +4,7 @@ using Platform.Api.Security.AccessAudit;
 using Platform.Api.Security.AccessPolicies;
 using Platform.Api.Security.IdentityAccess;
 using Platform.Api.Modules.Kt1;
+using Platform.Api.Modules.Administration.Api;
 using Platform.Api.Modules.RevisionReviews;
 using Platform.Api.Modules.Laboratories.Application;
 using Platform.Api.Modules.Laboratories.Infrastructure;
@@ -166,6 +167,7 @@ else
 }
 
 // Kreiranje aplikacije
+var administrationEnabled = builder.Services.AddPersistentCourseAdministration(builder.Configuration);
 builder.Services.AddSingleton(new AccessConfigurationOptions
 {
     RequirePolicyCoverage = true,
@@ -185,22 +187,23 @@ if (kt1Enabled) builder.Services.AddKt1RequestIdentity();
 //AUT-06: register the resolver that identifies the caller from the validated session
 builder.Services.AddKeyedScoped<IRequestSubjectResolver, AuthoringSessionSubjectResolver>("AuthoringSession");
 AuthoringAccessSubjectProvider.Register(builder.Services);
+if (administrationEnabled) builder.Services.AddAdministrationRequestIdentity();
 
 var app = builder.Build();
 app.UseRouting();
 
 // AUD-01/AUD-04 (S-10): correlation ID za svaki zahtev; mora biti prvi middleware
 app.UseCorrelationContext();
+if (administrationEnabled) app.UseMiddleware<AdministrationResponseMiddleware>();
 // Preserve KT1's non-enumerating public denial contract using the same central decider.
 if (kt1Enabled) app.UseMiddleware<Kt1AccessContractMiddleware>();
-// IDN-07 / ACC-05: Access answers a bad session with a generic 401. On the Identity module's own routes the stable
-// 401 session_invalid contract (cookie cleared, no-store) is decided first; other modules keep Access's response.
+// IDN-07 / ACC-05: identity routes retain their stable invalid-session response.
 app.UseWhen(IdentitySessionSubjectProvider.IsIdentityRoute, identity => identity.UseMiddleware<SessionCheckMiddleware>());
-
-//AUT-06: Access needs the validated session to identify the Authoring caller
+// AUT-06: Authoring uses the validated session to identify the caller.
 app.UseWhen(AuthoringAccessSubjectProvider.AppliesTo, authoring => authoring.UseMiddleware<SessionCheckMiddleware>());
 
 app.UseAccessControl();
+if (administrationEnabled) app.UseMiddleware<AdministrationBodyLimitMiddleware>();
 
 
 // Identity Rate Limiting
@@ -265,9 +268,8 @@ app.MapGet("/api/health", () => Results.Ok(new
 .AllowAnonymous()   // IDN-02 SessionCheckMiddleware
 .RequireAccess(AccessActions.PublicInfoRead.Id);
 
-app.UseWhen(context => !AuthoringAccessSubjectProvider.AppliesTo(context), otherRoutes => otherRoutes.UseMiddleware<SessionCheckMiddleware>());
-
 app.MapControllers();
+if (administrationEnabled) app.MapPersistentCourseAdministration();
 app.MapLaboratories();
 app.MapCatalog(app.Configuration);
 app.MapTeam21Acc();
