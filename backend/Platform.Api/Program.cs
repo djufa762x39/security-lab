@@ -268,6 +268,12 @@ app.MapGet("/api/health", () => Results.Ok(new
 .AllowAnonymous()   // IDN-02 SessionCheckMiddleware
 .RequireAccess(AccessActions.PublicInfoRead.Id);
 
+// Downstream handlers read the validated session from HttpContext.Items.
+app.UseWhen(
+    context => !AuthoringAccessSubjectProvider.AppliesTo(context)
+                && !AdministrationRequestIdentity.AppliesTo(context),
+    otherRoutes => otherRoutes.UseMiddleware<SessionCheckMiddleware>());
+
 app.MapControllers();
 if (administrationEnabled) app.MapPersistentCourseAdministration();
 app.MapLaboratories();
