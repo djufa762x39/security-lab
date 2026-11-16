@@ -20,8 +20,15 @@ public sealed class CentralAccessAuditWriter(
             return;
         }
 
+        if (request.Subject is { } subject
+            && (!Guid.TryParse(subject.Id, out var userId) || userId == Guid.Empty))
+        {
+            LogAuditLost("invalid_subject_id", decision.CorrelationId);
+            return;
+        }
+
         var draft = mapper.CreateDraft(request, decision);
-        var context = mapper.CreateContext(request);
+        var context = mapper.CreateContext(request, decision);
 
         await using var scope = scopes.CreateAsyncScope();
         var writer = scope.ServiceProvider.GetRequiredService<ITrustedAuditWriter>();
@@ -29,9 +36,15 @@ public sealed class CentralAccessAuditWriter(
 
         if (!result.IsRecorded)
         {
-            logger.LogWarning(
-                "Access denial was not recorded: {Status} {RejectionCode}. CorrelationId: {CorrelationId}",
-                result.Status, result.RejectionCode, decision.CorrelationId);
+            LogAuditLost(result.Status.ToString(), decision.CorrelationId);
         }
     }
+
+    private void LogAuditLost(string status, string correlationId) =>
+        logger.LogError(
+            AccessAuditEventIds.Lost,
+            "Access denial audit was not saved. EventType: {EventType}, Status: {Status}, CorrelationId: {CorrelationId}",
+            AccessAuditEventIds.DeniedEventType,
+            status,
+            correlationId);
 }

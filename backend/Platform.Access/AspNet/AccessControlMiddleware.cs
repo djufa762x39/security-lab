@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using Platform.Access.Application.Options;
 using Platform.Access.Contracts;
 using Platform.Access.Domain.Models;
 using Platform.Access.Domain.Enums;
@@ -13,11 +14,17 @@ public sealed class AccessControlMiddleware
 
     private readonly RequestDelegate _next;
     private readonly ILogger<AccessControlMiddleware> _logger;
+    private readonly AccessDecisionOptions _options;
 
-    public AccessControlMiddleware(RequestDelegate next, ILogger<AccessControlMiddleware> logger)
+    public AccessControlMiddleware(
+        RequestDelegate next,
+        ILogger<AccessControlMiddleware> logger,
+        AccessDecisionOptions options)
     {
         _next = next;
         _logger = logger;
+        _options = options;
+        _options.Validate();
     }
 
     public async Task InvokeAsync(
@@ -53,7 +60,8 @@ public sealed class AccessControlMiddleware
             await AuditMiddlewareDenialAsync(
                 auditWriter,
                 new AccessRequest(null, requirement?.Action ?? string.Empty, null, correlationId),
-                AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId));
+                AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId),
+                context.RequestAborted);
             await AccessProblemDetailsWriter.WriteAsync(context, unauthenticated: false, correlationId);
             return;
         }
@@ -73,7 +81,8 @@ public sealed class AccessControlMiddleware
             await AuditMiddlewareDenialAsync(
                 auditWriter,
                 new AccessRequest(null, requirement.Action, null, correlationId),
-                AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId));
+                AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId),
+                context.RequestAborted);
             await AccessProblemDetailsWriter.WriteAsync(context, unauthenticated: false, correlationId);
             return;
         }
@@ -88,7 +97,8 @@ public sealed class AccessControlMiddleware
             await AuditMiddlewareDenialAsync(
                 auditWriter,
                 new AccessRequest(subject, requirement.Action, null, correlationId),
-                AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId));
+                AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId),
+                context.RequestAborted);
             await AccessProblemDetailsWriter.WriteAsync(context, unauthenticatedSubject, correlationId);
             return;
         }
@@ -107,7 +117,8 @@ public sealed class AccessControlMiddleware
                 await AuditMiddlewareDenialAsync(
                     auditWriter,
                     new AccessRequest(subject, requirement.Action, null, correlationId),
-                    AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId));
+                    AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId),
+                    context.RequestAborted);
                 await AccessProblemDetailsWriter.WriteAsync(context, unauthenticatedSubject, correlationId);
                 return;
             }
@@ -119,7 +130,8 @@ public sealed class AccessControlMiddleware
             await AuditMiddlewareDenialAsync(
                 auditWriter,
                 new AccessRequest(subject, requirement.Action, null, correlationId),
-                AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId));
+                AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId),
+                context.RequestAborted);
             await AccessProblemDetailsWriter.WriteAsync(context, unauthenticatedSubject, correlationId);
             return;
         }
@@ -143,7 +155,8 @@ public sealed class AccessControlMiddleware
             await AuditMiddlewareDenialAsync(
                 auditWriter,
                 new AccessRequest(subject, requirement.Action, resource, correlationId),
-                AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId));
+                AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId),
+                context.RequestAborted);
             await AccessProblemDetailsWriter.WriteAsync(context, unauthenticatedSubject, correlationId);
             return;
         }
@@ -159,7 +172,8 @@ public sealed class AccessControlMiddleware
                         AccessDenialReason.PolicyError,
                         correlationId,
                         decision?.PolicyVersion ?? "v0",
-                        decision?.PolicyId));
+                        decision?.PolicyId),
+                    context.RequestAborted);
             }
 
             var unauthenticated = unauthenticatedSubject
@@ -179,15 +193,45 @@ public sealed class AccessControlMiddleware
     private async Task AuditMiddlewareDenialAsync(
         IAccessAuditWriter auditWriter,
         AccessRequest request,
-        AccessDecision decision)
+        AccessDecision decision,
+        CancellationToken requestAborted)
     {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(requestAborted);
+        cts.CancelAfter(_options.AuditTimeout);
+
         try
         {
-            await auditWriter.WriteAsync(request, decision, CancellationToken.None);
+            var task = auditWriter.WriteAsync(request, decision, cts.Token).AsTask();
+            _ = task.ContinueWith(
+                static completed => _ = completed.Exception,
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+            await task.WaitAsync(_options.AuditTimeout, requestAborted);
         }
-        catch (Exception ex)
+        catch (OperationCanceledException) when (requestAborted.IsCancellationRequested)
         {
-            _logger.LogError(ex, "Authorization audit failed. CorrelationId: {CorrelationId}", decision.CorrelationId);
+            return;
         }
+        catch (TimeoutException)
+        {
+            LogAuditLost("timeout");
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            LogAuditLost("timeout");
+        }
+        catch (Exception)
+        {
+            LogAuditLost("failed");
+        }
+
+        void LogAuditLost(string status) =>
+            _logger.LogError(
+                AccessAuditEventIds.Lost,
+                "Access denial audit was not saved. EventType: {EventType}, Status: {Status}, CorrelationId: {CorrelationId}",
+                AccessAuditEventIds.DeniedEventType,
+                status,
+                decision.CorrelationId);
     }
 }

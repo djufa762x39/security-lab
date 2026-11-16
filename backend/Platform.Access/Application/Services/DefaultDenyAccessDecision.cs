@@ -137,11 +137,23 @@ public sealed class DefaultDenyAccessDecision : IAccessDecision
             ObserveFault(task);
             await task.WaitAsync(options.AuditTimeout).ConfigureAwait(false);
         }
-        catch (Exception exception)
+        catch (TimeoutException)
         {
-            this.logger.LogError(exception, "Authorization audit failed. CorrelationId: {CorrelationId}", decision.CorrelationId);
+            LogAuditLost("timeout", decision.CorrelationId);
+        }
+        catch (Exception)
+        {
+            LogAuditLost("failed", decision.CorrelationId);
         }
     }
+
+    private void LogAuditLost(string status, string correlationId) =>
+        logger.LogError(
+            AccessAuditEventIds.Lost,
+            "Access denial audit was not saved. EventType: {EventType}, Status: {Status}, CorrelationId: {CorrelationId}",
+            AccessAuditEventIds.DeniedEventType,
+            status,
+            correlationId);
 
     private static void ObserveFault(Task task) =>
         task.ContinueWith(

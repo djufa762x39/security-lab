@@ -32,7 +32,7 @@ public sealed class CentralAccessAuditWriterTests
     {
         public AuditEventDraft CreateDraft(AccessRequest request, AccessDecision decision) => Draft;
 
-        public AuditContext CreateContext(AccessRequest request) => Context;
+        public AuditContext CreateContext(AccessRequest request, AccessDecision decision) => Context;
     }
 
     private static (CentralAccessAuditWriter Writer, RecordingTrustedWriter Central) Create(AuditWriteResult? result = null)

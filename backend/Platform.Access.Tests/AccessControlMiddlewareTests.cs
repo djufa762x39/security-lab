@@ -6,8 +6,10 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using Platform.Access.AspNet;
+using Platform.Access.Application.Options;
 using Platform.Access.Contracts;
 using Platform.Access.Domain.Enums;
 using Platform.Access.Domain.Models;
@@ -18,6 +20,28 @@ namespace Platform.Access.Tests.AspNet;
 [Property("RequirementId", "ACC-05")]
 public class AccessControlMiddlewareTests
 {
+    private sealed record CapturedLog(LogLevel Level, EventId EventId, string Message);
+
+    private sealed class CaptureLoggerProvider(List<CapturedLog> entries) : ILoggerProvider
+    {
+        private sealed class CaptureLogger(List<CapturedLog> logs) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter) =>
+                logs.Add(new CapturedLog(logLevel, eventId, formatter(state, exception)));
+        }
+
+        public ILogger CreateLogger(string categoryName) => new CaptureLogger(entries);
+        public void Dispose() { }
+    }
+
     private sealed class FakeDecision : IAccessDecision
     {
         public Func<AccessRequest, CancellationToken, ValueTask<AccessDecision?>> Handler { get; set; } =
@@ -44,6 +68,8 @@ public class AccessControlMiddlewareTests
     private sealed class FakeAuditWriter : IAccessAuditWriter
     {
         public List<(AccessRequest Request, AccessDecision Decision)> Writes { get; } = new();
+        public TaskCompletionSource? PendingWrite { get; set; }
+        public TaskCompletionSource WriteStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public ValueTask WriteAsync(
             AccessRequest request,
@@ -51,13 +77,20 @@ public class AccessControlMiddlewareTests
             CancellationToken cancellationToken = default)
         {
             Writes.Add((request, decision));
-            return ValueTask.CompletedTask;
+            if (PendingWrite is null)
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            WriteStarted.TrySetResult();
+            return new ValueTask(PendingWrite.Task);
         }
     }
 
     private FakeDecision _decision = null!;
     private FakeSubjects _subjects = null!;
     private FakeAuditWriter _audit = null!;
+    private List<CapturedLog> _logs = null!;
     private int _handlerCalls;
     private WebApplication _app = null!;
     private HttpClient _client = null!;
@@ -71,10 +104,13 @@ public class AccessControlMiddlewareTests
         _decision = new FakeDecision();
         _subjects = new FakeSubjects();
         _audit = new FakeAuditWriter();
+        _logs = new List<CapturedLog>();
         _handlerCalls = 0;
 
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = Environments.Production });
         builder.WebHost.UseTestServer();
+        builder.Logging.AddProvider(new CaptureLoggerProvider(_logs));
+        builder.Services.AddSingleton(new AccessDecisionOptions { AuditTimeout = TimeSpan.FromMilliseconds(100) });
         builder.Services.AddSingleton<IAccessDecision>(_decision);
         builder.Services.AddSingleton<IAccessSubjectProvider>(_subjects);
         builder.Services.AddSingleton<IAccessAuditWriter>(_audit);
@@ -197,6 +233,30 @@ public class AccessControlMiddlewareTests
         Assert.That(res.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
         Assert.That(_handlerCalls, Is.Zero);
         Assert.That(_decision.Calls, Is.Empty);
+    }
+
+    [Test]
+    public async Task ACC05_Audit_writer_timeout_does_not_delay_403()
+    {
+        var pendingWrite = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _audit.PendingWrite = pendingWrite;
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+        try
+        {
+            var response = await _client.GetAsync("/forgotten").WaitAsync(TimeSpan.FromSeconds(2));
+
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
+            Assert.That(_audit.WriteStarted.Task.IsCompleted, Is.True);
+            Assert.That(stopwatch.Elapsed, Is.LessThan(TimeSpan.FromSeconds(2)));
+            var alarm = _logs.Single(log => log.EventId == AccessAuditEventIds.Lost);
+            Assert.That(alarm.Level, Is.EqualTo(LogLevel.Error));
+            Assert.That(alarm.Message, Does.Contain("Status: timeout"));
+        }
+        finally
+        {
+            pendingWrite.TrySetResult();
+        }
     }
 
     [Test]

@@ -10,7 +10,7 @@ public interface IAccessDeniedAuditMapper
 {
     AuditEventDraft CreateDraft(AccessRequest request, AccessDecision decision);
 
-    AuditContext CreateContext(AccessRequest request);
+    AuditContext CreateContext(AccessRequest request, AccessDecision decision);
 }
 
 public sealed partial class AccessDeniedAuditMapper : IAccessDeniedAuditMapper
@@ -53,15 +53,26 @@ public sealed partial class AccessDeniedAuditMapper : IAccessDeniedAuditMapper
             Details: details);
     }
 
-    public AuditContext CreateContext(AccessRequest request)
+    public AuditContext CreateContext(AccessRequest request, AccessDecision decision)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(decision);
 
-        var actor = Guid.TryParse(request.Subject?.Id, out var userId) && userId != Guid.Empty
-            ? AuditActor.ForUser(userId)
-            : AuditActor.Anonymous;
+        AuditActor actor;
+        if (request.Subject is null)
+        {
+            actor = AuditActor.Anonymous;
+        }
+        else if (Guid.TryParse(request.Subject.Id, out var userId) && userId != Guid.Empty)
+        {
+            actor = AuditActor.ForUser(userId);
+        }
+        else
+        {
+            throw new InvalidOperationException("A subject with an invalid user ID cannot be audited.");
+        }
 
-        return new AuditContext(actor, request.CorrelationId);
+        return new AuditContext(actor, decision.CorrelationId);
     }
 
     // A course resource id is already normalised to "D" format by the access middleware.

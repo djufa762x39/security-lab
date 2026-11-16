@@ -22,8 +22,9 @@ public sealed class AccessDeniedAuditMapperTests
     private static AccessDecision Denied(
         AccessDenialReason reason = AccessDenialReason.PolicyDenied,
         string? policyId = "course.role",
-        string policyVersion = "v1") =>
-        new(AccessOutcome.Deny, reason, policyId, policyVersion, "corr-1");
+        string policyVersion = "v1",
+        string correlationId = "corr-1") =>
+        new(AccessOutcome.Deny, reason, policyId, policyVersion, correlationId);
 
     [Test]
     public void Deny_BecomesAccessDeniedWithCatalogDetails()
@@ -108,22 +109,28 @@ public sealed class AccessDeniedAuditMapperTests
     }
 
     [Test]
-    public void GuidSubject_IsUserActorWithRequestCorrelation()
+    public void GuidSubject_IsUserActorWithDecisionCorrelation()
     {
-        var context = mapper.CreateContext(Request());
+        var decision = Denied(correlationId: "engine-correlation");
+        var context = mapper.CreateContext(Request(), decision);
 
         Assert.Multiple(() =>
         {
             Assert.That(context.Actor, Is.EqualTo(AuditActor.ForUser(Guid.Parse(UserId))));
-            Assert.That(context.CorrelationId, Is.EqualTo("corr-1"));
+            Assert.That(context.CorrelationId, Is.EqualTo("engine-correlation"));
         });
     }
 
     [TestCase(null)]
+    public void AnonymousSubject_IsAnonymous(string? subjectId)
+    {
+        Assert.That(mapper.CreateContext(Request(subjectId), Denied()).Actor, Is.EqualTo(AuditActor.Anonymous));
+    }
+
     [TestCase("user-1")]
     [TestCase("00000000-0000-0000-0000-000000000000")]
-    public void SubjectWithoutUserGuid_IsAnonymous(string? subjectId)
+    public void SubjectWithInvalidUserGuid_IsNotMappedToAnonymous(string subjectId)
     {
-        Assert.That(mapper.CreateContext(Request(subjectId)).Actor, Is.EqualTo(AuditActor.Anonymous));
+        Assert.Throws<InvalidOperationException>(() => mapper.CreateContext(Request(subjectId), Denied()));
     }
 }
