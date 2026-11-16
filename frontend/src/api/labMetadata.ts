@@ -140,6 +140,36 @@ export async function renameLabTitle(
         return { kind: 'error' }
     }
 }
+const DIFFICULTY_VALUES: Record<string, number> = {
+    Easy: 0,
+    Medium: 1,
+    Hard: 2,
+}
+
+const TYPE_VALUES: Record<string, number> = {
+    AccessControl: 0,
+    LogAnalysis: 1,
+    SecurityConfiguration: 2,
+    ThreatModeling: 3,
+    MfaAndSessions: 4,
+    ContextualAuthorization: 5,
+    IncidentResponse: 6,
+    IsolatedService: 7,
+}
+
+function enumNumber(
+    value: unknown,
+    values: Record<string, number>,
+): number | null {
+    if (
+        typeof value !== 'string' ||
+        !Object.prototype.hasOwnProperty.call(values, value)
+    ) {
+        return null
+    }
+
+    return values[value]
+}
 
 export async function loadLabMetadata(
     labId: string,
@@ -167,12 +197,15 @@ export async function loadLabMetadata(
 
         const data = body as Record<string, unknown>
         const { title, objective, difficulty, type, tags } = data
+        const difficultyNumber = enumNumber(difficulty, DIFFICULTY_VALUES)
+        const typeNumber = enumNumber(type, TYPE_VALUES)
+
 
         if (
             typeof title !== 'string' ||
             typeof objective !== 'string' ||
-            typeof difficulty !== 'number' ||
-            typeof type !== 'number' ||
+            difficultyNumber === null ||
+            typeNumber === null ||
             !Array.isArray(tags) ||
             !tags.every((tag): tag is string => typeof tag === 'string')
         ) {
@@ -181,7 +214,7 @@ export async function loadLabMetadata(
 
         return {
             kind: 'loaded',
-            metadata: { title, objective, difficulty, type, tags },
+            metadata: { title, objective, difficulty: difficultyNumber, type: typeNumber, tags, },
         }
     } catch {
         return { kind: 'error' }
