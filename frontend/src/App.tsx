@@ -13,6 +13,9 @@ import LoginPage from './login/page'
 import CoursesPage from './pages/CoursesPage'
 import RevisionDetailPage from './pages/RevisionDetailPage'
 import RevisionListPage from './pages/RevisionListPage'
+import AuthoringSection from './components/authoring/AuthoringSection'
+import LabVisibilitySection from './labs/LabVisibilitySection'
+
 import TeacherMetadataPage from './pages/TeacherMetadataPage'
 function LoginRoute() {
   const navigate = useNavigate()
@@ -87,10 +90,14 @@ export default function App() {
         <Route index element={<>
           <LandingPage />
           <HealthStatus />
-          {/* Komponente drugih timova sa main grane (ACC-04/ADM-08 i LAB-07) */}
+          
           <CourseworkKt1 />
           <LabsSection />
           <CoursesPage />
+          <LabVisibilitySection />
+          
+          <AuthoringSection />
+       
               </>} />
               <Route path="teacher/labs/new" element={<TeacherMetadataPage />} />
               <Route path="teacher/labs/:labId/edit" element={<TeacherMetadataPage />} />
