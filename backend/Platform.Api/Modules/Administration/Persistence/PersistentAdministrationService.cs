@@ -1,6 +1,7 @@
 using Npgsql;
 using Platform.Access.Contracts;
 using Platform.Api.Modules.Access;
+using Platform.Api.Modules.Administration.Integration;
 
 namespace Platform.Api.Modules.Administration.Persistence;
 
@@ -9,7 +10,8 @@ namespace Platform.Api.Modules.Administration.Persistence;
 /// and the shared Access decision engine. No sign-in or root-provisioning shortcut.
 /// </summary>
 public sealed class PersistentAdministrationService(string connectionString, IAccountReader accounts,
-    IAccessDecision decisions, TimeProvider clock, ILogger<PersistentAdministrationService> logger)
+    IAccessDecision decisions, TimeProvider clock, ILogger<PersistentAdministrationService> logger,
+    ITrustedCourseDirectory? courses = null)
 {
     public async Task<OperationResult> Execute(Guid? actor, Guid course, string action, string correlation,
         RenameCourseRequest? rename = null, DelegateRequest? delegation = null,
@@ -18,21 +20,25 @@ public sealed class PersistentAdministrationService(string connectionString, IAc
         ct.ThrowIfCancellationRequested();
         try
         {
+            if (courses is not null && await courses.FindAsync(course, ct) is not { Status: PortStatus.Ok, Value.Active: true })
+                return new(actor is null || actor == Guid.Empty ? 401 : 404);
             await using var session = await PostgresAdministrationSession.OpenAsync(connectionString, accounts, ct);
             var service = new AdministrationService(accounts, session, decisions, session, clock);
             var result = await service.Execute(actor, course, action, correlation, rename, delegation, grantId, revoke, ct);
             // A result is returned only AFTER both the change and its producer audit commit.
             ct.ThrowIfCancellationRequested();
-            if (validateSession is not null && !await validateSession(ct))
+            var sessionValid = validateSession is null || await validateSession(ct);
+            var courseValid = courses is null || await courses.FindAsync(course, ct) is { Status: PortStatus.Ok, Value.Active: true };
+            if (!sessionValid || !courseValid)
             {
                 await session.RollbackAsync(ct);
                 await session.DisposeAsync();
                 // Preserve the rejection after rolling back the attempted change and its success event.
                 await using var denied = await PostgresAdministrationSession.OpenAsync(connectionString, accounts, ct);
                 await denied.WriteAsync(new(clock.GetUtcNow(), correlation, actor, action, grantId ?? course, course,
-                    "DENY", "SESSION_INVALIDATED", "adm08:v1"), ct);
+                    "DENY", sessionValid ? "COURSE_UNAVAILABLE" : "SESSION_INVALIDATED", "adm08:v1"), ct);
                 await denied.CommitAsync(ct);
-                return new(401);
+                return new(sessionValid ? 404 : 401);
             }
             await session.CommitAsync(ct);
             return result;

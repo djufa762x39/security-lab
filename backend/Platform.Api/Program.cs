@@ -2,6 +2,7 @@ using Team21.Acc.Api;
 using Platform.Api.Security.RevisionAuthorization;
 using Platform.Api.Modules.Kt1;
 using Platform.Api.Modules.Administration.Api;
+using Platform.Api.Modules.Access.Api;
 using Platform.Api.Modules.RevisionReviews;
 using Platform.Api.Modules.Laboratories.Application;
 using Platform.Api.Modules.Laboratories.Infrastructure;
@@ -54,6 +55,7 @@ if (builder.Environment.IsDevelopment())
 // Access module
 
 var administrationEnabled = builder.Services.AddPersistentCourseAdministration(builder.Configuration);
+var attemptsEnabled = builder.Services.AddRuntimeAttempts(builder.Configuration);
 builder.Services.AddAccessControl();
 builder.Services.AddAccessAspNet();
 builder.Services.AddRevisionAuthorization();
@@ -140,7 +142,8 @@ else
 
 // Kreiranje aplikacije
 builder.Services.AddRevisionRequestIdentity();
-if (administrationEnabled) builder.Services.AddAdministrationRequestIdentity();
+if (administrationEnabled || attemptsEnabled) builder.Services.AddAdministrationRequestIdentity();
+if (attemptsEnabled) builder.Services.AddAttemptResourceResolution();
 
 //AUT-06: register the resolver that identifies the caller from the validated session
 builder.Services.AddKeyedScoped<IRequestSubjectResolver, AuthoringSessionSubjectResolver>("AuthoringSession");
@@ -152,9 +155,9 @@ app.Services.RegisterRevisionPolicies();
 
 // AUD-01/AUD-04 (S-10): correlation ID za svaki zahtev; mora biti prvi middleware
 app.UseCorrelationContext();
-if (administrationEnabled) app.UseMiddleware<AdministrationResponseMiddleware>();
+if (administrationEnabled || attemptsEnabled) app.UseMiddleware<AdministrationResponseMiddleware>();
 app.UseAccessControl();
-if (administrationEnabled) app.UseMiddleware<AdministrationBodyLimitMiddleware>();
+if (administrationEnabled || attemptsEnabled) app.UseMiddleware<AdministrationBodyLimitMiddleware>();
 
 
 // Identity Rate Limiting
@@ -227,6 +230,7 @@ app.UseMiddleware<SessionCheckMiddleware>();
 
 app.MapControllers();
 if (administrationEnabled) app.MapPersistentCourseAdministration();
+if (attemptsEnabled) app.MapRuntimeAttempts();
 app.MapLaboratories();
 app.MapCatalog(app.Configuration);
 app.MapTeam21Acc();
