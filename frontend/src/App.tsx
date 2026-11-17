@@ -13,10 +13,16 @@ import LoginPage from './login/page'
 import CoursesPage from './pages/CoursesPage'
 import RevisionDetailPage from './pages/RevisionDetailPage'
 import RevisionListPage from './pages/RevisionListPage'
+<<<<<<< HEAD
 import AuthoringSection from './components/authoring/AuthoringSection'
 import LabVisibilitySection from './labs/LabVisibilitySection'
 
 import TeacherMetadataPage from './pages/TeacherMetadataPage'
+=======
+import TeacherMetadataPage from './pages/TeacherMetadataPage'
+import LabVisibilitySection from './labs/LabVisibilitySection'
+
+>>>>>>> origin/feature/LAB-02-teacher-form
 function LoginRoute() {
   const navigate = useNavigate()
   const { refreshUser } = useAuth()
@@ -95,12 +101,18 @@ export default function App() {
           <LabsSection />
           <CoursesPage />
           <LabVisibilitySection />
+<<<<<<< HEAD
           
           <AuthoringSection />
        
               </>} />
               <Route path="teacher/labs/new" element={<TeacherMetadataPage />} />
               <Route path="teacher/labs/:labId/edit" element={<TeacherMetadataPage />} />
+=======
+        </>} />
+        <Route path="teacher/labs/new" element={<TeacherMetadataPage />} />
+        <Route path="teacher/labs/:labId/edit" element={<TeacherMetadataPage />} />
+>>>>>>> origin/feature/LAB-02-teacher-form
         <Route path="login" element={<LoginRoute />} />
         <Route element={<ProtectedRoute />}>
           <Route path="access-demo" element={<><ProtectedApp /><RevisionsSection /></>} />
