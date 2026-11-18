@@ -1,3 +1,5 @@
+namespace Platform.Identity.Entities;
+
 /// <summary>
 /// IDN-08: one external OIDC identity (issuer + subject) linked to exactly one internal account.
 /// The pair (Issuer, Subject) is unique, so a repeated identity always maps to the same account.

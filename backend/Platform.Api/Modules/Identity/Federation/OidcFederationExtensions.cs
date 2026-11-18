@@ -64,7 +64,8 @@ public static class OidcFederationExtensions
                 oidc.Events = new OpenIdConnectEvents
                 {
                     OnTicketReceived = CompleteLoginAsync,
-                    OnRemoteFailure = HandleRemoteFailureAsync
+                    OnRemoteFailure = HandleRemoteFailureAsync,
+                    OnAccessDenied = HandleAccessDeniedAsync
                 };
             });
 
@@ -87,12 +88,45 @@ public static class OidcFederationExtensions
             // Same cookie as password login (IDN-02); the token never appears in a URL or body.
             http.Response.Cookies.Append(
                 SessionCookie.Name, result.Session!.Token, SessionCookie.Options(result.Session.ExpiresAt));
-            http.Response.Redirect(settings.SuccessRedirect);
+            http.Response.Redirect(GetRedirectUrl(http, settings.SuccessRedirect));
             return;
         }
 
-        http.Response.Redirect(settings.FailureRedirect);
+        http.Response.Redirect(GetRedirectUrl(http, settings.FailureRedirect));
     }
+
+
+    private static async Task HandleAccessDeniedAsync(AccessDeniedContext context)
+    {
+        context.HandleResponse();
+
+        var http = context.HttpContext;
+        var settings = http.RequestServices
+            .GetRequiredService<IOptions<OidcFederationOptions>>()
+            .Value;
+
+        var audit = http.RequestServices
+            .GetRequiredService<IdentityAuditProducer>();
+
+        var logger = http.RequestServices
+            .GetRequiredService<ILoggerFactory>()
+            .CreateLogger("Platform.Api.Identity.Oidc");
+
+        logger.LogWarning(
+            "OIDC authorization was denied by the identity provider");
+
+        await audit.LoginFailedAsync(
+            "oidc_access_denied",
+            http.TraceIdentifier,
+            null,
+            CancellationToken.None);
+
+        http.Response.Headers.CacheControl = "no-store";
+
+        http.Response.Redirect(
+            GetRedirectUrl(http, settings.FailureRedirect));
+    }
+
 
     private static async Task HandleRemoteFailureAsync(RemoteFailureContext context)
     {
@@ -109,6 +143,15 @@ public static class OidcFederationExtensions
         await audit.LoginFailedAsync("oidc_remote_failure", http.TraceIdentifier, null, CancellationToken.None);
 
         http.Response.Headers.CacheControl = "no-store";
-        http.Response.Redirect(settings.FailureRedirect);
+        http.Response.Redirect(GetRedirectUrl(http, settings.FailureRedirect));
+    }
+    private static string GetRedirectUrl(HttpContext http, string path)
+    {
+        var environment = http.RequestServices
+            .GetRequiredService<IHostEnvironment>();
+
+        return environment.IsDevelopment()
+            ? "http://localhost:5173" + path
+            : path;
     }
 }
