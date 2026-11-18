@@ -1,6 +1,7 @@
 using Team21.Acc.Api;
 using Platform.Api.Security.RevisionAuthorization;
 using Platform.Api.Modules.Kt1;
+using Platform.Api.Modules.Competencies;
 using Platform.Api.Modules.Administration.Api;
 using Platform.Api.Modules.Access.Api;
 using Platform.Api.Modules.RevisionReviews;
@@ -25,6 +26,7 @@ using Platform.Api.Services.Audit;
 using Platform.Audit.Application;
 using Platform.Audit.Composition;
 using Platform.Authoring.Composition;
+using Platform.Competencies.Composition;
 using Platform.Identity;
 using Platform.Identity.Entities;
 using Platform.Identity.Persistence;
@@ -92,6 +94,16 @@ else
 
 builder.Services.AddAudit(builder.Configuration);
 builder.Services.AddScoped<IAuditContextProvider, ServerAuditContextProvider>();
+
+// PRG-04 uses its own schema, but can share the already configured PostgreSQL server.
+// A dedicated Competencies connection takes precedence when deployment supplies one.
+var competenciesConnectionString = builder.Configuration.GetConnectionString("Competencies");
+if (string.IsNullOrWhiteSpace(competenciesConnectionString))
+    competenciesConnectionString = builder.Configuration.GetConnectionString("Laboratories");
+
+if (!string.IsNullOrWhiteSpace(competenciesConnectionString))
+    builder.Services.AddCompetencyPersistence(competenciesConnectionString);
+
 builder.Services.AddAuthoring();
 builder.Services.AddLabVisibility();
 builder.Services.AddIdentityRateLimiting(builder.Configuration);
@@ -142,6 +154,7 @@ else
 
 // Kreiranje aplikacije
 builder.Services.AddRevisionRequestIdentity();
+builder.Services.AddPrg04CompetencyOperations();
 if (administrationEnabled || attemptsEnabled) builder.Services.AddAdministrationRequestIdentity();
 if (attemptsEnabled) builder.Services.AddAttemptResourceResolution();
 
@@ -232,6 +245,7 @@ app.MapControllers();
 if (administrationEnabled) app.MapPersistentCourseAdministration();
 if (attemptsEnabled) app.MapRuntimeAttempts();
 app.MapLaboratories();
+app.MapCompetencyEndpoints();
 app.MapCatalog(app.Configuration);
 app.MapTeam21Acc();
 app.MapRevisionReviews();
