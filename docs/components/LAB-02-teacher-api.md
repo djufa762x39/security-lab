@@ -24,6 +24,14 @@ treba usaglasiti povezivanje sa trajnim skladistem. Njegove migracije i bazu
 ovaj deo ne implementira. Za uspesan pristup potrebni su i podaci o clanstvu
 nastavnika i vezi laboratorije sa kursom, koje koristi Access modul.
 
+Metadata rute se mapiraju samo kada je `ILaboratoryMetadataRepository`
+registrovan u DI-ju. Bez adaptera (trenutno Production i Testing) POST i PATCH
+nisu dostupni i vracaju `404`, umesto greske `500` zbog nerazresenog servisa.
+Ovo nije tvrdnja da je trajno cuvanje implementirano. Buduci adapter mora da
+implementira atomski `TryAddAsync`: postojeci zapis se ne prepisuje, a neuspesno
+kreiranje vraca `false`. U bazi je potrebna odgovarajuca jedinstvenost i atomski
+upis. Trenutni Development stub koristi `ConcurrentDictionary.TryAdd`.
+
 ## Rute i zahtevi
 
 Obe rute primaju `Content-Type: application/json`. `{id}` je GUID postojece
@@ -173,7 +181,7 @@ ucesce na sastanku ili pregled zajednickog PR-a za dijagrame.
 Iz korena repozitorijuma:
 
 ```powershell
-dotnet test backend/Laboratories.Tests/Laboratories.Tests.csproj --configuration Release --filter FullyQualifiedName~LaboratoryMetadataApiTests
+dotnet test backend/Laboratories.Tests/Laboratories.Tests.csproj --configuration Release --filter FullyQualifiedName~LaboratoryMetadata
 ```
 
 | Test | Dokaz |
@@ -182,9 +190,13 @@ dotnet test backend/Laboratories.Tests/Laboratories.Tests.csproj --configuration
 | `CourseTeacher_CanUpdateLaboratoryMetadata` | PATCH vraca `200` i cilj je izmenjen |
 | `Student_CannotUpdateLaboratoryMetadata` | PATCH vraca `403` |
 | `TeacherOfAnotherCourse_CannotUpdateLaboratoryMetadata` | PATCH vraca `403` |
+| `WithoutStorage_MetadataRoutesAreNotExposed` | Production/Testing, POST/PATCH: stvarni host pokrece DI validaciju, ruta nije mapirana i zahtev vraca `404` (4 slucaja) |
+| `ConcurrentPosts_CreateExactlyOneRecord_AndReturnConflictForTheOther` | Dva zahteva se susrecu pre upisa; jedan dobija `201`, drugi `409`, sacuvan je odgovor pobednika |
 
-Poslednja lokalna provera: 8. 11. 2026, commit `3906b0c`: sva cetiri testa
-prolaze. To je provera ovog API-ja, ne potvrda prolaska celog CI-ja.
+Lokalna provera 18. 11. 2026, nakon uskladjivanja sa `main` (`b43cdd0`):
+svih 9 LAB-02 testova prolazi. Ceo `Laboratories.Tests` paket: 343 prosla,
+0 neuspesnih, 0 preskocenih; `ApiEndpointCoverageTests`: 2 prosla.
+Ovo nisu rezultati novog GitHub CI-ja; on se proverava nakon slanja izmena.
 
 Redosled demonstracije:
 

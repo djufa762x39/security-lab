@@ -19,6 +19,13 @@ public static class LaboratoryMetadataEndpoints
     {
         ArgumentNullException.ThrowIfNull(app);
 
+        // Do not expose handlers with an unresolved storage dependency.
+        // The in-memory adapter is Development-only; other environments need
+        // an explicitly registered adapter before these routes are available.
+        if (!app.ServiceProvider.GetRequiredService<IServiceProviderIsService>()
+            .IsService(typeof(ILaboratoryMetadataRepository)))
+            return app;
+
         app.MapPost(
             $"{BasePath}/{{id:guid}}/metadata",
             async (
@@ -99,17 +106,7 @@ public static class LaboratoryMetadataEndpoints
                 if (!validation.IsValid)
                     return Results.ValidationProblem(validation.Errors);
 
-                // 6. Provera da metapodaci vec ne postoje
-                var existing = await metadataRepository
-                    .GetByLaboratoryIdAsync(id, cancellationToken);
-
-                if (existing is not null)
-                    return Results.Conflict(new
-                    {
-                        error = "Laboratory metadata already exists."
-                    });
-
-                // 7. Kreiranje i cuvanje metapodataka
+                // Kreiranje mora biti atomsko i pri paralelnim POST zahtevima.
                 var metadata = new LaboratoryMetadata(
                     id,
                     request.Objective!,
@@ -117,9 +114,11 @@ public static class LaboratoryMetadataEndpoints
                     request.Type,
                     request.Tags!);
 
-                await metadataRepository.SaveAsync(
-                    metadata,
-                    cancellationToken);
+                if (!await metadataRepository.TryAddAsync(metadata, cancellationToken))
+                    return Results.Conflict(new
+                    {
+                        error = "Laboratory metadata already exists."
+                    });
 
                 // 8. Uspesan odgovor
                 var response = new LaboratoryMetadataResponse(

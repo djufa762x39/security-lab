@@ -9,6 +9,15 @@ public sealed class InMemoryLaboratoryMetadataRepository
     private readonly ConcurrentDictionary<Guid, LaboratoryMetadata>
         metadata = new();
 
+    public Task<bool> TryAddAsync(
+        LaboratoryMetadata laboratoryMetadata,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(laboratoryMetadata);
+        return Task.FromResult(metadata.TryAdd(laboratoryMetadata.LaboratoryId, laboratoryMetadata));
+    }
+
     public Task<LaboratoryMetadata?> GetByLaboratoryIdAsync(
         Guid laboratoryId,
         CancellationToken cancellationToken = default)

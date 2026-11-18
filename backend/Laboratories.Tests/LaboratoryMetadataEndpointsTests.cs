@@ -106,7 +106,8 @@ internal static class MetadataTestData
 
 internal static class MetadataTestHost
 {
-    public static WebApplicationFactory<Program> Create()
+    public static WebApplicationFactory<Program> Create(
+        Action<IServiceCollection>? configureServices = null)
     {
         return new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
@@ -130,6 +131,8 @@ internal static class MetadataTestHost
                     services.AddSingleton<InMemoryResourceDescriptorResolver>();
                     services.AddSingleton<IResourceDescriptorResolver>(sp =>
                         sp.GetRequiredService<InMemoryResourceDescriptorResolver>());
+
+                    configureServices?.Invoke(services);
 
                 });
             });
