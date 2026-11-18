@@ -18,10 +18,21 @@ public sealed class PersistentAdministrationService(string connectionString, IAc
         Guid? grantId = null, RevokeRequest? revoke = null, CancellationToken ct = default, Func<CancellationToken, Task<bool>>? validateSession = null)
     {
         ct.ThrowIfCancellationRequested();
+        var unavailableStatus = actor is null || actor == Guid.Empty ? 401 : 404;
+
+        async Task<OperationResult> RecordDenialAsync(int status, string reason)
+        {
+            await using var denied = await PostgresAdministrationSession.OpenAsync(connectionString, accounts, ct);
+            await denied.WriteAsync(new(clock.GetUtcNow(), correlation, actor == Guid.Empty ? null : actor, action,
+                grantId ?? course, course, "DENY", reason, "adm08:v1"), ct);
+            await denied.CommitAsync(ct);
+            return new(status);
+        }
+
         try
         {
             if (courses is not null && await courses.FindAsync(course, ct) is not { Status: PortStatus.Ok, Value.Active: true })
-                return new(actor is null || actor == Guid.Empty ? 401 : 404);
+                return await RecordDenialAsync(unavailableStatus, "COURSE_UNAVAILABLE");
             await using var session = await PostgresAdministrationSession.OpenAsync(connectionString, accounts, ct);
             var service = new AdministrationService(accounts, session, decisions, session, clock);
             var result = await service.Execute(actor, course, action, correlation, rename, delegation, grantId, revoke, ct);
@@ -34,11 +45,8 @@ public sealed class PersistentAdministrationService(string connectionString, IAc
                 await session.RollbackAsync(ct);
                 await session.DisposeAsync();
                 // Preserve the rejection after rolling back the attempted change and its success event.
-                await using var denied = await PostgresAdministrationSession.OpenAsync(connectionString, accounts, ct);
-                await denied.WriteAsync(new(clock.GetUtcNow(), correlation, actor, action, grantId ?? course, course,
-                    "DENY", sessionValid ? "COURSE_UNAVAILABLE" : "SESSION_INVALIDATED", "adm08:v1"), ct);
-                await denied.CommitAsync(ct);
-                return new(sessionValid ? 404 : 401);
+                return await RecordDenialAsync(sessionValid ? 404 : 401,
+                    sessionValid ? "COURSE_UNAVAILABLE" : "SESSION_INVALIDATED");
             }
             await session.CommitAsync(ct);
             return result;
@@ -48,7 +56,7 @@ public sealed class PersistentAdministrationService(string connectionString, IAc
         {
             // No exception text/connection string, user input, answer or credential in logs.
             logger.LogWarning("ADM-08 transaction unavailable. CorrelationId: {CorrelationId}", correlation);
-            return new(actor is null || actor == Guid.Empty ? 401 : 404);
+            return new(unavailableStatus);
         }
     }
 }

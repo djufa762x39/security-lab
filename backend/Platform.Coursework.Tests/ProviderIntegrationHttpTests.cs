@@ -99,6 +99,48 @@ public sealed partial class AdministrationHttpTests
         Assert.That((await replay.PutAsJsonAsync(Path()+"/settings",new RenameCourseRequest("no",1))).StatusCode,Is.EqualTo(HttpStatusCode.NotFound));
     }
 
+    [TestCase(false, TestName = "ArchivedCourseAtPreflightCommitsDenialWithoutChangingSettings")]
+    [TestCase(true, TestName = "UnavailableCatalogAtPreflightCommitsDenialWithoutChangingSettings")]
+    public async Task CatalogFailureAtPreflightCommitsDenialWithoutChangingSettings(bool catalogUnavailable)
+    {
+        var (root, _) = await Login(DemoStore.Admin);
+        var allowed = 0;
+        factory.AfterAllow = async request =>
+        {
+            // Let the real middleware decision pass, then change the catalog before Execute.
+            if (request.Action != AdministrationPolicy.Rename || ++allowed != 1) return;
+            if (catalogUnavailable)
+            {
+                await Sql("ALTER TABLE courses.\"Courses\" RENAME TO unavailable_courses");
+                return;
+            }
+            await using var catalog = CoursesDb();
+            var course = await catalog.Courses.SingleAsync(c => c.Id == DemoStore.Course);
+            course.Archive(DemoStore.Admin);
+            await catalog.SaveChangesAsync();
+        };
+
+        using var response = await root.PutAsJsonAsync(Path() + "/settings", new RenameCourseRequest("must not be stored", 1));
+        Assert.That(allowed, Is.EqualTo(1));
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
+        Assert.That(await response.Content.ReadAsStringAsync(), Is.EqualTo("""{"code":"RESOURCE_UNAVAILABLE"}"""));
+        Assert.That(response.Headers.CacheControl?.NoStore, Is.True);
+        var correlation = response.Headers.GetValues("X-Correlation-ID").Single();
+        Assert.That(await Sql("SELECT count(*) FROM coursework_admin.outbox"), Is.EqualTo(1L));
+        Assert.That(await Sql("""
+            SELECT count(*) FROM coursework_admin.outbox
+            WHERE correlation_id = @correlation AND actor_id = @actor AND action = @action
+              AND target_id = @course AND course_id = @course AND outcome = 'DENY'
+              AND reason = 'COURSE_UNAVAILABLE' AND policy_version = 'adm08:v1'
+              AND version_before IS NULL AND version_after IS NULL
+            """, ("correlation", correlation), ("actor", DemoStore.Admin), ("action", AdministrationPolicy.Rename),
+            ("course", DemoStore.Course)), Is.EqualTo(1L));
+        Assert.That(await Sql("""
+            SELECT count(*) FROM coursework_admin.course_settings
+            WHERE course_id = @course AND administrative_label = 'Administrative label A' AND version = 1
+            """, ("course", DemoStore.Course)), Is.EqualTo(1L));
+    }
+
     [Test]
     public async Task CourseArchivedDuringMutationRollsBackBeforeCommit()
     {
@@ -108,6 +150,7 @@ public sealed partial class AdministrationHttpTests
         Assert.That((await root.PutAsJsonAsync(Path()+"/settings",new RenameCourseRequest("no",1))).StatusCode,Is.EqualTo(HttpStatusCode.NotFound));
         Assert.That(await Sql("SELECT version FROM coursework_admin.course_settings WHERE course_id=@id",("id",DemoStore.Course)),Is.EqualTo(1));
         Assert.That(await Sql("SELECT count(*) FROM coursework_admin.outbox WHERE outcome='ALLOW'"),Is.Zero);
+        Assert.That(await Sql("SELECT count(*) FROM coursework_admin.outbox WHERE outcome='DENY' AND reason='COURSE_UNAVAILABLE'"),Is.EqualTo(1L));
     }
 
     private async Task<AuditRelayResult> Relay()
