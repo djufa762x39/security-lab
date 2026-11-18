@@ -197,8 +197,10 @@ app.UseCorrelationContext();
 if (administrationEnabled) app.UseMiddleware<AdministrationResponseMiddleware>();
 // Preserve KT1's non-enumerating public denial contract using the same central decider.
 if (kt1Enabled) app.UseMiddleware<Kt1AccessContractMiddleware>();
-// IDN-07 / ACC-05: identity routes retain their stable invalid-session response.
-app.UseWhen(IdentitySessionSubjectProvider.IsIdentityRoute, identity => identity.UseMiddleware<SessionCheckMiddleware>());
+// Identity and catalog routes retain their invalid-session response before ACC-05 checks access.
+app.UseWhen(
+    context => IdentitySessionSubjectProvider.IsIdentityRoute(context) || CatalogModule.RequiresSession(context),
+    routes => routes.UseMiddleware<SessionCheckMiddleware>());
 // AUT-06: Authoring uses the validated session to identify the caller.
 app.UseWhen(AuthoringAccessSubjectProvider.AppliesTo, authoring => authoring.UseMiddleware<SessionCheckMiddleware>());
 

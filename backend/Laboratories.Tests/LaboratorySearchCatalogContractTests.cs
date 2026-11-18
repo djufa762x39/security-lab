@@ -106,6 +106,64 @@ public sealed class LaboratorySearchCatalogContractTests
             Is.EqualTo(matching));
     }
 
+    [TestCase(null)]
+    [TestCase("invalid-session")]
+    public async Task Catalog_RejectsDevelopmentHeaderWithoutValidSession(string? sessionToken)
+    {
+        using var factory = new CatalogContractFactory();
+        using var client = factory.CreateClient();
+        Guid labId = await factory.SeedAsync("Session protected", LaboratoryDifficulty.Easy,
+            LaboratoryType.LogAnalysis, ["security"]);
+
+        foreach (string path in new[] { "/api/catalog/", "/api/catalog/" + labId })
+        {
+            using var request = CatalogRequest(path, sessionToken);
+            request.Headers.Add("X-Test-User", Teacher + ":Teacher");
+            using var response = await client.SendAsync(request);
+
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized), path);
+        }
+    }
+
+    [Test]
+    public async Task Catalog_ValidSessionPreservesVisibilityAndHiddenDetail404()
+    {
+        using var factory = new CatalogContractFactory();
+        using var client = factory.CreateClient();
+        Guid visible = await factory.SeedAsync("Visible draft", LaboratoryDifficulty.Easy,
+            LaboratoryType.LogAnalysis, ["security"]);
+        Guid hidden = await factory.SeedAsync("Other course", LaboratoryDifficulty.Easy,
+            LaboratoryType.LogAnalysis, ["security"], Guid.NewGuid());
+
+        using var listRequest = CatalogRequest("/api/catalog/");
+        using var listResponse = await client.SendAsync(listRequest);
+        Assert.That(listResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        var catalog = (await listResponse.Content.ReadFromJsonAsync<CatalogLaboratoryResponse[]>())!;
+        Assert.That(catalog.Select(item => item.Id), Is.EqualTo(new[] { visible }));
+
+        using var detailRequest = CatalogRequest("/api/catalog/" + visible);
+        using var detailResponse = await client.SendAsync(detailRequest);
+        Assert.That(detailResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That((await detailResponse.Content.ReadFromJsonAsync<CatalogLaboratoryResponse>())!.Id,
+            Is.EqualTo(visible));
+
+        foreach (Guid id in new[] { hidden, Guid.NewGuid() })
+        {
+            using var request = CatalogRequest("/api/catalog/" + id);
+            using var response = await client.SendAsync(request);
+
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
+        }
+    }
+
+    private static HttpRequestMessage CatalogRequest(string path, string? sessionToken = Teacher)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, path);
+        if (sessionToken is not null)
+            request.Headers.Add("Cookie", SessionCookie.Name + "=" + sessionToken);
+        return request;
+    }
+
     private static HttpRequestMessage Request(string path)
     {
         var request = new HttpRequestMessage(HttpMethod.Get, path);
@@ -122,12 +180,12 @@ public sealed class LaboratorySearchCatalogContractTests
         private readonly InMemoryLabPublicContentReader content = new();
 
         public async Task<Guid> SeedAsync(string title, LaboratoryDifficulty difficulty,
-            LaboratoryType type, string[] tags)
+            LaboratoryType type, string[] tags, Guid? courseId = null)
         {
-            var lab = new Laboratory(Course, title, Guid.Parse(Teacher));
+            var lab = new Laboratory(courseId ?? Course, title, Guid.Parse(Teacher));
             await repository.AddAsync(lab);
             await metadata.SaveAsync(new(lab.Id, "Shared LAB-02 objective", difficulty, type, tags));
-            content.Save(LabPublicContent.Create(lab.Id, Course, Guid.Parse(Teacher),
+            content.Save(LabPublicContent.Create(lab.Id, lab.CourseId, Guid.Parse(Teacher),
                 LabVisibilityState.Draft, title, "Shared LAB-02 objective", []));
             return lab.Id;
         }

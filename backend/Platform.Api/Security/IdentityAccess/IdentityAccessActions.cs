@@ -1,3 +1,4 @@
+using Platform.Api.Modules.Laboratories.Application;
 using Platform.LabVisibility.Contracts;
 
 namespace Platform.Api.Security.IdentityAccess;
@@ -46,5 +47,6 @@ public static class IdentityAccessActions
             SessionRevoke,
             // #185: /student-view i /preview (tim 6) dobijaju subjekat iz prave sesije, ne iz razvojnog zaglavlja.
             LabVisibilityActions.Entry,
+            CatalogReadPolicy.ActionId,
         };
 }
