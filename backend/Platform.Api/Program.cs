@@ -122,6 +122,8 @@ builder.Services.AddSingleton<IAdminDirectory, ConfigAdminDirectory>();
 builder.Services.AddSingleton<IdentityAccessDecision, AdminOnlyAccessDecision>();
 builder.Services.AddScoped<ChangeAccountStatus>();
 builder.Services.AddScoped<ILoginService, LoginService>();
+// IDN-08: login via an external OIDC identity
+builder.Services.AddScoped<IFederatedLoginService, FederatedLoginService>();
 builder.Services.AddScoped<ILogoutService, LogoutService>();
 builder.Services.AddScoped<ISessionCreator, StoreSessionCreator>();
 builder.Services.AddScoped<IdentityAuditProducer>();
