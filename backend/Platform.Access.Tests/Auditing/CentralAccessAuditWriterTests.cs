@@ -28,6 +28,31 @@ public sealed class CentralAccessAuditWriterTests
         }
     }
 
+    private sealed class CancellationAwareTrustedWriter : ITrustedAuditWriter
+    {
+        public TaskCompletionSource WriteStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource CancellationObserved { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async ValueTask<AuditWriteResult> WriteAsync(
+            AuditEventDraft draft,
+            AuditContext context,
+            CancellationToken cancellationToken = default)
+        {
+            WriteStarted.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                CancellationObserved.TrySetResult();
+                throw;
+            }
+
+            return AuditWriteResult.Recorded(Guid.NewGuid());
+        }
+    }
+
     private sealed class FixedMapper : IAccessDeniedAuditMapper
     {
         public AuditEventDraft CreateDraft(AccessRequest request, AccessDecision decision) => Draft;
@@ -62,6 +87,26 @@ public sealed class CentralAccessAuditWriterTests
         await writer.WriteAsync(Request(), Denied());
 
         Assert.That(central.Writes.Single(), Is.EqualTo((Draft, Context)));
+    }
+
+    [Test]
+    public async Task CancellationToken_ReachesTrustedAuditWriteOperation()
+    {
+        var central = new CancellationAwareTrustedWriter();
+        await using var provider = new ServiceCollection()
+            .AddScoped<ITrustedAuditWriter>(_ => central)
+            .BuildServiceProvider();
+        var writer = new CentralAccessAuditWriter(
+            new FixedMapper(),
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<CentralAccessAuditWriter>.Instance);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+
+        var write = writer.WriteAsync(Request(), Denied(), timeout.Token).AsTask();
+
+        await central.WriteStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.CatchAsync<OperationCanceledException>(async () => await write);
+        await central.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(1));
     }
 
     [Test]

@@ -14,6 +14,29 @@ public class DefaultDenyEngineTests
 {
     private static readonly string LabRead = AccessActions.LabRead.Id;
 
+    private sealed class CancellationAwareAuditWriter : IAccessAuditWriter
+    {
+        public TaskCompletionSource WriteStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource CancellationObserved { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async ValueTask WriteAsync(
+            AccessRequest request,
+            AccessDecision decision,
+            CancellationToken cancellationToken = default)
+        {
+            WriteStarted.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                CancellationObserved.TrySetResult();
+                throw;
+            }
+        }
+    }
+
     private sealed class SingleActionCatalog(ActionDefinition definition) : IActionCatalog
     {
         public bool Contains(string action) =>
@@ -462,6 +485,24 @@ public class DefaultDenyEngineTests
 
         Assert.That(decision.Outcome, Is.EqualTo(AccessOutcome.Deny));
         Assert.That(DateTime.UtcNow - started, Is.LessThan(TimeSpan.FromSeconds(5)));
+    }
+
+    [Test]
+    public async Task ACC05_AuditTimeoutCancelsWriterOperationAndPreservesDenial()
+    {
+        var fx = new EngineFixture();
+        var audit = new CancellationAwareAuditWriter();
+
+        var decision = await fx.Engine(
+                auditTimeout: TimeSpan.FromMilliseconds(100),
+                audit: audit)
+            .DecideAsync(AccessRequestBuilder.Default().Build());
+
+        await audit.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.That(audit.WriteStarted.Task.IsCompleted, Is.True);
+        Assert.That(decision.Outcome, Is.EqualTo(AccessOutcome.Deny));
+        Assert.That(decision.DenialReason, Is.EqualTo(AccessDenialReason.NoPolicy));
     }
 
     [Test]

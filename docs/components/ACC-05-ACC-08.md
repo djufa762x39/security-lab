@@ -186,11 +186,24 @@ mapira na `Anonymous`; subjekt sa ID-em koji nije neprazan GUID se ne upisuje i
 aktivira alarm `access.audit.lost`. Nevalidna opcionalna `action`, `policyId` i
 `policyVersion` vrednost se izostavlja iz audit detalja.
 
-Audit u engine-u i pre-decision middleware denial-u koristi isti
-`AccessDecisionOptions.AuditTimeout`. Timeout ili neuspešan/nepotpun zapis ne
-menja HTTP denial. Alarm je `LogError` sa stabilnim EventId
-`access.audit.lost`; sadržaj obuhvata samo tip događaja, status i correlation
-ID, nikada exception, identitet subjekta, akciju ili rejection detalje.
+Audit u engine-u i pre-decision middleware denial-u koristi nezavisan
+`CancellationTokenSource` sa istim `AccessDecisionOptions.AuditTimeout`; token
+nije povezan sa `HttpContext.RequestAborted`. Timeout token se prosleđuje kroz
+Access adapter, `ITrustedAuditWriter`, `AuditWriter` i PostgreSQL store, koji ga
+prosleđuje EF Core komandi. Timeout ili neuspešan/nepotpun zapis ne menja
+HTTP denial: odbijeni zahtev ostaje 403. Jedan neuspešan zapis emituje tačno
+jedan `LogError` sa stabilnim EventId `access.audit.lost`; sadržaj obuhvata
+samo tip događaja, status i correlation ID, nikada exception, identitet
+subjekta, akciju ili rejection detalje. Kada je klijent prekinuo zahtev,
+Audit operacija se i dalje može izvršavati do nezavisnog timeout-a.
+
+Prema D6, svaki obavezni `access.denied` događaj se šalje pojedinačno; nema
+agregacije ni uzorkovanja. Kapacitet baze i održiva stopa upisa nisu potvrđeni
+ovom izmenom: produkciono opterećenje nije testirano i nema tvrdnje o
+performansama. Potrebna je koordinacija Tima 3 i Tima 12 (Audit/skladište) za
+reprezentativnu proveru opterećenja i kapaciteta pre takve tvrdnje. Eventualna
+promena koja odbacuje ili agregira obavezne događaje zahteva zasebnu odluku
+vlasnika D6.
 
 Uspešne Access odluke se trenutno ne upisuju kao Access audit događaj: Audit
 katalog prihvata `AccessDenied`, ali nema odgovarajući događaj za odluku

@@ -60,8 +60,7 @@ public sealed class AccessControlMiddleware
             await AuditMiddlewareDenialAsync(
                 auditWriter,
                 new AccessRequest(null, requirement?.Action ?? string.Empty, null, correlationId),
-                AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId),
-                context.RequestAborted);
+                AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId));
             await AccessProblemDetailsWriter.WriteAsync(context, unauthenticated: false, correlationId);
             return;
         }
@@ -81,8 +80,7 @@ public sealed class AccessControlMiddleware
             await AuditMiddlewareDenialAsync(
                 auditWriter,
                 new AccessRequest(null, requirement.Action, null, correlationId),
-                AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId),
-                context.RequestAborted);
+                AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId));
             await AccessProblemDetailsWriter.WriteAsync(context, unauthenticated: false, correlationId);
             return;
         }
@@ -97,8 +95,7 @@ public sealed class AccessControlMiddleware
             await AuditMiddlewareDenialAsync(
                 auditWriter,
                 new AccessRequest(subject, requirement.Action, null, correlationId),
-                AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId),
-                context.RequestAborted);
+                AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId));
             await AccessProblemDetailsWriter.WriteAsync(context, unauthenticatedSubject, correlationId);
             return;
         }
@@ -117,8 +114,7 @@ public sealed class AccessControlMiddleware
                 await AuditMiddlewareDenialAsync(
                     auditWriter,
                     new AccessRequest(subject, requirement.Action, null, correlationId),
-                    AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId),
-                    context.RequestAborted);
+                    AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId));
                 await AccessProblemDetailsWriter.WriteAsync(context, unauthenticatedSubject, correlationId);
                 return;
             }
@@ -130,8 +126,7 @@ public sealed class AccessControlMiddleware
             await AuditMiddlewareDenialAsync(
                 auditWriter,
                 new AccessRequest(subject, requirement.Action, null, correlationId),
-                AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId),
-                context.RequestAborted);
+                AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId));
             await AccessProblemDetailsWriter.WriteAsync(context, unauthenticatedSubject, correlationId);
             return;
         }
@@ -155,8 +150,7 @@ public sealed class AccessControlMiddleware
             await AuditMiddlewareDenialAsync(
                 auditWriter,
                 new AccessRequest(subject, requirement.Action, resource, correlationId),
-                AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId),
-                context.RequestAborted);
+                AccessDecision.Deny(AccessDenialReason.PolicyError, correlationId));
             await AccessProblemDetailsWriter.WriteAsync(context, unauthenticatedSubject, correlationId);
             return;
         }
@@ -172,8 +166,7 @@ public sealed class AccessControlMiddleware
                         AccessDenialReason.PolicyError,
                         correlationId,
                         decision?.PolicyVersion ?? "v0",
-                        decision?.PolicyId),
-                    context.RequestAborted);
+                        decision?.PolicyId));
             }
 
             var unauthenticated = unauthenticatedSubject
@@ -193,31 +186,21 @@ public sealed class AccessControlMiddleware
     private async Task AuditMiddlewareDenialAsync(
         IAccessAuditWriter auditWriter,
         AccessRequest request,
-        AccessDecision decision,
-        CancellationToken requestAborted)
+        AccessDecision decision)
     {
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(requestAborted);
-        cts.CancelAfter(_options.AuditTimeout);
+        using var timeout = new CancellationTokenSource(_options.AuditTimeout);
 
         try
         {
-            var task = auditWriter.WriteAsync(request, decision, cts.Token).AsTask();
+            var task = auditWriter.WriteAsync(request, decision, timeout.Token).AsTask();
             _ = task.ContinueWith(
                 static completed => _ = completed.Exception,
                 CancellationToken.None,
                 TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
                 TaskScheduler.Default);
-            await task.WaitAsync(_options.AuditTimeout, requestAborted);
+            await task.WaitAsync(timeout.Token);
         }
-        catch (OperationCanceledException) when (requestAborted.IsCancellationRequested)
-        {
-            return;
-        }
-        catch (TimeoutException)
-        {
-            LogAuditLost("timeout");
-        }
-        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
         {
             LogAuditLost("timeout");
         }

@@ -131,13 +131,15 @@ public sealed class DefaultDenyAccessDecision : IAccessDecision
 
     private async Task TryAuditAsync(AccessRequest request, AccessDecision decision)
     {
+        using var timeout = new CancellationTokenSource(options.AuditTimeout);
+
         try
         {
-            var task = auditWriter.WriteAsync(request, decision, CancellationToken.None).AsTask();
+            var task = auditWriter.WriteAsync(request, decision, timeout.Token).AsTask();
             ObserveFault(task);
-            await task.WaitAsync(options.AuditTimeout).ConfigureAwait(false);
+            await task.WaitAsync(timeout.Token).ConfigureAwait(false);
         }
-        catch (TimeoutException)
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
         {
             LogAuditLost("timeout", decision.CorrelationId);
         }

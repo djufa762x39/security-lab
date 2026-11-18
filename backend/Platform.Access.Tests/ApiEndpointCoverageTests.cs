@@ -12,33 +12,8 @@ namespace Platform.Access.Tests.AspNet;
 [Property("RequirementId", "ACC-05")]
 public class ApiEndpointCoverageTests
 {
-    private static readonly HashSet<string> ApprovedPublicRoutes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "/api/health",
-        // IDN-05: explicit public login; credentials and rate limits are checked by Identity.
-        "/api/auth/login",
-        "/api/access/demo-deny",   
-    };
-
-    // Each of these existing routes has an independently tested authorization
-    // guard or credential check in its own handler/filter. No new route may be
-    // delegated without an explicit review and addition to this inventory.
-    private static readonly HashSet<string> ApprovedDelegatedRoutes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "/api/admin/accounts",
-        "/api/authoring/templates",
-        "/api/authoring/templates/{templateId:guid}/drafts",
-        "/api/laboratories/",
-        "/api/laboratories/{id:guid}",
-        "/api/laboratories/{id:guid}/title",
-        "/api/labs/",
-        "/api/labs/{id:guid}",
-        "/api/labs/{id:guid}/title",
-        // #185: /api/labs/{id}/preview i /student-view više nisu delegirane; imaju RequireAccess(lab.visibility.entry).
-    };
-
     [Test]
-    public void ACC05_Every_real_route_is_protected_or_explicitly_approved()
+    public void ACC05_Every_real_route_has_exactly_one_access_requirement()
     {
         using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(b => b.UseEnvironment("Development"));
@@ -52,25 +27,8 @@ public class ApiEndpointCoverageTests
         {
             var route = "/" + e.RoutePattern.RawText?.TrimStart('/');
             var requirements = e.Metadata.GetOrderedMetadata<IAccessRequirementMetadata>();
-            var hasReq = requirements.Count == 1;
-            var isPublic = e.Metadata.GetMetadata<PublicEndpointMetadata>() is not null
-                           || e.Metadata.GetMetadata<AllowPublicAttribute>() is not null;
-            var isDelegated = e.Metadata.GetMetadata<DelegatedAuthorizationAttribute>() is not null;
-
-            if (requirements.Count > 1 ||
-                (hasReq && (isPublic || isDelegated)) ||
-                (isDelegated && isPublic))
-                violations.Add($"{route}: conflicting access metadata");
-            else if (hasReq)
-                continue;
-            else if (ApprovedPublicRoutes.Contains(route))
-                continue;
-            else if (isPublic)
-                violations.Add($"{route}: public route is not in the approved public route inventory");
-            else if (isDelegated && !ApprovedDelegatedRoutes.Contains(route))
-                violations.Add($"{route}: delegated route is not in the approved delegated route inventory");
-            else if (!isDelegated)
-                violations.Add($"{route}: no access metadata");
+            if (requirements.Count != 1)
+                violations.Add($"{route}: expected exactly one access requirement");
         }
 
         Assert.That(violations, Is.Empty, string.Join(Environment.NewLine, violations));
