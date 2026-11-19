@@ -60,9 +60,14 @@ public static class OidcFederationExtensions
                 oidc.MapInboundClaims = false;              // keep "sub", "email", "email_verified" as named
                 oidc.GetClaimsFromUserInfoEndpoint = false; // the validated id_token is the only source
                 oidc.SaveTokens = false;                    // provider tokens are never stored
-
                 oidc.Events = new OpenIdConnectEvents
                 {
+                    // Fixed callback address from configuration; the same value is used later for the code exchange.
+                    OnRedirectToIdentityProvider = context =>
+                    {
+                        context.ProtocolMessage.RedirectUri = settings.Url(CallbackPath);
+                        return Task.CompletedTask;
+                    },
                     OnTicketReceived = CompleteLoginAsync,
                     OnRemoteFailure = HandleRemoteFailureAsync,
                     OnAccessDenied = HandleAccessDeniedAsync
@@ -145,13 +150,7 @@ public static class OidcFederationExtensions
         http.Response.Headers.CacheControl = "no-store";
         http.Response.Redirect(GetRedirectUrl(http, settings.FailureRedirect));
     }
-    private static string GetRedirectUrl(HttpContext http, string path)
-    {
-        var environment = http.RequestServices
-            .GetRequiredService<IHostEnvironment>();
-
-        return environment.IsDevelopment()
-            ? "http://localhost:5173" + path
-            : path;
-    }
+        // Absolute address on the frontend origin from configuration; path is a validated local path.
+    private static string GetRedirectUrl(HttpContext http, string path) =>
+        http.RequestServices.GetRequiredService<IOptions<OidcFederationOptions>>().Value.Url(path);
 }

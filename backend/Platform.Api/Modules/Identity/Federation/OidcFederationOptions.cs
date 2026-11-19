@@ -10,6 +10,10 @@ public sealed class OidcFederationOptions
     public string? ClientId { get; set; }
     public bool RequireHttpsMetadata { get; set; } = true;
 
+    public string? PublicOrigin { get; set; }
+
+    internal string Url(string path) => PublicOrigin!.TrimEnd('/') + path;
+
     /// <summary>Local paths only: the user can never choose where the login redirects (no open redirect).</summary>
     public string SuccessRedirect { get; set; } = "/";
     public string FailureRedirect { get; set; } = "/login?oidc=failed";
@@ -23,6 +27,11 @@ public sealed class OidcFederationOptions
             throw new InvalidOperationException("Oidc:Authority must use HTTPS.");
         if (!RequireHttpsMetadata && !isDevelopment)
             throw new InvalidOperationException("Oidc:RequireHttpsMetadata can be false only in Development.");
+                if (!Uri.TryCreate(PublicOrigin, UriKind.Absolute, out var origin) ||
+            origin.AbsolutePath != "/" || origin.Query.Length > 0)
+            throw new InvalidOperationException("Oidc:PublicOrigin must be an origin such as https://lab.example.org.");
+        if (origin.Scheme != Uri.UriSchemeHttps && !isDevelopment)
+            throw new InvalidOperationException("Oidc:PublicOrigin must use HTTPS.");
         if (string.IsNullOrWhiteSpace(ClientId))
             throw new InvalidOperationException("Oidc:ClientId is required.");
         if (!IsLocalPath(SuccessRedirect) || !IsLocalPath(FailureRedirect))
