@@ -201,6 +201,7 @@ if (kt1Enabled) builder.Services.AddKt1RequestIdentity();
 builder.Services.AddKeyedScoped<IRequestSubjectResolver, AuthoringSessionSubjectResolver>("AuthoringSession");
 AuthoringAccessSubjectProvider.Register(builder.Services);
 if (administrationEnabled) builder.Services.AddAdministrationRequestIdentity();
+builder.Services.AddPrg04RequestIdentity();
 
 var app = builder.Build();
 app.UseRouting();

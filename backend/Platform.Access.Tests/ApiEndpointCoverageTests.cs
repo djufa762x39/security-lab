@@ -29,6 +29,12 @@ public class ApiEndpointCoverageTests
             var requirements = e.Metadata.GetOrderedMetadata<IAccessRequirementMetadata>();
             if (requirements.Count != 1)
                 violations.Add($"{route}: expected exactly one access requirement");
+#pragma warning disable CS0618 // Legacy markers must remain absent even when a valid requirement exists.
+            if (e.Metadata.GetMetadata<DelegatedAuthorizationAttribute>() is not null ||
+                e.Metadata.GetMetadata<AllowPublicAttribute>() is not null ||
+                e.Metadata.GetMetadata<PublicEndpointMetadata>() is not null)
+                violations.Add($"{route}: legacy authorization metadata is not supported");
+#pragma warning restore CS0618
         }
 
         Assert.That(violations, Is.Empty, string.Join(Environment.NewLine, violations));
