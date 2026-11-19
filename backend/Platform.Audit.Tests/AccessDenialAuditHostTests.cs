@@ -34,6 +34,16 @@ public sealed class AccessDenialAuditPostgresTests
     private const int Denials = 100;
     private const int Parallelism = 10;
 
+    // These tests check ordering and completeness, not the latency budget. Since f84d222 the
+    // engine cancels the audit write when AccessDecisionOptions.AuditTimeout (1 s) expires. The
+    // first write in a fresh host also builds the EF model and opens a new connection (pooling is
+    // off here), which on a CI runner can take longer than 1 s. That denial is then correctly
+    // returned with an access.audit.lost alarm and no record, and the test fails for a reason it
+    // does not test. The 1 s budget itself is covered by DefaultDenyEngineTests and
+    // AccessControlMiddlewareTests (ACC05_AuditTimeoutCancelsWriterOperationAndPreservesDenial,
+    // ACC05_Audit_writer_timeout_does_not_delay_403).
+    private static readonly TimeSpan OrderingBudget = TimeSpan.FromSeconds(30);
+
     private string connectionString = null!;
 
     [OneTimeSetUp]
@@ -55,7 +65,7 @@ public sealed class AccessDenialAuditPostgresTests
         var deniedCourse = Guid.NewGuid();
         HttpStatusCode[] statuses;
 
-        var factory = new AuditHostFactory(connectionString);
+        var factory = new AuditHostFactory(connectionString, OrderingBudget);
         try
         {
             using var client = factory.CreateClient();
@@ -85,7 +95,7 @@ public sealed class AccessDenialAuditPostgresTests
     public async Task EachDenial_IsStoredBeforeItsResponseIsReturned()
     {
         var deniedCourse = Guid.NewGuid();
-        await using var factory = new AuditHostFactory(connectionString);
+        await using var factory = new AuditHostFactory(connectionString, OrderingBudget);
         using var client = factory.CreateClient();
 
         for (var sent = 1; sent <= 10; sent++)
