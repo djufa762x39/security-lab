@@ -47,6 +47,9 @@ public class ApiEndpointCoverageTests
         Assert.That(res.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
         Assert.That(await res.Content.ReadAsStringAsync(), Does.Not.Contain("laboratory"));
 
+        var competencies = await client.GetAsync("/api/competencies");
+        Assert.That(competencies.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+
         Assert.That((await client.GetAsync("/api/test/no-metadata")).StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
     }
 }
