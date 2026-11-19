@@ -17,6 +17,9 @@ public class ApiEndpointCoverageTests
         "/api/health",
         // IDN-05: explicit public login; credentials and rate limits are checked by Identity.
         "/api/auth/login",
+        // IDN-08: starts OIDC login (rate limited, 404 when Oidc:Enabled is false); identity comes only
+        // from the id_token validated by the OIDC handler, never from this request.
+        "/api/auth/oidc/start",
         "/api/access/demo-deny",   
     };
 
