@@ -51,11 +51,18 @@ internal sealed class ExternalIdentityLinker(
         if (accountId is null)
             return FederatedLoginResult.Refused(FederatedLoginOutcome.NoMatchingAccount);
 
-        var alreadyLinked = await db.ExternalLogins
+        var linkedSubject = await db.ExternalLogins
             .AsNoTracking()
-            .AnyAsync(login => login.AccountId == accountId && login.Issuer == identity.Issuer, ct);
-        if (alreadyLinked)
-            return FederatedLoginResult.Refused(FederatedLoginOutcome.AccountAlreadyLinked);
+            .Where(login => login.AccountId == accountId && login.Issuer == identity.Issuer)
+            .Select(login => login.Subject)
+            .SingleOrDefaultAsync(ct);
+        if (linkedSubject is not null)
+        {
+            // A concurrent first login of this same identity may have linked it after the lookup above.
+            return linkedSubject == identity.Subject
+                ? FederatedLoginResult.Existing(accountId.Value)
+                : FederatedLoginResult.Refused(FederatedLoginOutcome.AccountAlreadyLinked);
+        }
 
         // 3. Insert; the database has the final word on duplicates.
         var link = new ExternalLogin(Guid.NewGuid(), accountId.Value, identity.Issuer, identity.Subject, now);
@@ -66,20 +73,16 @@ internal sealed class ExternalIdentityLinker(
             await db.SaveChangesAsync(ct);
             return FederatedLoginResult.New(accountId.Value);
         }
-        catch (DbUpdateException ex) when (UniqueViolation(ex) is { } index)
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
         {
             db.ChangeTracker.Clear();
 
-            if (index == IssuerSubjectIndex)
-            {
-                // A concurrent first login of the same identity won: return its account, do not add a second link.
-                var winner = await FindLinkAsync(identity.Issuer, identity.Subject, ct);
-                if (winner is not null)
-                    return FederatedLoginResult.Existing(winner.AccountId);
-            }
-
-            // A different identity from the same issuer was linked to this account at the same moment.
-            return FederatedLoginResult.Refused(FederatedLoginOutcome.AccountAlreadyLinked);
+            // Either unique index: if this same identity was linked by a concurrent first login,
+            // return its account; otherwise another identity of this issuer owns the account.
+            var winner = await FindLinkAsync(identity.Issuer, identity.Subject, ct);
+            return winner is not null
+                ? FederatedLoginResult.Existing(winner.AccountId)
+                : FederatedLoginResult.Refused(FederatedLoginOutcome.AccountAlreadyLinked);
         }
     }
 
@@ -89,8 +92,6 @@ internal sealed class ExternalIdentityLinker(
     private static bool IsValidKey(string? value, int maxLength) =>
         !string.IsNullOrWhiteSpace(value) && value.Length <= maxLength;
 
-    private static string? UniqueViolation(DbUpdateException ex) =>
-        ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation } pg
-            ? pg.ConstraintName
-            : null;
+    private static bool IsUniqueViolation(DbUpdateException ex) =>
+        ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
 }
