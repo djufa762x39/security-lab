@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using Platform.Access.AspNet;
 using Platform.Api.Modules.Identity.Federation;
 using Platform.Api.Modules.Identity.RateLimiting;
+using Platform.Api.Security.IdentityAccess;
 
 namespace Platform.Api.Controllers.Identity;
 
@@ -15,7 +16,7 @@ namespace Platform.Api.Controllers.Identity;
 public sealed class OidcController(IOptions<OidcFederationOptions> options) : ControllerBase
 {
     [AllowAnonymous]
-    [AllowPublic]
+    [RequireAccess(IdentityAccessActions.Login)]
     [EnableRateLimiting(RateLimitPolicies.Login)]
     [HttpGet("start")]
     public IActionResult Start()
