@@ -66,6 +66,8 @@ if (builder.Environment.IsDevelopment())
 builder.Services.AddCentralAccessAudit();
 builder.Services.AddRevisionAuthorization();
 builder.Services.AddRevisionAccessPolicies();
+builder.Services.AddAccessAspNet();
+builder.Services.AddScoped<IAccessSubjectProvider, ResolverAccessSubjectProvider>();
 
 var kt1Enabled = Kt1Endpoints.Enabled(
     builder.Environment,
@@ -193,7 +195,6 @@ builder.Services.AddSingleton(new AccessConfigurationOptions
 });
 builder.Services.AddPrg04CompetencyOperations();
 builder.Services.AddAccessControl();
-builder.Services.AddAccessAspNet();
 builder.Services.AddRevisionRequestIdentity();
 if (kt1Enabled) builder.Services.AddKt1RequestIdentity();
 

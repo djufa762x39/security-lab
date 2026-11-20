@@ -1,5 +1,6 @@
 using Platform.Api.Modules.Laboratories.Application;
 using Platform.LabVisibility.Contracts;
+using Platform.Identity.Services;
 
 namespace Platform.Api.Security.IdentityAccess;
 
@@ -42,6 +43,7 @@ public static class IdentityAccessActions
         new HashSet<string>(StringComparer.Ordinal)
         {
             AccountStatusChange,
+            CreateAccountPolicy.ActionId,
             SessionRead,
             SessionList,
             SessionRevoke,

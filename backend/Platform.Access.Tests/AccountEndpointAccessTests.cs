@@ -13,6 +13,8 @@ using Platform.Access.Contracts;
 using Platform.Access.Domain.Enums;
 using Platform.Access.Domain.Models;
 using Platform.Api.Endpoints.Identity;
+using Platform.Api.Interfaces.Identity;
+using Platform.Api.Services.Identity;
 using Platform.Identity.Interfaces;
 using Platform.Identity.Models;
 using Platform.Identity.Services;
@@ -23,14 +25,6 @@ namespace Platform.Access.Tests;
 [Property("RequirementId", "ACC-05")]
 public sealed class AccountEndpointAccessTests
 {
-    private sealed class FixedSubjectProvider(SubjectRef subject) : IAccessSubjectProvider
-    {
-        public ValueTask<SubjectRef?> GetSubjectAsync(
-            HttpContext httpContext,
-            CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<SubjectRef?>(subject);
-    }
-
     private sealed class RecordingAccountRegistration : IAccountRegistration
     {
         public List<RegisterAccountCommand> Commands { get; } = [];
@@ -51,7 +45,7 @@ public sealed class AccountEndpointAccessTests
         var registration = new RecordingAccountRegistration();
         var app = await CreateApp(
             administratorId,
-            new SubjectRef(administratorId.ToString("D"), AccountState.Active),
+            administratorId,
             registration);
         await using (app)
         using (var client = app.GetTestClient())
@@ -69,10 +63,11 @@ public sealed class AccountEndpointAccessTests
     [Test]
     public async Task Authenticated_non_admin_cannot_create_account()
     {
+        var administratorId = Guid.NewGuid();
         var registration = new RecordingAccountRegistration();
         var app = await CreateApp(
+            administratorId,
             Guid.NewGuid(),
-            new SubjectRef(Guid.NewGuid().ToString("D"), AccountState.Active),
             registration);
         await using (app)
         using (var client = app.GetTestClient())
@@ -88,17 +83,19 @@ public sealed class AccountEndpointAccessTests
 
     private static async Task<WebApplication> CreateApp(
         Guid administratorId,
-        SubjectRef subject,
+        Guid subjectId,
         RecordingAccountRegistration registration)
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
         builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["Identity:AdminAccountIds:0"] = administratorId.ToString("D")
+            ["Identity:AdminAccountIds:0"] = administratorId.ToString("D"),
+            ["Identity:DevSubjectId"] = subjectId.ToString("D")
         });
         builder.Services.AddLogging();
-        builder.Services.AddSingleton<IAccessSubjectProvider>(new FixedSubjectProvider(subject));
+        builder.Services.AddSingleton<IRequestSubjectResolver, DevelopmentSubjectResolver>();
+        builder.Services.AddScoped<IAccessSubjectProvider, ResolverAccessSubjectProvider>();
         builder.Services.AddSingleton<IAccountRegistration>(registration);
         builder.Services.AddSingleton<IAccessAuditWriter, NoopAuditWriter>();
         builder.Services.AddSingleton(new AccessConfigurationOptions { RequirePolicyCoverage = false });
