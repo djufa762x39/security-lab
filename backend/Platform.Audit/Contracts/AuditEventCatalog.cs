@@ -23,6 +23,9 @@ public static class AuditEventCatalog
     private static readonly AuditDetailField ReasonCode = new(
         AuditDetailFormat.Code,
         new[] { AuditOutcome.Denied, AuditOutcome.Failure }.ToFrozenSet());
+    private static readonly AuditDetailField FailureReasonCode = new(
+        AuditDetailFormat.Code,
+        new[] { AuditOutcome.Failure }.ToFrozenSet());
 
     // Privileged changes: denied for an anonymous caller too, failed only for an authenticated one.
     private static readonly IReadOnlyDictionary<AuditOutcome, IReadOnlySet<AuditActorKind>> PrivilegedChange =
@@ -87,6 +90,41 @@ public static class AuditEventCatalog
             AuditPresence.Required,
             AuditResourceTypes.Account,
             Fields()),
+
+        new AuditEventSchema(
+            AuditEventTypes.AuthMfaEnrollmentStarted,
+            Outcomes((AuditOutcome.Success, User), (AuditOutcome.Failure, User)),
+            AuditPresence.Forbidden,
+            AuditPresence.Required,
+            AuditResourceTypes.Account,
+            Fields(("reasonCode", FailureReasonCode))),
+
+        new AuditEventSchema(
+            AuditEventTypes.AuthMfaEnrollmentConfirmed,
+            Outcomes((AuditOutcome.Success, User), (AuditOutcome.Failure, User)),
+            AuditPresence.Forbidden,
+            AuditPresence.Required,
+            AuditResourceTypes.Account,
+            Fields(("reasonCode", FailureReasonCode))),
+
+        new AuditEventSchema(
+            AuditEventTypes.AuthMfaVerify,
+            Outcomes((AuditOutcome.Success, User), (AuditOutcome.Failure, User)),
+            AuditPresence.Forbidden,
+            AuditPresence.Required,
+            AuditResourceTypes.Account,
+            Fields(("reasonCode", FailureReasonCode))),
+
+        new AuditEventSchema(
+            AuditEventTypes.AuthSessionRevoked,
+            Outcomes((AuditOutcome.Success, User), (AuditOutcome.Failure, User)),
+            AuditPresence.Forbidden,
+            AuditPresence.Required,
+            AuditResourceTypes.Account,
+            Fields(
+                ("revocationCause", new AuditDetailField(AuditDetailFormat.Code)),
+                ("revokedHandle", new AuditDetailField(AuditDetailFormat.Uuid)),
+                ("reasonCode", FailureReasonCode))),
 
         new AuditEventSchema(
             AuditEventTypes.AccountStatusChanged,

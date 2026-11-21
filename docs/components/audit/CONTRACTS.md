@@ -168,6 +168,10 @@ with `EventIdConflict` and never replaces the stored record.
 | `auth.login` | Identity (IDN-02) | Success, Failure | Success: `User`. Failure: `Anonymous`, or `User` when the credentials were valid but the account is not active | forbidden | optional `Account` (the account that logged in) | `reasonCode` |
 | `auth.logout` | Identity (IDN-02) | Success | `User` | forbidden | none | none |
 | `auth.login.throttled` | Identity (IDN-05) | Denied | `Anonymous` | forbidden | none | none |
+| `auth.mfa.enrollment.started` | Identity (IDN-06) | Success, Failure | `User` | forbidden | `Account` (required) | `reasonCode` (Failure only) |
+| `auth.mfa.enrollment.confirmed` | Identity (IDN-06) | Success, Failure | `User` | forbidden | `Account` (required) | `reasonCode` (Failure only) |
+| `auth.mfa.verify` | Identity (IDN-06) | Success, Failure | `User` (recognized after password verification, MFA-pending session) | forbidden | `Account` (required) | `reasonCode` (Failure only) |
+| `auth.session.revoked` | Identity (IDN-07) | Success, Failure | `User` | forbidden | `Account` (required) | `revocationCause`, `revokedHandle` (optional), `reasonCode` (Failure only) |
 | `account.status.changed` | Identity (IDN-03), Admin (ADM-01) | Success, Denied, Failure | `User` or `Anonymous` (Denied, not logged in) | forbidden | `Account` (required) | `oldStatus`, `newStatus`, `reasonCode` |
 | `course.member.role.changed` | Memberships (ACC-03) | Success, Denied, Failure | `User` or `Anonymous` (Denied) | required | `Account` (required) | `oldRole`, `newRole`, `reasonCode` |
 | `course.delegation.granted` | Memberships (ACC-07) | Success, Denied, Failure | `User` or `Anonymous` (Denied) | required | `Account` (required) | `action`, `delegationId`, `reasonCode` |
@@ -176,7 +180,8 @@ with `EventIdConflict` and never replaces the stored record.
 | `access.denied` | Access, Team 3 (ACC-05), through the host adapter | Denied | `User` or `Anonymous` | optional, only from a trusted resource resolver | optional | `action`, `denialReason`, `policyId`, `policyVersion` |
 | `audit.events.viewed` | Audit (AUD-06) | Success | `User` | required | `Course` (required) | `filterType`, `filterOutcome`, `filterFrom`, `filterTo`, `resultCount` |
 
-`reasonCode` is only allowed when the outcome is `Denied` or `Failure`. An empty GUID is never a
+`reasonCode` is allowed for `Denied` or `Failure` in schemas that define it; for the MFA enrollment,
+MFA verification and session revocation events it is limited to `Failure`. An empty GUID is never a
 valid `CourseId`.
 
 The catalog is `AuditEventCatalog` in `Platform.Audit.Contracts`, so producers can see what each
@@ -187,7 +192,9 @@ type allows. The checks are done by the internal `AuditDraftValidator` in
 
 | Key | Format |
 |-|-|
-| `reasonCode` | code: `^[a-z][a-z0-9_]{0,31}$`, for example `invalid_credentials`, `account_blocked`, `account_locked` (IDN-05: `auth.login` Failure while the account is temporarily locked), `forbidden`, `not_found` |
+| `reasonCode` | code: `^[a-z][a-z0-9_]{0,31}$`, for example `invalid_credentials`, `account_blocked`, `account_locked` (IDN-05: `auth.login` Failure while the account is temporarily locked), `mfa_already_active`, `invalid_code`, `code_replayed`, `attempts_exceeded`, `forbidden`, `not_found` |
+| `revocationCause` | code: `^[a-z][a-z0-9_]{0,31}$`, for example `user_request`, `mfa_attempts_exceeded` |
+| `revokedHandle` | UUID |
 | `oldStatus`, `newStatus` | one of `active`, `blocked`, `archived` |
 | `oldRole`, `newRole` | one of `none`, `student`, `teacher`, `assistant` |
 | `action`, `filterType` | action or event type: `^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)+$`, at most 64 characters (same rule as `ActionId` in `Platform.Access`) |
@@ -287,6 +294,7 @@ Agreements with the consumers and producers listed above are tracked in
 | Version | Date | Change |
 |-|-|-|
 | 0.1 | 2026-11-03 | Initial draft for review (S-02) |
+| 0.1 | 2026-11-21 | Added MFA enrollment, MFA verification and session revocation event types for US-23; additive schema/catalog change, no contract version bump |
 
 ## REV-05 integration (2026-11-06)
 

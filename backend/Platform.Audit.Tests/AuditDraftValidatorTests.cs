@@ -303,4 +303,112 @@ public sealed class AuditDraftValidatorTests
             _validator.Validate(StatusChange(details: details), UserContext),
             Is.EqualTo(AuditRejectionCode.DetailsTooLarge));
     }
+
+    [TestCase(AuditEventTypes.AuthMfaEnrollmentStarted)]
+    [TestCase(AuditEventTypes.AuthMfaEnrollmentConfirmed)]
+    [TestCase(AuditEventTypes.AuthMfaVerify)]
+    [TestCase(AuditEventTypes.AuthSessionRevoked)]
+    public void Validate_WhenNewMfaOrSessionEventHasReasonCodeOnSuccess_RejectsIt(string eventType)
+    {
+        var draft = new AuditEventDraft(
+            eventType,
+            AuditOutcome.Success,
+            Resource: TargetAccount,
+            Details: Details(("reasonCode", "mfa_already_active")));
+
+        Assert.That(_validator.Validate(draft, UserContext), Is.EqualTo(AuditRejectionCode.UnknownDetailKey));
+    }
+
+    [TestCase(AuditEventTypes.AuthMfaEnrollmentStarted, "mfa_already_active")]
+    [TestCase(AuditEventTypes.AuthMfaEnrollmentConfirmed, "invalid_code")]
+    [TestCase(AuditEventTypes.AuthMfaVerify, "code_replayed")]
+    [TestCase(AuditEventTypes.AuthSessionRevoked, "not_found")]
+    public void Validate_WhenNewMfaOrSessionEventHasFailureAndReasonCode_AcceptsIt(
+        string eventType,
+        string reasonCode)
+    {
+        var draft = new AuditEventDraft(
+            eventType,
+            AuditOutcome.Failure,
+            Resource: TargetAccount,
+            Details: Details(("reasonCode", reasonCode)));
+
+        Assert.That(_validator.Validate(draft, UserContext), Is.EqualTo(AuditRejectionCode.None));
+    }
+
+    [TestCase(AuditEventTypes.AuthMfaEnrollmentStarted)]
+    [TestCase(AuditEventTypes.AuthMfaEnrollmentConfirmed)]
+    [TestCase(AuditEventTypes.AuthMfaVerify)]
+    [TestCase(AuditEventTypes.AuthSessionRevoked)]
+    public void Validate_WhenNewMfaOrSessionEventHasAnonymousActorOnSuccess_RejectsIt(string eventType)
+    {
+        var draft = new AuditEventDraft(eventType, AuditOutcome.Success, Resource: TargetAccount);
+
+        Assert.That(_validator.Validate(draft, AnonymousContext), Is.EqualTo(AuditRejectionCode.InvalidContext));
+    }
+
+    [TestCase(AuditEventTypes.AuthMfaEnrollmentStarted)]
+    [TestCase(AuditEventTypes.AuthMfaEnrollmentConfirmed)]
+    [TestCase(AuditEventTypes.AuthMfaVerify)]
+    [TestCase(AuditEventTypes.AuthSessionRevoked)]
+    public void Validate_WhenNewMfaOrSessionEventHasDeniedOutcome_RejectsIt(string eventType)
+    {
+        var draft = new AuditEventDraft(eventType, AuditOutcome.Denied, Resource: TargetAccount);
+
+        Assert.That(_validator.Validate(draft, UserContext), Is.EqualTo(AuditRejectionCode.OutcomeNotAllowed));
+    }
+
+    [TestCase("code", AuditRejectionCode.UnknownDetailKey)]
+    [TestCase("secret", AuditRejectionCode.ForbiddenDetailKey)]
+    [TestCase("totp", AuditRejectionCode.UnknownDetailKey)]
+    public void Validate_WhenNewMfaEventHasUnknownDetailKey_RejectsIt(
+        string key,
+        AuditRejectionCode expected)
+    {
+        var draft = new AuditEventDraft(
+            AuditEventTypes.AuthMfaEnrollmentConfirmed,
+            AuditOutcome.Success,
+            Resource: TargetAccount,
+            Details: Details((key, "value")));
+
+        Assert.That(_validator.Validate(draft, UserContext), Is.EqualTo(expected));
+    }
+
+    [TestCase(AuditEventTypes.AuthMfaEnrollmentStarted)]
+    [TestCase(AuditEventTypes.AuthMfaEnrollmentConfirmed)]
+    [TestCase(AuditEventTypes.AuthMfaVerify)]
+    [TestCase(AuditEventTypes.AuthSessionRevoked)]
+    public void Validate_WhenNewMfaOrSessionEventHasNumericReasonCode_RejectsIt(string eventType)
+    {
+        var draft = new AuditEventDraft(
+            eventType,
+            AuditOutcome.Failure,
+            Resource: TargetAccount,
+            Details: Details(("reasonCode", "123456")));
+
+        Assert.That(_validator.Validate(draft, UserContext), Is.EqualTo(AuditRejectionCode.InvalidDetailValue));
+    }
+
+    [Test]
+    public void Validate_WhenRevokedHandleIsNotUuid_RejectsIt()
+    {
+        var draft = new AuditEventDraft(
+            AuditEventTypes.AuthSessionRevoked,
+            AuditOutcome.Success,
+            Resource: TargetAccount,
+            Details: Details(("revokedHandle", "not-a-uuid")));
+
+        Assert.That(_validator.Validate(draft, UserContext), Is.EqualTo(AuditRejectionCode.InvalidDetailValue));
+    }
+
+    [TestCase(AuditEventTypes.AuthMfaEnrollmentStarted)]
+    [TestCase(AuditEventTypes.AuthMfaEnrollmentConfirmed)]
+    [TestCase(AuditEventTypes.AuthMfaVerify)]
+    [TestCase(AuditEventTypes.AuthSessionRevoked)]
+    public void Validate_WhenNewMfaOrSessionEventHasNoResource_RejectsIt(string eventType)
+    {
+        var draft = new AuditEventDraft(eventType, AuditOutcome.Success);
+
+        Assert.That(_validator.Validate(draft, UserContext), Is.EqualTo(AuditRejectionCode.InvalidResource));
+    }
 }
