@@ -27,7 +27,7 @@ public sealed class AddLabLocalization(
         string? instructions,
         CancellationToken ct = default)
     {
-        if (!access.IsAllowed(actorId, LocalizationAction.AddTranslation, revisionId))
+        if (!await access.IsAllowedAsync(actorId, LocalizationAction.AddTranslation, revisionId, ct))
             throw new DomainRuleException(LocalizationErrorCodes.Forbidden);
 
         if (string.IsNullOrWhiteSpace(language) || !LabLanguages.TryParse(language, out var parsedLanguage))

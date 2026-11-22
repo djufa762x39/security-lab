@@ -11,6 +11,7 @@ using Platform.Api.Modules.Laboratories.Application;
 using Platform.Api.Modules.Laboratories.Infrastructure;
 using Platform.LaboratoryPersistence.Composition;
 using Platform.Api.Modules.Laboratories;
+using Platform.Api.Modules.LabLocalization;
 
 using Platform.Access.Application.Options;
 using Platform.Access.Composition;
@@ -180,6 +181,9 @@ else
     builder.Services.AddSingleton<ILaboratoryRepository, UnavailableLaboratoryRepository>();
 }
 
+// LAB-07: lokalizacija laboratorija
+builder.Services.AddLabLocalizationModule();
+
 // Kreiranje aplikacije
 var administrationEnabled = builder.Services.AddPersistentCourseAdministration(builder.Configuration);
 builder.Services.AddSingleton(new AccessConfigurationOptions
@@ -295,6 +299,7 @@ app.UseWhen(
 app.MapControllers();
 if (administrationEnabled) app.MapPersistentCourseAdministration();
 app.MapLaboratories();
+app.MapLabLocalizationModule();
 app.MapCompetencyEndpoints();
 app.MapCatalog(app.Configuration);
 app.MapTeam21Acc();
