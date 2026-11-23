@@ -10,7 +10,7 @@ public sealed class LabPrerequisiteStoreAdapter : IPrerequisiteRepository
 
     public LabPrerequisiteStoreAdapter(ILabPrerequisiteStore store)
     {
-        _store = store;
+        _store = store ?? throw new ArgumentNullException(nameof(store));
     }
 
     public Task<AddPrerequisiteResult> AddAsync(

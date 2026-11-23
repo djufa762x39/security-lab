@@ -103,7 +103,7 @@ public sealed class PostgresLaboratoryStore(LaboratoryDbContext context)
             .Select(x => x.PrerequisiteLabId).ToListAsync(ct);
 
 
-    private const long PrerequisiteLockKey = 2006;
+    public const long PrerequisiteLockKey = 2006;
 
     public async Task<T> RunInPrerequisiteLockAsync<T>(
         Func<CancellationToken, Task<T>> action,
@@ -113,6 +113,8 @@ public sealed class PostgresLaboratoryStore(LaboratoryDbContext context)
 
         if (context.Database.CurrentTransaction is not null)
         {
+            await context.Database.ExecuteSqlAsync(
+                $"SELECT pg_advisory_xact_lock({PrerequisiteLockKey})",ct);
             return await action(ct);
         }
 
