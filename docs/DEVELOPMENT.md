@@ -40,6 +40,7 @@ For account registration and email confirmation (IDN-10), configure an SMTP rela
 Email__Smtp__Host=smtp.example.test
 Email__Smtp__Port=587
 Email__Smtp__EnableSsl=true
+Email__Smtp__AllowInsecureLocalMailpit=false
 Email__Smtp__User=security-lab
 Email__Smtp__Password=<local SMTP credential>
 Email__FromAddress=security-lab@example.test
@@ -47,6 +48,8 @@ Frontend__BaseUrl=http://localhost:5173
 ```
 
 SMTP username and password are optional for relays that do not require authentication. Without SMTP configuration, account creation cannot send the confirmation message; the API does not expose confirmation tokens in responses or logs. Users may request a new confirmation email through `/api/auth/email-confirmation/request`. New-session alerts (IDN-13) are off by default and use the same SMTP configuration.
+
+SMTP must use TLS (`Email__Smtp__EnableSsl=true`) outside Development. The SMTP client uses STARTTLS and validates the server certificate using the operating system trust store. Plaintext SMTP is rejected unless the environment is Development, `Email__Smtp__AllowInsecureLocalMailpit=true`, the SMTP host is loopback (`localhost` or a loopback IP), and SMTP authentication is not configured. This exception is intended only for a local Mailpit instance (for example, `localhost:1025`); never enable it in shared or production environments.
 
 ## Reset the local identity database
 

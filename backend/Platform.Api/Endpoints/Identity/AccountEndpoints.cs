@@ -89,8 +89,10 @@ public static class AccountEndpoints
             }
             catch (EmailDeliveryException ex)
             {
-                loggerFactory.CreateLogger(nameof(AccountEndpoints))
-                    .LogError(ex, "Email confirmation delivery failed for account {AccountId}.", result.AccountId);
+                EmailDeliveryLogging.ConfirmationFailed(
+                    loggerFactory.CreateLogger(nameof(AccountEndpoints)),
+                    result.AccountId,
+                    ex);
                 return Results.Json(
                     new { error = "confirmation_email_unavailable", correlationId },
                     statusCode: StatusCodes.Status503ServiceUnavailable);

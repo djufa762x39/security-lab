@@ -77,7 +77,8 @@ public sealed class LoginService(
             }
             catch (EmailDeliveryException ex)
             {
-                logger?.LogError(ex, "New-session notification delivery failed for account {AccountId}.", check.AccountId);
+                if (logger is not null)
+                    EmailDeliveryLogging.SessionNotificationFailed(logger, check.AccountId, ex);
             }
         }
 

@@ -46,7 +46,7 @@ public sealed class EmailConfirmationController(
                 }
                 catch (EmailDeliveryException ex)
                 {
-                    logger.LogError(ex, "Email confirmation delivery failed.");
+                    EmailDeliveryLogging.ConfirmationRequestFailed(logger, ex);
                 }
             }
         }

@@ -32,6 +32,8 @@ In local development, the API applies pending migrations for both identity conte
 
 See [development configuration](../../DEVELOPMENT.md#local-identity-database) for `Email__Smtp__*`, `Email__FromAddress`, and `Frontend__BaseUrl`. Keep SMTP credentials in `.env` or user-secrets.
 
+SMTP uses STARTTLS and must have `Email__Smtp__EnableSsl=true` outside Development. Plaintext delivery is allowed only with an explicit Development-only Mailpit opt-in, a loopback SMTP host, and no SMTP credentials. The API does not log SMTP exception details, confirmation links, or raw confirmation tokens.
+
 ```powershell
 dotnet test backend\Platform.Identity.Tests\Platform.Identity.Tests.csproj
 Set-Location frontend
