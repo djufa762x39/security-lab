@@ -196,7 +196,7 @@ Data-isolation rule: `SessionManager.ListForUser` applies `session.UserId == use
   - `SessionCheckMiddlewareTests` test the middleware branches with a mocked `ISessionManager`.
   - `SessionReviewRevokeIntegrationTests` send real HTTP requests through the whole pipeline to the real `SessionManager` and PostgreSQL. They confirm that no session is `401 session_invalid`, a valid session without permission is `403`, a revoked session is `401` on its next request (also in the `Production` environment) while the caller's other sessions stay valid, and another user's handle is `404`. The `403` route is the IDN-03 admin endpoint `PUT /api/admin/accounts/{id}/status`.
   - To check that these tests can fail, `Session.IsActiveAt` was temporarily changed to ignore revocation; four of the nine tests failed, and the change was reverted.
-  - Full backend run (`dotnet test backend/SecurityLab.slnx -c Release`): 0 failed in all test projects; `Platform.Identity.Tests` 438 passed, 0 skipped (re-run on 2026-11-23 with .NET SDK 10.0.404 and Docker; the earlier figure of 345 was out of date).
+  - Full backend run (`dotnet test backend/SecurityLab.slnx -c Release`): 0 failed in all test projects; `Platform.Identity.Tests` 442 passed, 0 skipped (re-run on 2026-11-23 with .NET SDK 10.0.404 and Docker; the earlier figure of 345 was out of date).
   - The runtime application uses PostgreSQL; InMemory is used only for deterministic service tests.
 
 - Scope of the end-to-end evidence:
