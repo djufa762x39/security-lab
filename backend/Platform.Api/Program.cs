@@ -23,12 +23,9 @@ using Platform.Api.Endpoints.Identity;
 using Platform.Api.Interfaces.Identity;
 using Platform.Api.Middleware;
 using Platform.Api.Modules.Identity.RateLimiting;
-using Platform.Api.Modules.Kt1;
-using Platform.Api.Modules.Laboratories;
 using Platform.Api.Modules.Laboratories.Application;
 using Platform.Api.Modules.Laboratories.Infrastructure;
 using Platform.Api.Modules.RevisionReviews;
-using Platform.Api.Security.RevisionAuthorization;
 using Platform.Api.Services.Identity;
 using Platform.Api.Services.Audit;
 using Platform.Audit.Application;
@@ -206,15 +203,6 @@ builder.Services.AddSingleton(new AccessConfigurationOptions
     }
 });
 builder.Services.AddPrg04CompetencyOperations();
-builder.Services.AddAccessControl();
-builder.Services.AddRevisionRequestIdentity();
-if (kt1Enabled) builder.Services.AddKt1RequestIdentity();
-
-//AUT-06: register the resolver that identifies the caller from the validated session
-builder.Services.AddKeyedScoped<IRequestSubjectResolver, AuthoringSessionSubjectResolver>("AuthoringSession");
-AuthoringAccessSubjectProvider.Register(builder.Services);
-if (administrationEnabled) builder.Services.AddAdministrationRequestIdentity();
-builder.Services.AddPrg04RequestIdentity();
 
 // LAB-06: registracija akcija i politike autorizacije
 builder.Services.AddAccessAction<PrerequisiteModificationPolicy>(
@@ -237,6 +225,16 @@ builder.Services.AddAccessAction<PrerequisiteModificationPolicy>(
         ActionScope.Course,
         "laboratory",
         true));
+
+builder.Services.AddAccessControl();
+builder.Services.AddRevisionRequestIdentity();
+if (kt1Enabled) builder.Services.AddKt1RequestIdentity();
+
+//AUT-06: register the resolver that identifies the caller from the validated session
+builder.Services.AddKeyedScoped<IRequestSubjectResolver, AuthoringSessionSubjectResolver>("AuthoringSession");
+AuthoringAccessSubjectProvider.Register(builder.Services);
+if (administrationEnabled) builder.Services.AddAdministrationRequestIdentity();
+builder.Services.AddPrg04RequestIdentity();
 
 var app = builder.Build();
 app.UseRouting();

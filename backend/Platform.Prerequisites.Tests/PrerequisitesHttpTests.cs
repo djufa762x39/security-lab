@@ -176,7 +176,7 @@ public class PrerequisitesHttpTests
             new { RequiredLaboratoryId = Guid.NewGuid() });
 
         Assert.That(response.StatusCode,
-            Is.EqualTo(HttpStatusCode.Forbidden));
+    Is.EqualTo(HttpStatusCode.Unauthorized));
     }
 
     [Test]

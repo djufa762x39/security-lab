@@ -11,7 +11,6 @@ using Platform.Access.AspNet;
 namespace Platform.Api.Controllers;
 
 [ApiController]
-[DelegatedAuthorization]
 [Route("api/laboratories/{laboratoryId:guid}/prerequisites")]
 public sealed class PrerequisitesController(
     IPrerequisiteRepository repository,
@@ -19,6 +18,7 @@ public sealed class PrerequisitesController(
     IRequestSubjectResolver subjectResolver) : ControllerBase
 {
     [HttpGet]
+    [RequireAccess("prerequisites.read", ResourceType = "laboratory", IdRouteParam = "laboratoryId")]
     public async Task<IActionResult> Get(
     Guid laboratoryId,
     CancellationToken cancellationToken)
@@ -66,6 +66,7 @@ public sealed class PrerequisitesController(
     }
 
     [HttpPost]
+    [RequireAccess("prerequisites.add", ResourceType = "laboratory", IdRouteParam = "laboratoryId")]
     public async Task<IActionResult> Add(
     Guid laboratoryId,
     [FromBody] AddPrerequisiteRequest request,
@@ -139,6 +140,7 @@ public sealed class PrerequisitesController(
     }
 
     [HttpDelete("{requiredLaboratoryId:guid}")]
+    [RequireAccess("prerequisites.remove", ResourceType = "laboratory", IdRouteParam = "laboratoryId")]
     public async Task<IActionResult> Remove(
     Guid laboratoryId,
     Guid requiredLaboratoryId,
