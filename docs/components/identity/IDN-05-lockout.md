@@ -17,7 +17,7 @@
   - `ICredentialStore` gains `ReserveAttemptAsync`, `LockIfLimitReachedAsync` and `TryClearFailuresAsync`.
 - **Why not ASP.NET Identity's `lockoutOnFailure`:** the ticket named it, but login does not use ASP.NET Identity. IDN-02 checks passwords against `identity.accounts` (`UserAccount`, BCrypt), and `sessions` has a foreign key to that table. `AspNetUsers` accounts cannot log in at all (see Known deviations in [the DFD](IDN-02_IDN-06_DFD.md)), so a lockout there would never run. The lockout therefore lives on `identity.accounts` and follows the same rules as Identity's: a failure limit, a lock window, a restart of the counter on lockout and a reset on success.
 - **Relation to [IDN-05 rate limiting](IDN-05.md):** that component limits login requests per IP (SEC-04). This one adds the per-account lockout stored in the database, in place of the in-memory `ILoginAttemptLimiter` that document plans. A locked account gets **401**, not 429, so the response does not reveal that the account exists.
-- **Not in this component:** administrator unlock. It was removed from this branch because REV-05 (#85) also registers an unlock action, `account.unlock`, and the two would have had different security and audit conditions. #85 registers only the action, the policy and denial audit, so no endpoint clears a lockout yet. Until one exists, a locked account stays locked until `lockout_end` passes.
+- **Administrator unlock:** a separate component, [IDN-05 administrator unlock](IDN-05-admin-unlock.md). It uses the single action id `account.unlock` that REV-05 (#85) registers.
 - **Implementation status:** done on branch `feature/IDN-05-identity-lockout`, connected to the real IDN-02 login and sessions.
 
 ## Component architecture
@@ -49,7 +49,7 @@ Trust boundary: the client is untrusted. Every decision (counter, lockout window
 ## Lockout rules
 
 1. Every attempt is charged **before** the password is checked, in one atomic `UPDATE`. An attempt that finds `MaxFailedAccessAttempts` already charged sets `lockout_end` and gets no chance to log in. So at most that many attempts per lockout window can log in or fail, however many requests run in parallel. A failure stays charged, so an abandoned check is not a free guess.
-2. The password hash is verified on **every** attempt, including unknown and locked accounts, but the result is only used for an attempt that was charged. `BCryptPasswordHasher` uses a dummy hash when there is no stored hash.
+2. The password hash is verified on **every** attempt, including unknown and locked accounts, but the result is only used for an attempt that was charged. `ReserveAttemptAsync` reports whether it charged the attempt, and an attempt that was not charged is refused as locked even if the account reads as unlocked afterwards (an [administrator unlock](IDN-05-admin-unlock.md) can commit in between). `BCryptPasswordHasher` uses a dummy hash when there is no stored hash.
 3. While `lockout_end` is in the future, the attempt is refused, even with the correct password. It is not counted and does not extend the lockout.
 4. A correct password is accepted only by an atomic `UPDATE` that fails if the account locked during the hash. That update resets the counter and clears an expired lockout.
 5. A wrong password that used the last charged attempt sets `lockout_end` and restarts the counter, so a full run of failures is needed after a lockout ends.
@@ -96,7 +96,7 @@ The lockout values are validated by `IdentityLockoutOptionsValidator` with `Vali
 
 ### Residual risks
 
-- **Deliberate lockout of a victim.** Anyone who knows a victim's email can lock the account on purpose (denial of service). The lockout is limited in time, and the account stays locked until it expires because there is no admin unlock yet.
+- **Deliberate lockout of a victim.** Anyone who knows a victim's email can lock the account on purpose (denial of service). The lockout is limited in time, and an administrator can end it earlier ([IDN-05 administrator unlock](IDN-05-admin-unlock.md)).
 - **The per-IP limit is not attached to login yet.** `AuthController.Login` has no `[EnableRateLimiting(RateLimitPolicies.Login)]`, so the per-IP layer does not run on this endpoint. Until it does, spreading guesses across many accounts is limited only by each account's lockout.
 - **A real login reopens the attempts.** A successful login resets the counter, as the ticket requires, so an attacker gets a new run of attempts each time the real owner logs in during an attack.
 - **A burst can refuse the real owner.** Attempts that use up the limit lock the account even while they are still running, so a correct login that arrives after them is refused until the lockout ends. This is the same denial of service as a deliberate lockout, reached sooner.
@@ -115,4 +115,4 @@ The lockout values are validated by `IdentityLockoutOptionsValidator` with `Vali
 - **Tests and results:** 2026-11-06: `Platform.Identity.Tests` 214 passed, 29 of them in category `IDN-05`. The CI script `scripts/audit/test-postgres.ps1` passes for the whole solution: 1262 passed, 0 failed, 9 skipped. The new in-flight tests failed before the fix. With the reservation removed on purpose, 10 `IDN-05` tests failed; with the final "still not locked" condition removed, `Correct_password_in_flight_when_the_account_locks_is_refused` failed. A manual run in Development against a throwaway local Postgres on 2026-11-05, before this fix, confirmed the lockout and identical 401 bodies.
 - **Next steps:**
   - Add `[EnableRateLimiting(RateLimitPolicies.Login)]` to `AuthController.Login`.
-  - Admin unlock: add it in a separate change, under the single action id agreed with REV-05 (#85). It needs its own unconditional clear, because `TryClearFailuresAsync` refuses a locked account.
+  - Admin unlock: done in [IDN-05 administrator unlock](IDN-05-admin-unlock.md).
