@@ -17,13 +17,13 @@ internal sealed class EfCredentialStore(PlatformIdentityDbContext db) : ICredent
             .FirstOrDefaultAsync(ct);
 
     // Each change below is one UPDATE, so parallel requests see each other's writes.
-    public Task ReserveAttemptAsync(
+    public async Task<bool> ReserveAttemptAsync(
         string normalizedEmail, int maxAttempts, DateTimeOffset now, DateTimeOffset lockoutEnd, CancellationToken ct = default) =>
-        NotLocked(now)
+        await NotLocked(now)
             .Where(a => a.Email == normalizedEmail)
             .ExecuteUpdateAsync(set => set
                 .SetProperty(a => a.LockoutEnd, a => a.FailedLoginCount >= maxAttempts ? lockoutEnd : a.LockoutEnd)
-                .SetProperty(a => a.FailedLoginCount, a => a.FailedLoginCount >= maxAttempts ? 0 : a.FailedLoginCount + 1), ct);
+                .SetProperty(a => a.FailedLoginCount, a => a.FailedLoginCount >= maxAttempts ? 0 : a.FailedLoginCount + 1), ct) == 1;
 
     public async Task<DateTimeOffset?> LockIfLimitReachedAsync(
         string normalizedEmail, int maxAttempts, DateTimeOffset now, DateTimeOffset lockoutEnd, CancellationToken ct = default)

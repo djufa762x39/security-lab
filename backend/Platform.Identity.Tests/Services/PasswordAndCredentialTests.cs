@@ -142,6 +142,23 @@ public class PasswordAndCredentialTests
         Assert.That(result.IsLockedOut, Is.True);
     }
 
+    [Test]
+    public async Task Verifier_AttemptThatWasNotCharged_IsRefused_EvenIfTheAccountNowLooksUnlocked()
+    {
+        // IDN-05: the account was locked when the attempt was charged (nothing charged), and an administrator
+        // unlock committed before the account was read. The password result must not be used.
+        var id = Guid.NewGuid();
+        var verifier = VerifierWith(new CredentialRecord(id, AccountStatus.Active, _hasher.Hash(Password)), out var store);
+        store.Setup(s => s.ReserveAttemptAsync(
+                "student@example.com", It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var result = await verifier.VerifyAsync("student@example.com", Password);
+
+        Assert.That(result, Is.EqualTo(CredentialResult.LockedOut(id)));
+        VerifyFailurePath(store, "student@example.com");
+    }
+
     private static void VerifyFailurePath(Mock<ICredentialStore> store, string normalizedEmail)
     {
         store.Verify(s => s.ReserveAttemptAsync(
@@ -159,6 +176,10 @@ public class PasswordAndCredentialTests
         store = new Mock<ICredentialStore>();
         store.Setup(s => s.FindByEmailAsync("student@example.com", It.IsAny<CancellationToken>()))
             .ReturnsAsync(record);
+        // Like EfCredentialStore: an attempt is charged only for an existing account that is not locked.
+        store.Setup(s => s.ReserveAttemptAsync(
+                "student@example.com", It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(record is not null && !(record.LockoutEnd > DateTimeOffset.UtcNow));
         store.Setup(s => s.TryClearFailuresAsync(It.IsAny<Guid>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
         return new CredentialVerifier(store.Object, _hasher, Options.Create(new IdentityLockoutOptions()), TimeProvider.System);

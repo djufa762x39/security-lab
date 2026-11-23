@@ -12,7 +12,12 @@ public interface ICredentialStore
     /// An attempt that finds <paramref name="maxAttempts"/> already charged sets <paramref name="lockoutEnd"/>
     /// and restarts the counter. A locked account or an unknown e-mail changes nothing.
     /// </summary>
-    Task ReserveAttemptAsync(
+    /// <returns>
+    /// True when the account row was updated (the attempt was charged, or it set the lockout). False when nothing
+    /// was charged: the e-mail is unknown or the account was locked. The password result of an attempt that was
+    /// not charged must never be used, even if a later read shows the account unlocked (administrator unlock).
+    /// </returns>
+    Task<bool> ReserveAttemptAsync(
         string normalizedEmail, int maxAttempts, DateTimeOffset now, DateTimeOffset lockoutEnd, CancellationToken ct = default);
 
     /// <summary>
