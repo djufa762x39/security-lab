@@ -12,7 +12,9 @@ namespace Platform.Prerequisites.Tests;
 [NonParallelizable]
 public class PrerequisiteDatabaseTests
 {
-    private const string ConnectionVariable = "ConnectionStrings__Authoring";
+    // Dedicated TEST database only. Never point this at a shared or production database.
+    public const string ConnectionVariable = "LAB06_TEST_POSTGRES";
+
     private readonly List<Guid> _createdLabs = new();
 
     private static string? ConnectionString =>
@@ -67,6 +69,59 @@ public class PrerequisiteDatabaseTests
             Assert.That(first, Is.EqualTo(AddPrerequisiteResult.Added));
             Assert.That(second, Is.EqualTo(AddPrerequisiteResult.WouldCreateCycle));
             Assert.That(saved, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task AddAsync_WaitsWhilePrerequisiteLockIsHeld()
+    {
+        Guid labA = await CreateLaboratoryAsync();
+        Guid labB = await CreateLaboratoryAsync();
+
+        await using LaboratoryDbContext holderDb = CreateContext();
+        await using var holder = await holderDb.Database.BeginTransactionAsync();
+        await holderDb.Database.ExecuteSqlAsync(
+            $"SELECT pg_advisory_xact_lock({PostgresLaboratoryStore.PrerequisiteLockKey})");
+
+        await using LaboratoryDbContext teacherDb = CreateContext();
+        var teacher = new LabPrerequisiteStoreAdapter(new PostgresLaboratoryStore(teacherDb));
+        Task<AddPrerequisiteResult> addTask = teacher.AddAsync(new LabPrerequisite(labA, labB));
+
+        Task finishedFirst = await Task.WhenAny(addTask, Task.Delay(TimeSpan.FromSeconds(1)));
+        bool finishedWhileLocked = finishedFirst == addTask;
+        int savedWhileLocked = await CountEdgesAsync(labA, labB);
+
+        await holder.CommitAsync();
+        AddPrerequisiteResult result = await addTask;
+        int savedAfterRelease = await CountEdgesAsync(labA, labB);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(finishedWhileLocked, Is.False, "Upis je prosao dok je kljuc bio zauzet.");
+            Assert.That(savedWhileLocked, Is.EqualTo(0));
+            Assert.That(result, Is.EqualTo(AddPrerequisiteResult.Added));
+            Assert.That(savedAfterRelease, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task RunInPrerequisiteLockAsync_InsideExistingTransaction_TakesLock()
+    {
+        await using LaboratoryDbContext db = CreateContext();
+        var store = new PostgresLaboratoryStore(db);
+        await using var transaction = await db.Database.BeginTransactionAsync();
+
+        bool lockFreeInside = await store.RunInPrerequisiteLockAsync(_ => IsLockFreeAsync());
+        bool transactionStillOpen = db.Database.CurrentTransaction is not null;
+
+        await transaction.RollbackAsync();
+        bool lockFreeAfter = await IsLockFreeAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(lockFreeInside, Is.False, "Kljuc nije uzet u postojecoj transakciji.");
+            Assert.That(transactionStillOpen, Is.True, "Postojeca transakcija ne sme biti zatvorena.");
+            Assert.That(lockFreeAfter, Is.True);
         });
     }
 
@@ -129,6 +184,15 @@ public class PrerequisiteDatabaseTests
         return new LaboratoryDbContext(options);
     }
 
+    private static async Task<bool> IsLockFreeAsync()
+    {
+        await using LaboratoryDbContext probe = CreateContext();
+        return await probe.Database
+            .SqlQuery<bool>(
+                $"SELECT pg_try_advisory_xact_lock({PostgresLaboratoryStore.PrerequisiteLockKey}) AS \"Value\"")
+            .SingleAsync();
+    }
+
     private async Task<Guid> CreateLaboratoryAsync()
     {
         Guid id = Guid.NewGuid();
@@ -152,5 +216,16 @@ public class PrerequisiteDatabaseTests
         return await db.LabPrerequisites.CountAsync(x =>
             (x.LaboratoryId == first && x.PrerequisiteLabId == second) ||
             (x.LaboratoryId == second && x.PrerequisiteLabId == first));
+    }
+}
+
+[TestFixture]
+public class LabPrerequisiteStoreAdapterGuardTests
+{
+    [Test]
+    public void Constructor_NullStore_ThrowsArgumentNullException()
+    {
+        Assert.Throws<ArgumentNullException>(
+            () => new LabPrerequisiteStoreAdapter(null!));
     }
 }
