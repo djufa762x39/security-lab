@@ -66,6 +66,15 @@ internal static class AuditDraftExamples
             UserContext);
 
         yield return (StatusChange(), UserContext);
+
+        yield return (
+            new AuditEventDraft(
+                AuditEventTypes.AccountUnlocked,
+                AuditOutcome.Success,
+                Resource: TargetAccount,
+                Details: Details(("lockoutEnd", "2026-11-23T10:15:00Z"))),
+            UserContext);
+
         foreach (var eventType in new[] { AuditEventTypes.RevisionSubmitted, AuditEventTypes.RevisionApproved,
                      AuditEventTypes.RevisionReturned })
             yield return (new AuditEventDraft(eventType, AuditOutcome.Success, CourseId,
