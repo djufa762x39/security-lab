@@ -59,6 +59,115 @@ public sealed class IdentityAuditProducer(
             UserContext(userId, correlationId),
             cancellationToken);
 
+    public ValueTask<AuditWriteResult> MfaEnrollmentStartedAsync(
+        Guid userId,
+        string correlationId,
+        CancellationToken cancellationToken = default) =>
+        WriteAsync(
+            new AuditEventDraft(
+                AuditEventTypes.AuthMfaEnrollmentStarted,
+                AuditOutcome.Success,
+                Resource: Account(userId)),
+            UserContext(userId, correlationId),
+            cancellationToken);
+
+    public ValueTask<AuditWriteResult> MfaEnrollmentConfirmedAsync(
+        Guid userId,
+        string correlationId,
+        CancellationToken cancellationToken = default) =>
+        WriteAsync(
+            new AuditEventDraft(
+                AuditEventTypes.AuthMfaEnrollmentConfirmed,
+                AuditOutcome.Success,
+                Resource: Account(userId)),
+            UserContext(userId, correlationId),
+            cancellationToken);
+
+    public ValueTask<AuditWriteResult> MfaEnrollmentStartFailedAsync(
+        Guid userId,
+        string reasonCode,
+        string correlationId,
+        CancellationToken cancellationToken = default) =>
+        WriteAsync(
+            new AuditEventDraft(
+                AuditEventTypes.AuthMfaEnrollmentStarted,
+                AuditOutcome.Failure,
+                Resource: Account(userId),
+                Details: Details(("reasonCode", reasonCode))),
+            UserContext(userId, correlationId),
+            cancellationToken);
+
+    public ValueTask<AuditWriteResult> MfaEnrollmentConfirmFailedAsync(
+        Guid userId,
+        string reasonCode,
+        string correlationId,
+        CancellationToken cancellationToken = default) =>
+        WriteAsync(
+            new AuditEventDraft(
+                AuditEventTypes.AuthMfaEnrollmentConfirmed,
+                AuditOutcome.Failure,
+                Resource: Account(userId),
+                Details: Details(("reasonCode", reasonCode))),
+            UserContext(userId, correlationId),
+            cancellationToken);
+
+    public ValueTask<AuditWriteResult> MfaVerifySucceededAsync(
+        Guid userId,
+        string correlationId,
+        CancellationToken cancellationToken = default) =>
+        WriteAsync(
+            new AuditEventDraft(
+                AuditEventTypes.AuthMfaVerify,
+                AuditOutcome.Success,
+                Resource: Account(userId)),
+            UserContext(userId, correlationId),
+            cancellationToken);
+
+    public ValueTask<AuditWriteResult> MfaVerifyFailedAsync(
+        Guid userId,
+        string reasonCode,
+        string correlationId,
+        CancellationToken cancellationToken = default) =>
+        WriteAsync(
+            new AuditEventDraft(
+                AuditEventTypes.AuthMfaVerify,
+                AuditOutcome.Failure,
+                Resource: Account(userId),
+                Details: Details(("reasonCode", reasonCode))),
+            UserContext(userId, correlationId),
+            cancellationToken);
+
+    public ValueTask<AuditWriteResult> SessionRevokedAsync(
+        Guid userId,
+        Guid revokedHandle,
+        string revocationCause,
+        string correlationId,
+        CancellationToken cancellationToken = default) =>
+        WriteAsync(
+            new AuditEventDraft(
+                AuditEventTypes.AuthSessionRevoked,
+                AuditOutcome.Success,
+                Resource: Account(userId),
+                Details: Details(
+                    ("revocationCause", revocationCause),
+                    ("revokedHandle", revokedHandle.ToString("D")))),
+            UserContext(userId, correlationId),
+            cancellationToken);
+
+    public ValueTask<AuditWriteResult> SessionRevokeFailedAsync(
+        Guid userId,
+        string reasonCode,
+        string correlationId,
+        CancellationToken cancellationToken = default) =>
+        WriteAsync(
+            new AuditEventDraft(
+                AuditEventTypes.AuthSessionRevoked,
+                AuditOutcome.Failure,
+                Resource: Account(userId),
+                Details: Details(("reasonCode", reasonCode))),
+            UserContext(userId, correlationId),
+            cancellationToken);
+
     public ValueTask<AuditWriteResult> AccountStatusChangedAsync(
         Guid actorId,
         Guid targetId,

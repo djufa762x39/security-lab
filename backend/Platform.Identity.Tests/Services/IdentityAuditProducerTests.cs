@@ -1,4 +1,5 @@
 using Platform.Api.Services.Identity;
+using Platform.Audit.Application;
 using Platform.Audit.Contracts;
 using Platform.Identity.Enums;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -182,6 +183,211 @@ public sealed class IdentityAuditProducerTests
     }
 
     [Test]
+    public async Task MfaEnrollmentStarted_UsesSuccessAccountResourceAndUserActor()
+    {
+        var writer = new RecordingWriter();
+        await CreateProducer(writer).MfaEnrollmentStartedAsync(ActorId, CorrelationId);
+        var write = writer.Single();
+        Assert.Multiple(() =>
+        {
+            Assert.That(write.Draft.EventType, Is.EqualTo(AuditEventTypes.AuthMfaEnrollmentStarted));
+            Assert.That(write.Draft.Outcome, Is.EqualTo(AuditOutcome.Success));
+            Assert.That(write.Draft.Resource, Is.EqualTo(new AuditResourceRef(AuditResourceTypes.Account, ActorId.ToString())));
+            Assert.That(write.Draft.Details, Is.Null);
+            Assert.That(write.Context.Actor, Is.EqualTo(AuditActor.ForUser(ActorId)));
+            Assert.That(write.Context.CorrelationId, Is.EqualTo(CorrelationId));
+        });
+    }
+
+    [Test]
+    public async Task MfaEnrollmentConfirmed_UsesSuccessAccountResourceAndUserActor()
+    {
+        var writer = new RecordingWriter();
+        await CreateProducer(writer).MfaEnrollmentConfirmedAsync(ActorId, CorrelationId);
+        var write = writer.Single();
+        Assert.Multiple(() =>
+        {
+            Assert.That(write.Draft.EventType, Is.EqualTo(AuditEventTypes.AuthMfaEnrollmentConfirmed));
+            Assert.That(write.Draft.Outcome, Is.EqualTo(AuditOutcome.Success));
+            Assert.That(write.Draft.Resource, Is.EqualTo(new AuditResourceRef(AuditResourceTypes.Account, ActorId.ToString())));
+            Assert.That(write.Draft.Details, Is.Null);
+            Assert.That(write.Context.Actor, Is.EqualTo(AuditActor.ForUser(ActorId)));
+            Assert.That(write.Context.CorrelationId, Is.EqualTo(CorrelationId));
+        });
+    }
+
+    [Test]
+    public async Task MfaEnrollmentStartFailed_UsesStartedFailureReasonAndAccountResource()
+    {
+        var writer = new RecordingWriter();
+        await CreateProducer(writer).MfaEnrollmentStartFailedAsync(ActorId, "mfa_already_active", CorrelationId);
+        var write = writer.Single();
+        Assert.Multiple(() =>
+        {
+            Assert.That(write.Draft.EventType, Is.EqualTo(AuditEventTypes.AuthMfaEnrollmentStarted));
+            Assert.That(write.Draft.Outcome, Is.EqualTo(AuditOutcome.Failure));
+            Assert.That(write.Draft.Resource!.Id, Is.EqualTo(ActorId.ToString()));
+            Assert.That(write.Draft.Details, Is.EquivalentTo(new Dictionary<string, string> { ["reasonCode"] = "mfa_already_active" }));
+            Assert.That(write.Context.Actor, Is.EqualTo(AuditActor.ForUser(ActorId)));
+            Assert.That(write.Context.CorrelationId, Is.EqualTo(CorrelationId));
+        });
+    }
+
+    [Test]
+    public async Task MfaEnrollmentConfirmFailed_UsesConfirmedFailureReasonAndAccountResource()
+    {
+        var writer = new RecordingWriter();
+        await CreateProducer(writer).MfaEnrollmentConfirmFailedAsync(ActorId, "invalid_code", CorrelationId);
+        var write = writer.Single();
+        Assert.Multiple(() =>
+        {
+            Assert.That(write.Draft.EventType, Is.EqualTo(AuditEventTypes.AuthMfaEnrollmentConfirmed));
+            Assert.That(write.Draft.Outcome, Is.EqualTo(AuditOutcome.Failure));
+            Assert.That(write.Draft.Resource!.Id, Is.EqualTo(ActorId.ToString()));
+            Assert.That(write.Draft.Details, Is.EquivalentTo(new Dictionary<string, string> { ["reasonCode"] = "invalid_code" }));
+            Assert.That(write.Context.Actor, Is.EqualTo(AuditActor.ForUser(ActorId)));
+            Assert.That(write.Context.CorrelationId, Is.EqualTo(CorrelationId));
+        });
+    }
+
+    [Test]
+    public async Task MfaVerifySucceeded_UsesSuccessAccountResourceAndUserActor()
+    {
+        var writer = new RecordingWriter();
+        await CreateProducer(writer).MfaVerifySucceededAsync(ActorId, CorrelationId);
+        var write = writer.Single();
+        Assert.Multiple(() =>
+        {
+            Assert.That(write.Draft.EventType, Is.EqualTo(AuditEventTypes.AuthMfaVerify));
+            Assert.That(write.Draft.Outcome, Is.EqualTo(AuditOutcome.Success));
+            Assert.That(write.Draft.Resource!.Id, Is.EqualTo(ActorId.ToString()));
+            Assert.That(write.Draft.Details, Is.Null);
+            Assert.That(write.Context.Actor, Is.EqualTo(AuditActor.ForUser(ActorId)));
+            Assert.That(write.Context.CorrelationId, Is.EqualTo(CorrelationId));
+        });
+    }
+
+    [Test]
+    public async Task MfaVerifyFailed_UsesFailureReasonAndAccountResource()
+    {
+        var writer = new RecordingWriter();
+        await CreateProducer(writer).MfaVerifyFailedAsync(ActorId, "code_replayed", CorrelationId);
+        var write = writer.Single();
+        Assert.Multiple(() =>
+        {
+            Assert.That(write.Draft.EventType, Is.EqualTo(AuditEventTypes.AuthMfaVerify));
+            Assert.That(write.Draft.Outcome, Is.EqualTo(AuditOutcome.Failure));
+            Assert.That(write.Draft.Resource!.Id, Is.EqualTo(ActorId.ToString()));
+            Assert.That(write.Draft.Details, Is.EquivalentTo(new Dictionary<string, string> { ["reasonCode"] = "code_replayed" }));
+            Assert.That(write.Context.Actor, Is.EqualTo(AuditActor.ForUser(ActorId)));
+            Assert.That(write.Context.CorrelationId, Is.EqualTo(CorrelationId));
+        });
+    }
+
+    [Test]
+    public async Task SessionRevoked_UsesSuccessCauseHandleAccountResourceAndUserActor()
+    {
+        var writer = new RecordingWriter();
+        var revokedHandle = Guid.Parse("33333333-3333-3333-3333-333333333333");
+        await CreateProducer(writer).SessionRevokedAsync(ActorId, revokedHandle, "user_request", CorrelationId);
+        var write = writer.Single();
+        Assert.Multiple(() =>
+        {
+            Assert.That(write.Draft.EventType, Is.EqualTo(AuditEventTypes.AuthSessionRevoked));
+            Assert.That(write.Draft.Outcome, Is.EqualTo(AuditOutcome.Success));
+            Assert.That(write.Draft.Resource!.Id, Is.EqualTo(ActorId.ToString()));
+            Assert.That(write.Draft.Details, Is.EquivalentTo(new Dictionary<string, string>
+            {
+                ["revocationCause"] = "user_request",
+                ["revokedHandle"] = revokedHandle.ToString("D")
+            }));
+            Assert.That(write.Context.Actor, Is.EqualTo(AuditActor.ForUser(ActorId)));
+            Assert.That(write.Context.CorrelationId, Is.EqualTo(CorrelationId));
+        });
+    }
+
+    [Test]
+    public async Task SessionRevokeFailed_UsesFailureReasonAndAccountResource()
+    {
+        var writer = new RecordingWriter();
+        await CreateProducer(writer).SessionRevokeFailedAsync(ActorId, "not_found", CorrelationId);
+        var write = writer.Single();
+        Assert.Multiple(() =>
+        {
+            Assert.That(write.Draft.EventType, Is.EqualTo(AuditEventTypes.AuthSessionRevoked));
+            Assert.That(write.Draft.Outcome, Is.EqualTo(AuditOutcome.Failure));
+            Assert.That(write.Draft.Resource!.Id, Is.EqualTo(ActorId.ToString()));
+            Assert.That(write.Draft.Details, Is.EquivalentTo(new Dictionary<string, string> { ["reasonCode"] = "not_found" }));
+            Assert.That(write.Context.Actor, Is.EqualTo(AuditActor.ForUser(ActorId)));
+            Assert.That(write.Context.CorrelationId, Is.EqualTo(CorrelationId));
+        });
+    }
+
+    [Test]
+    public async Task SerializedNewEventDraft_DoesNotContainSecretFields()
+    {
+        var writer = new RecordingWriter();
+        await CreateProducer(writer).SessionRevokedAsync(
+            ActorId,
+            Guid.Parse("33333333-3333-3333-3333-333333333333"),
+            "user_request",
+            CorrelationId);
+        var serialized = Serialized(writer.Single());
+        Assert.That(serialized, Does.Not.Contain("secret").And
+            .Not.Contain("otpauth").And
+            .Not.Contain("token").And
+            .Not.Contain("password"));
+    }
+
+    [TestCase("MfaEnrollmentStarted")]
+    [TestCase("MfaEnrollmentConfirmed")]
+    [TestCase("MfaEnrollmentStartFailed")]
+    [TestCase("MfaEnrollmentConfirmFailed")]
+    [TestCase("MfaVerifySucceeded")]
+    [TestCase("MfaVerifyFailed")]
+    [TestCase("SessionRevoked")]
+    [TestCase("SessionRevokeFailed")]
+    public async Task NewProducerMethod_DraftMatchesRealAuditSchema(string method)
+    {
+        var writer = new RecordingWriter();
+        var producer = CreateProducer(writer);
+        var revokedHandle = Guid.Parse("33333333-3333-3333-3333-333333333333");
+
+        switch (method)
+        {
+            case "MfaEnrollmentStarted":
+                await producer.MfaEnrollmentStartedAsync(ActorId, CorrelationId);
+                break;
+            case "MfaEnrollmentConfirmed":
+                await producer.MfaEnrollmentConfirmedAsync(ActorId, CorrelationId);
+                break;
+            case "MfaEnrollmentStartFailed":
+                await producer.MfaEnrollmentStartFailedAsync(ActorId, "mfa_already_active", CorrelationId);
+                break;
+            case "MfaEnrollmentConfirmFailed":
+                await producer.MfaEnrollmentConfirmFailedAsync(ActorId, "invalid_code", CorrelationId);
+                break;
+            case "MfaVerifySucceeded":
+                await producer.MfaVerifySucceededAsync(ActorId, CorrelationId);
+                break;
+            case "MfaVerifyFailed":
+                await producer.MfaVerifyFailedAsync(ActorId, "code_replayed", CorrelationId);
+                break;
+            case "SessionRevoked":
+                await producer.SessionRevokedAsync(ActorId, revokedHandle, "user_request", CorrelationId);
+                break;
+            case "SessionRevokeFailed":
+                await producer.SessionRevokeFailedAsync(ActorId, "not_found", CorrelationId);
+                break;
+        }
+
+        var write = writer.Single();
+        Assert.That(
+            new AuditDraftValidator().Validate(write.Draft, write.Context),
+            Is.EqualTo(AuditRejectionCode.None));
+    }
+
+    [Test]
     public async Task Producer_ReturnsWriterFailureWithoutConvertingItToSuccess()
     {
         var expected = AuditWriteResult.Unavailable();
@@ -246,4 +452,5 @@ public sealed class IdentityAuditProducerTests
             CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("sensitive storage diagnostic");
     }
+
 }

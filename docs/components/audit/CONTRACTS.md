@@ -161,6 +161,23 @@ with `EventIdConflict` and never replaces the stored record.
    `Authorization` headers, evaluation keys, student answers, request or response bodies, typed
    login names or any free text.
 
+## Identity producer methods (US-23)
+
+| Method | Event type | Outcome | Allowed `reasonCode` |
+|-|-|-|-|
+| `MfaEnrollmentStartedAsync` | `auth.mfa.enrollment.started` | Success | none |
+| `MfaEnrollmentConfirmedAsync` | `auth.mfa.enrollment.confirmed` | Success | none |
+| `MfaEnrollmentStartFailedAsync` | `auth.mfa.enrollment.started` | Failure | `mfa_already_active` and other stable codes |
+| `MfaEnrollmentConfirmFailedAsync` | `auth.mfa.enrollment.confirmed` | Failure | `invalid_code` and other stable codes |
+| `MfaVerifySucceededAsync` | `auth.mfa.verify` | Success | none |
+| `MfaVerifyFailedAsync` | `auth.mfa.verify` | Failure | `code_replayed`, `attempts_exceeded` and other stable codes |
+| `SessionRevokedAsync` | `auth.session.revoked` | Success | none; uses `revocationCause=user_request` and `revokedHandle` |
+| `SessionRevokeFailedAsync` | `auth.session.revoked` | Failure | `not_found` and other stable codes |
+
+The Identity producer never accepts an MFA code, secret, TOTP secret, `otpauth://` URI, password,
+cookie, token or other credential. `correlationId` comes from `ICorrelationContext` in HTTP flows,
+as used by `SessionController` and `LogoutService`; it must not come from a caller-controlled header.
+
 ## Event catalog (schema version 1)
 
 | Event type | Producer (requirement) | Outcomes | Actor | Course | Resource | Allowed details |
