@@ -12,17 +12,18 @@ public static class LabLocalizationModule
 {
     public static IServiceCollection AddLabLocalizationModule(this IServiceCollection services)
     {
-        services.AddAccessAction<LabLocalizationEntryPolicy>(
-            new ActionDefinition(
-                LabLocalizationActions.Entry,
-                ActionScope.Authenticated,
-                null,
-                false));
+        services
+            .AddAccessAction<LabLocalizationEntryPolicy>(new ActionDefinition(
+                LabLocalizationActions.Entry, ActionScope.Authenticated, null, false))
+            .AddAccessAction<LabContentReadPolicy>(new ActionDefinition(
+                LabLocalizationActions.Read, ActionScope.Course, LabLocalizationActions.LaboratoryResource, false))
+            .AddAccessAction<LabTranslationPolicy>(new ActionDefinition(
+                LabLocalizationActions.Translate, ActionScope.Course, LabLocalizationActions.RevisionResource, true));
 
         // Prevodi se gube pri restartu dok modul ne dobije PostgreSQL skladiste.
         services.TryAddSingleton<ILabLocalizationRepository, InMemoryLabLocalizationRepository>();
-        services.TryAddSingleton<ILabRevisionReader, UnavailableLabRevisionReader>();
-        services.TryAddSingleton<ILocalizationAccess, DenyAllLocalizationAccess>();
+        services.TryAddSingleton<ILabRevisionReader, StoredLabRevisionReader>();
+        services.TryAddScoped<ILocalizationAccess, AccessDecisionLocalizationAccess>();
 
         services.AddScoped<GetLabContent>();
         services.AddScoped<AddLabLocalization>();
