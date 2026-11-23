@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
+using Platform.Access.AspNet;
 using Platform.Api.Interfaces.Identity;
 using Platform.Api.Models.Identity;
+using Platform.Api.Modules.LabLocalization;
 using Platform.Api.Services.Identity;
 
 namespace Platform.Api.Middleware;
@@ -43,7 +45,9 @@ public class SessionCheckMiddleware
         // /api/access/demo-deny (Access default-deny demo), and /api/courses with /api/materials (Team 21 test header).
         if (context.RequestServices is not null
             && context.RequestServices.GetService<IHostEnvironment>()?.IsDevelopment() == true
-            && (context.Request.Path.StartsWithSegments("/api/laboratories")
+            && ((context.Request.Path.StartsWithSegments("/api/laboratories")
+                // LAB-07: sadrzaj i prevodi traze pravu sesiju (LabCaller), i u Developmentu.
+                && endpoint.Metadata.GetMetadata<IAccessRequirementMetadata>()?.Action != LabLocalizationActions.Entry)
                 || (context.Request.Path.StartsWithSegments("/api/labs")
                 && context.Request.Path.Value?.TrimEnd('/').EndsWith("/student-view", StringComparison.OrdinalIgnoreCase) != true
                 // AUT-07: pregled pre objave takođe traži pravu sesiju (LabCaller), i u Developmentu.
