@@ -39,6 +39,21 @@ public sealed class EfAccountStatusStore(PlatformIdentityDbContext db) : IAccoun
                 : 0;
         }
 
+        // IDN-05: the row lock from FindForUpdateAsync serializes administrator writes to the account (unlock,
+        // status change). It does not hold back logins during an unlock: the account is still locked in the
+        // committed row, and the login UPDATEs match only unlocked rows, so they skip it without waiting and
+        // charge nothing. CredentialVerifier refuses an attempt that was not charged, even when its later read
+        // already shows the account unlocked (AccountLockoutTests.Login_in_flight_during_an_admin_unlock_...).
+        public async Task<DateTimeOffset?> ClearLockoutAsync(UserAccount account, DateTimeOffset now, CancellationToken ct = default)
+        {
+            if (account.LockoutEnd is not { } end || end <= now)
+                return null;
+
+            account.ClearLockout();
+            await db.SaveChangesAsync(ct);
+            return end;
+        }
+
         public Task CommitAsync(CancellationToken ct = default) => transaction.CommitAsync(ct);
 
         public ValueTask DisposeAsync() => transaction.DisposeAsync();
