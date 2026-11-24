@@ -20,6 +20,7 @@ using Platform.Api.Services.Identity;
 
 using ISessionManager = Platform.Api.Interfaces.Identity.ISessionManager;
 using Platform.Identity.Entities;
+using Platform.Identity.Testing;
 
 namespace Platform.Authoring.Tests.Api;
 
@@ -44,7 +45,7 @@ public sealed class AuthoringHttpRequests
                 });
             });
         });
-        using var client = factory.CreateClient();
+        using var client = factory.CreateCsrfClient();
         client.DefaultRequestHeaders.Add("Cookie", $"{SessionCookie.Name}={AuthoringHostFactory.SessionToken}");
         using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/authoring/templates/{templateId}/drafts");
 
@@ -97,7 +98,7 @@ public sealed class AuthoringHttpRequests
             });
         });
 
-        using var client = factory.CreateClient();
+        using var client = factory.CreateCsrfClient();
         client.DefaultRequestHeaders.Add("Cookie", $"{SessionCookie.Name}={AuthoringHostFactory.SessionToken}");
         using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/authoring/templates/{unknownTemplateId}/drafts");
 
@@ -133,7 +134,7 @@ public sealed class AuthoringHttpRequests
             });
         });
 
-        using var client = factory.CreateClient();
+        using var client = factory.CreateCsrfClient();
         client.DefaultRequestHeaders.Add("Cookie", $"{SessionCookie.Name}={AuthoringHostFactory.SessionToken}");
         using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/authoring/templates/{templateId}/drafts");
 
@@ -208,7 +209,7 @@ public sealed class AuthoringHttpRequests
             });
         });
 
-        using var client = factory.CreateClient();
+        using var client = factory.CreateCsrfClient();
         client.DefaultRequestHeaders.Add("Cookie", $"{SessionCookie.Name}={AuthoringHostFactory.SessionToken}");
         using var response = await client.PostAsync($"/api/authoring/templates/{templateId}/drafts", null);
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Created));
