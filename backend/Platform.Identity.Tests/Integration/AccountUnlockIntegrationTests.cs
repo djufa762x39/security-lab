@@ -263,6 +263,43 @@ public class AccountUnlockIntegrationTests : IntegrationTestBase
         Assert.That((await UserTestData.GetAsync(Factory, student.Id))!.LockoutEnd, Is.GreaterThan(DateTimeOffset.UtcNow));
     }
 
+    // A lockout is separate from the status: ending it reopens neither a blocked nor an archived account.
+    [TestCase(AccountStatus.Blocked)]
+    [TestCase(AccountStatus.Archived)]
+    public async Task InactiveAccount_IsUnlocked_StatusAndSessionsStay_LoginIsStillRefused(AccountStatus status)
+    {
+        var (admin, _) = await ArrangeAdminAndStudentAsync();
+        var inactive = await UserTestData.AddAsync(Factory, "inactive@example.com", Password, status);
+        var revoked = await SessionTestData.CreateAsync(Factory, inactive.Id);
+        await RevokeSessionsAsync(inactive.Id);
+        var revokedAt = (await SessionTestData.GetAsync(Factory, revoked.Session.Id))!.RevokedAt;
+        Assert.That(revokedAt, Is.Not.Null);
+        // Blocking revokes every session, so an open one is arranged: an unlock that revoked sessions would show here.
+        var open = await SessionTestData.CreateAsync(Factory, inactive.Id);
+        await LockAsync(inactive.Id, failedLogins: 2);
+        var adminSession = await SessionTestData.CreateAsync(Factory, admin.Id);
+
+        var response = await SendAsync(UnlockUrl(inactive.Id), adminSession.RawToken);
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(await response.Content.ReadFromJsonAsync<UnlockResponse>(), Is.EqualTo(new UnlockResponse(inactive.Id, true)));
+        var stored = (await UserTestData.GetAsync(Factory, inactive.Id))!;
+        Assert.That(stored.LockoutEnd, Is.Null);
+        Assert.That(stored.FailedLoginCount, Is.Zero);
+        Assert.That(stored.Status, Is.EqualTo(status), "an unlock does not change the status");
+        Assert.That((await SessionTestData.GetAsync(Factory, open.Session.Id))!.RevokedAt, Is.Null, "no session is revoked");
+        Assert.That((await SessionTestData.GetAsync(Factory, revoked.Session.Id))!.RevokedAt, Is.EqualTo(revokedAt),
+            "a revoked session stays revoked");
+
+        // The lockout is gone and the password is correct, so only the status refuses this login.
+        var login = await LoginAsync(inactive.Email, Password);
+        Assert.That(login.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+        Assert.That(await login.Content.ReadAsStringAsync(), Does.Contain("invalid_credentials"));
+        Assert.That(login.Headers.Contains("Set-Cookie"), Is.False, "no session is issued");
+
+        Assert.That((await AuditRowsAsync(inactive.Id)).Single().Outcome, Is.EqualTo("Success"));
+    }
+
     private sealed record UnlockResponse(Guid Id, bool Unlocked);
 
     private sealed class UnavailableAuditWriter(int failurePoint) : ITransactionalAuditWriter
