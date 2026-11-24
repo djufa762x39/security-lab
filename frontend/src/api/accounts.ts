@@ -1,3 +1,5 @@
+import { csrfFetch } from '../auth/csrf'
+
 export type CreateAccountOutcome =
   | { kind: 'created'; id: string; correlationId?: string }
   | { kind: 'taken'; correlationId?: string }
@@ -15,7 +17,7 @@ interface ApiBody {
 export async function createAccount(email: string, password: string): Promise<CreateAccountOutcome> {
   let res: Response
   try {
-    res = await fetch('/api/admin/accounts', {
+    res = await csrfFetch('/api/admin/accounts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
