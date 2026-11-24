@@ -11,7 +11,7 @@ using Platform.Api.Security.IdentityAccess;
 
  [ApiController]
  [Route("api/admin/accounts")]
- public class AdminAccountsController(ChangeAccountStatus changeStatus) : ControllerBase
+ public class AdminAccountsController(ChangeAccountStatus changeStatus, UnlockAccount unlockAccount) : ControllerBase
  {
      [RequireAccess(IdentityAccessActions.AccountStatusChange)]
      [EnableRateLimiting(RateLimitPolicies.AccountStatusChange)] // SEC-04
@@ -33,4 +33,24 @@ using Platform.Api.Security.IdentityAccess;
              _ => StatusCode(500)
          };
      }
+
+    /// <summary>IDN-05: an administrator clears the lockout of a locked account. No body.</summary>
+    [RequireAccess(IdentityAccessActions.AccountUnlock)]
+    [HttpPost("{id:guid}/unlock")]
+    public async Task<IActionResult> Unlock(Guid id, CancellationToken ct)
+    {
+        var outcome = await unlockAccount.ExecuteAsync(id, ct);
+
+        return outcome switch
+        {
+            UnlockAccountOutcome.Success => Ok(new { id, unlocked = true }),
+            UnlockAccountOutcome.Unauthenticated => StatusCode(401, new { code = "unauthenticated" }),
+            UnlockAccountOutcome.Forbidden => StatusCode(403, new { code = "forbidden" }),
+            UnlockAccountOutcome.NotFound => NotFound(new { code = "account_not_found" }),
+            UnlockAccountOutcome.NotLocked => Conflict(new { code = "account_not_locked" }),
+            UnlockAccountOutcome.SelfChangeNotAllowed => Conflict(new { code = "self_change_not_allowed" }),
+            UnlockAccountOutcome.Unavailable => StatusCode(503, new { code = "unavailable" }),
+            _ => StatusCode(500)
+        };
+    }
 }
