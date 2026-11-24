@@ -86,7 +86,7 @@ Frontend: `frontend/src/__tests__/csrf.test.ts`.
 
 ```powershell
 dotnet test backend\Platform.Identity.Tests --filter "Category=US-15"
-cd frontend; npm.cmd test -- csrf
+cd frontend; npm.cmd test
 ```
 
 ## Limits
