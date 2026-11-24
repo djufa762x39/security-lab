@@ -67,13 +67,7 @@ internal static class AuditDraftExamples
 
         yield return (StatusChange(), UserContext);
 
-        yield return (
-            new AuditEventDraft(
-                AuditEventTypes.AccountUnlocked,
-                AuditOutcome.Success,
-                Resource: TargetAccount,
-                Details: Details(("lockoutEnd", "2026-11-23T10:15:00Z"))),
-            UserContext);
+        yield return (Unlock(), UserContext);
 
         foreach (var eventType in new[] { AuditEventTypes.RevisionSubmitted, AuditEventTypes.RevisionApproved,
                      AuditEventTypes.RevisionReturned })
@@ -129,6 +123,15 @@ internal static class AuditDraftExamples
             outcome,
             Resource: TargetAccount,
             Details: details ?? Details(("oldStatus", "active"), ("newStatus", "blocked")));
+
+    public static AuditEventDraft Unlock(
+        AuditOutcome outcome = AuditOutcome.Success,
+        IReadOnlyDictionary<string, string>? details = null) =>
+        new(
+            AuditEventTypes.AccountUnlocked,
+            outcome,
+            Resource: TargetAccount,
+            Details: details ?? Details(("lockoutEnd", "2026-11-23T10:15:00Z")));
 
     public static IReadOnlyDictionary<string, string> Details(params (string Key, string Value)[] entries) =>
         entries.ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.Ordinal);

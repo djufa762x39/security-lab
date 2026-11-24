@@ -288,6 +288,7 @@ Agreements with the consumers and producers listed above are tracked in
 | Version | Date | Change |
 |-|-|-|
 | 0.1 | 2026-11-03 | Initial draft for review (S-02) |
+| 0.1 | 2026-11-23 | `account.unlocked` event type added (IDN-05, administrator unlock), with the new detail key `lockoutEnd`. Additive change: existing event types and producers are not affected, the schema version stays 1 |
 
 ## REV-05 integration (2026-11-06)
 
