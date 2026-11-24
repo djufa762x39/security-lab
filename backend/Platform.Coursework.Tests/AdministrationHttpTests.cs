@@ -24,6 +24,7 @@ using Platform.Identity.Enums;
 using Platform.Identity.Interfaces;
 using Platform.Identity.Persistence;
 using Platform.Identity.Services;
+using Platform.Identity.Testing;
 
 namespace Platform.Coursework.Tests;
 
@@ -103,7 +104,7 @@ public sealed class AdministrationHttpTests
 
     private HttpClient Client(string? cookie = null)
     {
-        var client = factory.CreateClient(new() { BaseAddress = new Uri("https://localhost"), HandleCookies = false, AllowAutoRedirect = false });
+        var client = factory.CreateCsrfClient(new() { BaseAddress = new Uri("https://localhost"), HandleCookies = false, AllowAutoRedirect = false });
         client.DefaultRequestHeaders.Add("X-Coursework-Request", "1");
         if (cookie is not null) client.DefaultRequestHeaders.Add("Cookie", cookie);
         clients.Add(client);
