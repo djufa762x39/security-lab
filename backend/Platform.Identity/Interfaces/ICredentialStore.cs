@@ -13,8 +13,8 @@ public interface ICredentialStore
     /// and restarts the counter. A locked account or an unknown e-mail changes nothing.
     /// </summary>
     /// <returns>
-    /// True when the account row was updated (the attempt was charged, or it set the lockout). False when nothing
-    /// was charged: the e-mail is unknown or the account was locked. The password result of an attempt that was
+    /// True only when the attempt was charged. False when it was not: the e-mail is unknown, the account was locked,
+    /// or the attempt found the limit reached and only set the lockout. The password result of an attempt that was
     /// not charged must never be used, even if a later read shows the account unlocked (administrator unlock).
     /// </returns>
     Task<bool> ReserveAttemptAsync(
