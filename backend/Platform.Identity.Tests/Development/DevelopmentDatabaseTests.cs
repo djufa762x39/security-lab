@@ -64,6 +64,7 @@ public class DevelopmentDatabaseTests
             [$"ConnectionStrings:{IdentityModule.ConnectionStringName}"] = connectionString
         });
         builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.AddIdentityModule();
         builder.Services.AddIdentityModule(builder.Configuration);
         if (logs is not null) builder.Logging.AddProvider(logs);
 
