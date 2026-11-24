@@ -127,6 +127,13 @@ public class LabPrerequisiteStoreAdapterTests
         {
             throw new InvalidOperationException("Simulated storage failure");
         }
+
+        public Task<T> RunInPrerequisiteLockAsync<T>(
+            Func<CancellationToken, Task<T>> action,
+            CancellationToken ct = default)
+        {
+            return action(ct);
+        }
     }
 
 }
