@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Platform.Access.AspNet;
@@ -41,6 +42,22 @@ public class AuthController(ILoginService login, ILogoutService logout, IIdentit
             default:
                 return Unauthorized(new { code = "invalid_credentials" });
         }
+    }
+
+    // US-15: the frontend calls this when the app starts and after a 403 csrf_invalid. A new cookie token is only
+    // issued when the browser has no valid one yet; the request token is returned and also put in a readable cookie.
+    [AllowAnonymous]
+    [RequireAccess(IdentityAccessActions.CsrfToken)]
+    [HttpGet("csrf")]
+    public IActionResult Csrf([FromServices] IAntiforgery antiforgery)
+    {
+        var tokens = antiforgery.GetTokens(HttpContext);
+        if (tokens.CookieToken is not null)
+            Response.Cookies.Append(CsrfToken.CookieName, tokens.CookieToken, CsrfToken.Options());
+        Response.Cookies.Append(CsrfToken.ReadableCookieName, tokens.RequestToken!, CsrfToken.ReadableOptions());
+
+        Response.Headers.CacheControl = "no-store";
+        return Ok(new CsrfTokenResponse(tokens.RequestToken!));
     }
 
     [AllowAnonymous]

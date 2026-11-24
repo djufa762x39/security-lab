@@ -108,6 +108,14 @@ builder.Services.AddAuthoring();
 builder.Services.AddLabVisibility();
 builder.Services.AddIdentityRateLimiting(builder.Configuration);
 builder.Services.AddControllers();
+// US-15 / SEC-03: antiforgery makes and checks the CSRF token pair. AuthController writes the cookie itself with
+// Secure always on (CsrfToken.Options), so SameAsRequest only keeps antiforgery from refusing plain HTTP in dev and tests.
+builder.Services.AddAntiforgery(options =>
+{
+    options.HeaderName = CsrfToken.HeaderName;
+    options.Cookie.Name = CsrfToken.CookieName;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+});
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton(TimeProvider.System);
 
@@ -241,6 +249,10 @@ if (kt1Enabled)
     // Only the explicitly enabled simulator maps these namespaced Access actions.
     app.MapCourseworkKt1();
 }
+
+// US-15 / SEC-03: after authentication, so the token check sees the same HttpContext.User as the endpoint
+// that issued the token, and before every endpoint. The OIDC callback is finished by UseAuthentication above.
+app.UseMiddleware<CsrfProtectionMiddleware>();
 
 // IDN-01: politike i endpoint za kreiranje naloga
 app.MapAccountEndpoints();
