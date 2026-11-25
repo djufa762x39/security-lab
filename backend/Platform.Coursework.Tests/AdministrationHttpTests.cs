@@ -19,6 +19,9 @@ using Platform.Access.Domain.Models;
 using Platform.Api.Modules.Administration;
 using Platform.Api.Modules.Administration.Api;
 using Platform.Api.Modules.Administration.Persistence;
+using Platform.Api.Modules.Administration.Integration;
+using Team21.Acc.Core.Courses;
+using Team21.Acc.Infrastructure.Courses.Data;
 using Platform.Api.Modules.Kt1;
 using Platform.Api.Services.Identity;
 using Platform.Audit.Composition;
@@ -32,7 +35,7 @@ using Platform.Identity.Testing;
 namespace Platform.Coursework.Tests;
 
 [TestFixture, NonParallelizable, FixtureLifeCycle(LifeCycle.InstancePerTestCase)]
-public sealed class AdministrationHttpTests
+public sealed partial class AdministrationHttpTests
 {
     private string bootstrap = null!, connection = null!, database = null!, password = null!;
     private AdministrationFactory factory = null!;
@@ -55,12 +58,19 @@ public sealed class AdministrationHttpTests
         connection = new NpgsqlConnectionStringBuilder(bootstrap) { Database = database, Timeout = 5, CommandTimeout = 5 }.ConnectionString;
         await using (var db = IdentityDb()) await db.Database.MigrateAsync();
         await AuditPersistenceExtensions.MigrateAuditDatabaseAsync(connection);
+        await using (var catalog = CoursesDb())
+        {
+            await catalog.Database.MigrateAsync();
+            catalog.Courses.Add(new Course("COURSE-A", "Catalog name A", "", DemoStore.Admin) { Id=DemoStore.Course });
+            catalog.Courses.Add(new Course("COURSE-B", "Catalog name B", "", DemoStore.OtherAdmin) { Id=DemoStore.OtherCourse });
+            await catalog.SaveChangesAsync();
+        }
         await AdministrationSchema.MigrateAsync(connection);
         password = Guid.NewGuid().ToString("N"); // disposable test credentials, never project configuration
         var hash = new BCryptPasswordHasher().Hash(password);
         await using (var db = IdentityDb())
         {
-            foreach (var id in new[] { DemoStore.Admin, DemoStore.OtherAdmin, DemoStore.DelegateUser, DemoStore.Teacher, DemoStore.Marko })
+            foreach (var id in new[] { DemoStore.Admin, DemoStore.OtherAdmin, DemoStore.DelegateUser, DemoStore.Teacher, DemoStore.ForeignTeacher, DemoStore.Marko, DemoStore.Ana })
             {
                 var account = new UserAccount(id, Email(id), AccountStatus.Active,
                     id == DemoStore.Teacher ? AccountRole.Teacher : AccountRole.Student);
@@ -93,6 +103,8 @@ public sealed class AdministrationHttpTests
     }
 
     private static string Email(Guid id) => $"{id:N}@coursework.example.invalid";
+    private CoursesDbContext CoursesDb() => new(new DbContextOptionsBuilder<CoursesDbContext>()
+        .UseNpgsql(connection, p => p.MigrationsHistoryTable("__EFMigrationsHistory", "courses")).Options);
     private PlatformIdentityDbContext IdentityDb() => new(new DbContextOptionsBuilder<PlatformIdentityDbContext>()
         .UseNpgsql(connection, p => p.MigrationsHistoryTable("__EFMigrationsHistory", "identity")).Options);
 
@@ -416,10 +428,13 @@ public sealed class AdministrationHttpTests
         Assert.That((await Client().GetAsync(Path())).StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
     }
 
-    private sealed class AdministrationFactory(string connection, bool enabled = true, string environment = "Production", bool kt1 = false)
+    private sealed class AdministrationFactory(string connection, bool enabled = true, string environment = "Production", bool kt1 = false,
+        bool attempts = false, bool membershipProvider = true)
         : WebApplicationFactory<Program>
     {
         public Func<AccessRequest, Task>? AfterAllow { get; set; }
+        public AttemptProviderDouble Attempts { get; } = new();
+        public MembershipProviderDouble Members { get; } = new();
         /// <summary>While set, every request body is wrapped first in the pipeline, and <see cref="BodyRead"/> records a read.</summary>
         public volatile bool ObserveBody;
         public volatile bool BodyRead;
@@ -427,14 +442,24 @@ public sealed class AdministrationHttpTests
         {
             builder.UseEnvironment(environment);
             builder.UseSetting(AdministrationEndpoints.EnabledSetting, enabled.ToString());
+            builder.UseSetting(Platform.Api.Modules.Access.Api.AttemptEndpoints.EnabledSetting, attempts.ToString());
+            builder.UseSetting("CourseworkAttempts:ProviderBaseUrl", "https://att.example.invalid/v1/");
+            builder.UseSetting("CourseworkAttempts:ProviderToken", AttemptProviderDouble.TestToken);
             builder.UseSetting("ConnectionStrings:CourseworkAdministration", connection);
             builder.UseSetting("ConnectionStrings:Identity", connection);
+            builder.UseSetting("ConnectionStrings:Team21", connection);
             builder.UseSetting("ConnectionStrings:Audit", connection);
             builder.UseSetting("RateLimiting:Login:PermitLimit", "100");
             builder.UseSetting("Kt1Demo:Enabled", kt1.ToString());
             builder.ConfigureLogging(logging => logging.SetMinimumLevel(LogLevel.Warning));
             builder.ConfigureServices(services =>
             {
+                if (attempts)
+                {
+                    services.AddHttpClient<Platform.Api.Modules.Access.Integration.HttpAttemptStore>()
+                        .ConfigurePrimaryHttpMessageHandler(() => new AttemptProviderHandler(Attempts));
+                    if (membershipProvider) services.AddSingleton<Platform.Access.Contracts.IMembershipReader>(Members);
+                }
                 var descriptor = services.Last(s => s.ServiceType == typeof(IAccessDecision));
                 services.Remove(descriptor);
                 services.AddSingleton<IAccessDecision>(sp => new ObservedDecision(
