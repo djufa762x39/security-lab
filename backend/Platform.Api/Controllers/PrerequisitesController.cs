@@ -3,6 +3,7 @@ using Platform.Access.Contracts;
 using Platform.Access.Domain.Enums;
 using Platform.Access.Domain.Models;
 using Platform.Api.Interfaces.Identity;
+using Platform.Api.Modules.Laboratories.Application;
 using Platform.Prerequisites.Contracts;
 using Platform.Prerequisites.Domain;
 using Platform.Prerequisites.Infrastructure;
@@ -15,7 +16,8 @@ namespace Platform.Api.Controllers;
 public sealed class PrerequisitesController(
     IPrerequisiteRepository repository,
     Platform.Access.Contracts.IAccessDecision accessDecision,
-    IRequestSubjectResolver subjectResolver) : ControllerBase
+    IRequestSubjectResolver subjectResolver,
+    ILaboratoryRepository laboratories) : ControllerBase
 {
     [HttpGet]
     [RequireAccess("prerequisites.read", ResourceType = "laboratory", IdRouteParam = "laboratoryId")]
@@ -102,6 +104,17 @@ public sealed class PrerequisitesController(
             return BadRequest(new { code = "invalid_prerequisite" });
         }
 
+        var requiredLaboratory = await laboratories.GetByIdAsync(
+            prerequisite.RequiredLaboratoryId,
+            cancellationToken);
+
+        if (requiredLaboratory is null)
+        {
+            return NotFound(new
+            {
+                code = "prerequisite_laboratory_not_found"
+            });
+        }
 
         AddPrerequisiteResult result;
 

@@ -327,4 +327,59 @@ public class PrerequisitesHttpTests
         Assert.That(ids, Does.Not.Contain(required.Id));
     }
 
+    [Test]
+    public async Task Author_CannotAddNonexistentPrerequisite()
+    {
+        var authorId = Guid.NewGuid();
+        var nonexistentId = Guid.NewGuid();
+
+        using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Development");
+
+                builder.ConfigureAppConfiguration((_, configuration) =>
+                {
+                    configuration.AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["Identity:DevSubjectId"] = authorId.ToString(),
+                            ["Authoring:AuthorAccountIds:0"] = authorId.ToString()
+                        });
+                });
+            });
+
+        var laboratories = factory.Services
+            .GetRequiredService<ILaboratoryRepository>();
+
+        var laboratory = new Laboratory(
+            Guid.NewGuid(),
+            "Laboratory A",
+            authorId,
+            TimeProvider.System);
+
+        await laboratories.AddAsync(laboratory);
+
+        using var client = factory.CreateClient();
+
+        var endpoint =
+            $"/api/laboratories/{laboratory.Id}/prerequisites";
+
+        using var response = await client.PostAsJsonAsync(
+            endpoint,
+            new { RequiredLaboratoryId = nonexistentId });
+
+        Assert.That(response.StatusCode,
+            Is.EqualTo(HttpStatusCode.NotFound));
+
+        using var getResponse = await client.GetAsync(endpoint);
+
+        Assert.That(getResponse.StatusCode,
+            Is.EqualTo(HttpStatusCode.OK));
+
+        var ids = await getResponse.Content.ReadFromJsonAsync<Guid[]>();
+
+        Assert.That(ids, Is.Empty);
+    }
+
 }

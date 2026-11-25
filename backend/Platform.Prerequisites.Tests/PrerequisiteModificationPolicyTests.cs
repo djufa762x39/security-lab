@@ -136,7 +136,6 @@ public class PrerequisiteModificationPolicyTests
         return new PrerequisiteModificationPolicy(
             serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             authors);
-        
     }
 
     private static AccessRequest CreateRequest(

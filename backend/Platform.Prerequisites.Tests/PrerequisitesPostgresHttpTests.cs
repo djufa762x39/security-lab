@@ -40,7 +40,7 @@ public class PrerequisitesPostgresHttpTests
 
                 builder.UseSetting(
                     "ConnectionStrings:Authoring",
-                    database.GetConnectionString());    
+                    database.GetConnectionString());
 
                 builder.ConfigureAppConfiguration((_, configuration) =>
                 {
@@ -89,6 +89,33 @@ public class PrerequisitesPostgresHttpTests
 
         var endpoint =
             $"/api/laboratories/{laboratory.Id}/prerequisites";
+
+        // Reject a prerequisite that references a nonexistent laboratory.
+        var nonexistentId = Guid.NewGuid();
+
+        using var invalidResponse = await client.PostAsJsonAsync(
+            endpoint,
+            new
+            {
+                RequiredLaboratoryId = nonexistentId
+            });
+
+        Assert.That(
+            invalidResponse.StatusCode,
+            Is.EqualTo(HttpStatusCode.NotFound));
+
+        // Verify that no invalid prerequisite was persisted.
+        using (var scope = factory.Services.CreateScope())
+        {
+            var context = scope.ServiceProvider
+                .GetRequiredService<LaboratoryDbContext>();
+
+            var exists = await context.LabPrerequisites
+                .AsNoTracking()
+                .AnyAsync(p => p.LaboratoryId == laboratory.Id);
+
+            Assert.That(exists, Is.False);
+        }
 
         // Add prerequisite through HTTP.
         using var addResponse = await client.PostAsJsonAsync(

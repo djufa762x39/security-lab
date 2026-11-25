@@ -5,6 +5,8 @@ using Platform.Access.Contracts;
 using Platform.Access.Domain.Models;
 using Platform.Api.Controllers;
 using Platform.Api.Interfaces.Identity;
+using Platform.Api.Modules.Laboratories.Domain;
+using Platform.Api.Modules.Laboratories.Infrastructure;
 using Platform.Prerequisites.Infrastructure;
 
 namespace Platform.Prerequisites.Tests;
@@ -44,7 +46,8 @@ public class PrerequisitesControllerTests
         var controller = new PrerequisitesController(
             new InMemoryPrerequisiteRepository(),
             new DenyAccessDecision(),
-            new UnauthenticatedSubjectResolver());
+            new UnauthenticatedSubjectResolver(),
+            new InMemoryLaboratoryRepository());
 
         controller.ControllerContext = new ControllerContext
         {
@@ -117,7 +120,8 @@ public class PrerequisitesControllerTests
         var controller = new PrerequisitesController(
             new InMemoryPrerequisiteRepository(),
             new DenyAccessDecision(),
-            new AuthenticatedSubjectResolver());
+            new AuthenticatedSubjectResolver(),
+            new InMemoryLaboratoryRepository());
 
         controller.ControllerContext = new ControllerContext
         {
@@ -154,12 +158,30 @@ public class PrerequisitesControllerTests
     [Test]
     public async Task Add_StorageUnavailable_Returns503()
     {
-        var controller = CreateControllerWithUnavailableStorage();
+        var laboratories = new InMemoryLaboratoryRepository();
+
+        var requiredLaboratory = new Laboratory(
+            Guid.NewGuid(),
+            "Required Laboratory",
+            Guid.NewGuid());
+
+        await laboratories.AddAsync(requiredLaboratory);
+
+        var controller = new PrerequisitesController(
+            new UnavailablePrerequisiteRepository(),
+            new AllowAccessDecision(),
+            new AuthenticatedSubjectResolver(),
+            laboratories);
+
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext()
+        };
 
         var result = await controller.Add(
             Guid.NewGuid(),
             new PrerequisitesController.AddPrerequisiteRequest(
-                Guid.NewGuid()),
+                requiredLaboratory.Id),
             CancellationToken.None);
 
         AssertStorageUnavailable(result);
@@ -183,7 +205,8 @@ public class PrerequisitesControllerTests
         var controller = new PrerequisitesController(
             new UnavailablePrerequisiteRepository(),
             new AllowAccessDecision(),
-            new AuthenticatedSubjectResolver());
+            new AuthenticatedSubjectResolver(),
+            new InMemoryLaboratoryRepository());
 
         controller.ControllerContext = new ControllerContext
         {
