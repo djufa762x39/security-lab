@@ -35,7 +35,7 @@ The check runs right after routing and correlation (`UseRouting`, `UseCorrelatio
 - A refused request must have no side effect. The session check, Access subject providers (Identity, ADM-08, PRG-04, revisions) and rate limiting all run later, so a forged request no longer updates `LastActivityAt` (US-14 inactivity), spends a login permit or writes an Access denial.
 - An invalid session still gets `401 session_invalid` first, on every route: without a valid session the request is not refused here (see above), so the session check further on answers it.
 - The request order on Identity routes is: CSRF check, session check (`401`), Access (`403` or `404`), endpoint. A caller with a valid session but no token gets `403 csrf_invalid` before Access, so the answer does not depend on the resource and tells nothing about it.
-- `HttpContext.User` is anonymous both when the token is issued and when it is checked (the session is not an authentication scheme), which is why the token is bound to the session cookie, not to the user.
+- The check runs before authentication, so it always sees an anonymous user, and the session is not an authentication scheme. That is why the token is bound to the session cookie, not to the user, and why `CsrfToken.Issue` issues every token for an anonymous user. Otherwise, with the KT1 demo on and OIDC off (the KT1 cookie scheme is then the only, default scheme), the token endpoint and login would bind the token to the KT1 user and every check would refuse it.
 
 ## Getting a token
 
@@ -77,6 +77,8 @@ The middleware never logs the token or the cookie (AUD-03). If it cannot tell wh
 
 `csrfFetch(input, init, send?)` is a drop-in replacement for `fetch`. For a state-changing method it copies the readable cookie into `X-CSRF-TOKEN` synchronously, so requests leave at once and in the same order. On `403 csrf_invalid` it calls `GET /api/auth/csrf` and repeats the request exactly once. Any other `403` is returned unchanged.
 
+If the repeated login still gets `403`, `LoginForm` shows "Security check failed. Refresh the page and try again.", not the message for a wrong password: the password was never checked.
+
 Calls that change state and use `csrfFetch`: `auth/apiClient.ts` (login, logout, `request`), `api/http.ts` (`apiRequest`), `api/accounts.ts`, `api/labs.ts` (`createLab`), `services/courseService.ts`, `components/labs/EditTaskForm.tsx`, `components/CourseworkKt1.tsx`. A new call that changes state must use `csrfFetch` or one of these clients.
 
 ### Tests for other modules
@@ -104,8 +106,10 @@ using var client = factory.CreateCsrfClient();   // instead of factory.CreateCli
 - Logout without a token still revokes the session; `GET` with the cookie and no token is not checked; a state-changing request without the session cookie, or with a revoked or expired one, gets `401 session_invalid` (cookie removed), not the CSRF answer.
 - `PUT /api/admin/accounts/{id}/status` without a token: an administrator gets `403 csrf_invalid` and no status or session changes; a non-administrator gets the same answer for an existing and an unknown account.
 - The token endpoint sets both cookies with the right flags and keeps an existing cookie token.
+- With the KT1 demo cookie signed in, the token from `GET /api/auth/csrf` and the one login issues both work.
+- `POST /api/admin/accounts/{id}/unlock` (no body, a "simple" request) by an administrator without a token gets `403 csrf_invalid`; `lockout_end`, `failed_login_count` and the Audit log stay unchanged.
 
-Frontend: `frontend/src/__tests__/csrf.test.ts`.
+Frontend: `frontend/src/__tests__/csrf.test.ts`, and in `LoginForm.test.tsx` the `403` message and `403` followed by `429`.
 
 ```powershell
 dotnet test backend\Platform.Identity.Tests --filter "Category=US-15"
