@@ -112,7 +112,7 @@ verifikacija kasnije menja u istoj transakciji. Dva zahteva koja drže `FOR SHAR
 Ako provera ne prođe, ništa se ne upisuje i odgovor je `401 invalid_mfa`:
 - enrollment ne čuva pending tajnu i ne piše `auth.mfa.enrollment.started`;
 - potvrda ne uključuje MFA i piše odbijanje `auth.mfa.enabled` sa `reasonCode = session_inactive`;
-- verifikacija ne troši korak i ne promoviše sesiju (`auth.mfa.verify`, `session_inactive`).
+- verifikacija ne troši korak i ne promoviše sesiju (`auth.mfa.verified`, `session_inactive`).
 
 Neuspešni odgovori ne otkrivaju da li je problem bio u tajni, sesiji ili kodu.
 
@@ -172,9 +172,14 @@ Identity ishoda u Audit katalog:
 |-|-|-|
 | `auth.mfa.enrollment.started` | Success | `ITrustedAuditWriter`, posle čuvanja pending enrollment-a (ništa još nije uključeno) |
 | `auth.mfa.enabled` | Success | `ITransactionalAuditWriter`, u istoj transakciji kao uključivanje |
-| `auth.mfa.enabled` | Failure (`already_enabled`, `no_valid_enrollment`, `invalid_enrollment`, `invalid_code`) | `ITrustedAuditWriter` |
-| `auth.mfa.verify` | Success | `ITransactionalAuditWriter`, u istoj transakciji kao consume koraka i promocija sesije |
-| `auth.mfa.verify` | Failure (`invalid_code`, `replayed`, `locked`, `invalid_secret`, `session_inactive`) | `ITrustedAuditWriter`, sa `CancellationToken.None` |
+| `auth.mfa.enabled` | Failure (`already_enabled`, `no_valid_enrollment`, `invalid_enrollment`, `invalid_code`, `session_inactive`) | `ITrustedAuditWriter` |
+| `auth.mfa.verified` | Success | `ITransactionalAuditWriter`, u istoj transakciji kao consume koraka i promocija sesije |
+| `auth.mfa.verified` | Failure (`invalid_code`, `replayed_code`, `invalid_secret`, `session_inactive`) | `ITrustedAuditWriter`, sa `CancellationToken.None` |
+| `auth.mfa.verified` | Denied (`attempt_limit`): kod koji dostigne prag ili pokušaj dok traje lockout | `ITrustedAuditWriter`, sa `CancellationToken.None` |
+
+`reasonCode` je obavezan uz svako odbijanje i mora biti na zatvorenoj listi iz `CONTRACTS.md` ("MFA events").
+Pogrešan ili ponovljen kod je `Failure`, kao pogrešna lozinka u `auth.login`; ograničenje pokušaja je `Denied`,
+kao `auth.login.throttled`. Za korisnika je odgovor u oba slučaja isti `401 invalid_mfa`.
 
 Uspeh bez audit zapisa ne postoji: ako zapis nije `Recorded`, nema commit-a i odgovor je `503`.
 Odbijanje ostaje odbijanje i kada audit ne uspe (pravilo 2 iz `docs/components/audit/CONTRACTS.md`).
@@ -230,7 +235,8 @@ US-18 i audit testovi (`MfaServiceTests`, `MfaIntegrationTests` na PostgreSQL-u)
 - prag pogrešnih kodova, pa nova prijava lozinkom i ispravan kod (`401`), i uspeh posle `LockoutMinutes`;
 - paralelne pogrešne kodove (tačan brojač, lockout tačno na pragu);
 - nedostupan audit pri potvrdi i verifikaciji (`503`, ništa nije promenjeno);
-- zapise `auth.mfa.enabled` i `auth.mfa.verify` u `audit` šemi bez koda, tajne i e-maila;
+- zapise `auth.mfa.enabled` i `auth.mfa.verified` u `audit` šemi bez koda, tajne i e-maila;
+- svaki razlog koji servis piše prolazi pravi `AuditDraftValidator` (`MfaRefusals_WithEveryReasonTheServiceWrites_PassTheAuditContract`);
 - potvrdu bez enrollment-a (`401`) i dva paralelna enroll-a (jedan `200`, jedan `409`, nijedan `500`);
 - key ring (`MfaKeyRingTests`): nova instanca sa istim ključevima dešifruje sačuvanu tajnu, ključevi na disku su
   šifrovani sertifikatom, a start van Development okruženja pada bez podešavanja.

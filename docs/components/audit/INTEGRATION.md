@@ -151,10 +151,12 @@ Audit persistence is unavailable) is pending confirmation from the Team 1 Identi
 PR #148 supplies the separate IDN-03 account-status transaction and S-16 rollback proof described
 in S11-06; the two changes share the same Audit contracts and composition.
 
-IDN-06 (PR #196, catalog in PR #230) adds `auth.mfa.enrollment.started`, `auth.mfa.enabled` and
-`auth.mfa.verify`. MFA enabled and MFA verified are written through `ITransactionalAuditWriter` in
-the same transaction as the identity change (no record, no commit, `503`); refusals go through
-`ITrustedAuditWriter` and stay refusals when the write fails. With this, Identity has no audit
+IDN-06 (PRs #230, #231, #232; #196 closed) adds `auth.mfa.enrollment.started`, `auth.mfa.enabled`
+and `auth.mfa.verified`. MFA enabled and MFA verified are written through `ITransactionalAuditWriter`
+in the same transaction as the identity change (no record, no commit, `503`); refusals go through
+`ITrustedAuditWriter` and stay refusals when the write fails. Every refusal carries a `reasonCode`
+from the closed list in CONTRACTS.md ("MFA events"): a wrong or replayed code is `Failure`, the attempt
+limit is `Denied` with `attempt_limit`. With this, Identity has no audit
 path outside the shared contract.
 
 `account.status.changed` (IDN-03), from `ChangeAccountStatus`:
