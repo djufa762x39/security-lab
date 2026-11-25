@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Antiforgery;
 
 namespace Platform.Api.Services.Identity;
@@ -39,7 +40,21 @@ public static class CsrfToken
     /// </summary>
     public static string Issue(HttpContext context, IAntiforgery antiforgery)
     {
-        var tokens = antiforgery.GetTokens(context);
+        // The check runs before authentication, so it always sees an anonymous user. Issue the token for an
+        // anonymous user too: with the KT1 demo on (its cookie scheme is then the only, default scheme) the
+        // endpoint would otherwise bind the token to the KT1 user and every check would refuse it.
+        // The binding that matters is to the session cookie (CsrfSessionBinding).
+        var user = context.User;
+        context.User = new ClaimsPrincipal(new ClaimsIdentity());
+        AntiforgeryTokenSet tokens;
+        try
+        {
+            tokens = antiforgery.GetTokens(context);
+        }
+        finally
+        {
+            context.User = user;
+        }
         if (tokens.CookieToken is not null)
             context.Response.Cookies.Append(CookieName, tokens.CookieToken, Options());
         context.Response.Cookies.Append(ReadableCookieName, tokens.RequestToken!, ReadableOptions());

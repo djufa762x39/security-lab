@@ -9,8 +9,8 @@ namespace Platform.Api.Services.Identity;
 /// US-15 / SEC-03: binds the CSRF request token to the session cookie the browser sends with it. The token carries
 /// the SHA-256 of <c>SecurityLab.Session</c> (empty without a session), so a pair issued before login, after logout
 /// or for another session in the same browser is refused. The value is inside the encrypted token and never leaves it.
-/// <c>HttpContext.User</c> cannot do this: the check runs before authentication and the session is not an
-/// authentication scheme, so the user is anonymous both when the token is issued and when it is checked.
+/// <c>HttpContext.User</c> cannot do this: the session is not an authentication scheme and the check runs before
+/// authentication, so it always sees an anonymous user; <c>CsrfToken.Issue</c> therefore issues for an anonymous user.
 /// </summary>
 public sealed class CsrfSessionBinding : IAntiforgeryAdditionalDataProvider
 {
