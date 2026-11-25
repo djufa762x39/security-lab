@@ -115,7 +115,7 @@ Legend: circle = process, rectangle = external actor or module, cylinder = data 
 | P3 | Session check | `SessionCheckMiddleware` on every non-anonymous endpoint, `GET /api/auth/me` (`AuthController.Me`) | implemented |
 | P4 | Logout and revoke | `POST /api/auth/logout` (`LogoutService`), `ISessionManager.RevokeAllForUser`, `RevokeSession`, `ListForUser` (`SessionManager`) | logout implemented, see [`IDN-02_LOGOUT.md`](./IDN-02_LOGOUT.md). Revoke all, revoke one and list are implemented as methods, no HTTP endpoint for revoke one or list yet (IDN-07) |
 | P6 | Dev migrate and seed | `DevelopmentDatabase.ApplyIdentityMigrationsAsync`, `DevelopmentAccountSeeder.SeedDevelopmentAccountsAsync` at API startup | implemented, Development only, see [`DEVELOPMENT.md`](../../DEVELOPMENT.md) |
-| P7 | CSRF token and check | `GET /api/auth/csrf` (`AuthController.Csrf`), `CsrfProtectionMiddleware` in front of every endpoint | implemented, see [`IDN-02_CSRF.md`](./IDN-02_CSRF.md) |
+| P7 | CSRF token and check | `GET /api/auth/csrf` (`AuthController.Csrf`), `CsrfProtectionMiddleware` right after routing, before every session check, Access and rate limiting | implemented, see [`IDN-02_CSRF.md`](./IDN-02_CSRF.md) |
 
 Process numbers follow the team work plan (P5 is listed after P2 only for layout).
 
@@ -153,8 +153,8 @@ Process numbers follow the team work plan (P5 is listed after P2 only for layout
 | F18 | P6 -> D1 | Pending migrations applied. Four accounts upserted (administrator, student, teacher, blocked student), BCrypt hash set only if missing | `ApplyIdentityMigrationsAsync`, `SeedDevelopmentAccountsAsync` | `identity.accounts`, creates `identity.sessions` | implemented. Throws outside Development |
 | F19 | E3 <-> D1, D2, D3 | IDN-03 locks the account row, writes the new status, revokes all sessions (Blocked, Archived) and writes the `account.status.changed` Audit record in one transaction. Rolled back as a whole if any step fails | `ChangeAccountStatus`, `IAccountStatusStore` (`EfAccountStatusStore`), `ITransactionalAuditWriter` | `identity.accounts`, `identity.sessions`, `audit.audit_events` | implemented. Login and the session check read the same status |
 | F20 | E3 -> D5 | IDN-01 creates an account for the administrator-only endpoint | `POST /api/admin/accounts`, `IAccountRegistration` | `identity.AspNetUsers` | implemented by IDN-01. The new account cannot log in (see [Known deviations](#known-deviations)) |
-| F21 | E1 <-> P7 | Token request. Out: HttpOnly cookie `__Host-SecurityLab.Csrf` (only when missing), readable cookie `__Host-SecurityLab.CsrfToken` and `{ token }`, `no-store`. In, on every state-changing request: header `X-CSRF-TOKEN` and the HttpOnly cookie | `GET /api/auth/csrf`, `IAntiforgery` | none (Data Protection key ring) | implemented |
-| F22 | P7 -> P1, P3 and every other endpoint | A state-changing request with the session cookie, or a login, passes only with a valid token. Otherwise `403 csrf_invalid` before the endpoint runs. `GET`, logout and requests without the session cookie are not checked | `CsrfProtectionMiddleware` | none | implemented |
+| F21 | E1 <-> P7 | Token request. Out: HttpOnly cookie `__Host-SecurityLab.Csrf` (only when missing), readable cookie `__Host-SecurityLab.CsrfToken` and `{ token }`, `no-store`. The request token is bound to the session cookie sent with it (SHA-256 inside the encrypted token); login sets a new readable token for the new session, logout removes both cookies. In, on every state-changing request: header `X-CSRF-TOKEN` and the HttpOnly cookie | `GET /api/auth/csrf`, `IAntiforgery` | none (Data Protection key ring) | implemented |
+| F22 | P7 -> P1, P3 and every other endpoint | A state-changing request with a valid session, or a login, passes only with a valid token for that session. Otherwise `403 csrf_invalid` before any session check, Access decision, rate limit or audit, so nothing changes, not even `last_activity_at`. Whether the session is valid is read without recording activity. `GET`, logout, the OIDC callback and requests without a valid session are not checked; an invalid session still gets `401` from P3 | `CsrfProtectionMiddleware` | none | implemented |
 
 ## Trust boundaries
 
@@ -186,7 +186,7 @@ The phone (E2) is outside all boundaries. The TOTP secret would leave the server
 | `MfaPending` cookie sent to a protected endpoint (UI bypassed) | F4 | Planned: `IsAuthenticated` is false until `Active` (IDN-06 criterion) |
 | Wrong or replayed TOTP code | F2 | Planned: session stays `MfaPending`, limited attempts, replay rejected |
 | Enrollment when MFA is already enabled | F3 | Planned: rejected, existing secret not overwritten |
-| State-changing request without a valid CSRF token (missing, forged, from another browser, without its cookie), also on login | F1, F4, F22 | `403 csrf_invalid`, nothing changes (US-15) |
+| State-changing request without a valid CSRF token (missing, forged, from another browser, issued for another session, without its cookie), also on login | F1, F4, F22 | `403 csrf_invalid` before any other check, nothing changes, the session is not extended (US-15) |
 
 ## Sensitive data
 
@@ -199,7 +199,7 @@ The phone (E2) is outside all boundaries. The TOTP secret would leave the server
 | `failed_login_count`, `lockout_end` | D1, F6 | Not secret, but they reveal account state. Never returned to E1 and never put in an audit event, which carries only the account id and the detail `account locked` |
 | TOTP secret | F3 once, D1 | Planned: shown once at enrollment, stored protected (US-22), never logged or returned again |
 | TOTP code | F2, F3 | Planned: never logged. Replay and guessing limited |
-| CSRF token pair | F21, F22 | Made and checked by ASP.NET Core antiforgery (Data Protection), no custom cryptography. Cookies `__Host-`, `Secure`, `SameSite=Strict`; the cookie token is `HttpOnly`. Never logged |
+| CSRF token pair | F21, F22 | Made and checked by ASP.NET Core antiforgery (Data Protection), no custom cryptography. Bound to the session by the SHA-256 of the session cookie, inside the encrypted token. Cookies `__Host-`, `Secure`, `SameSite=Strict`; the cookie token is `HttpOnly`. Never logged |
 
 ## Security requirements
 
