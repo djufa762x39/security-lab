@@ -73,8 +73,8 @@ function RevisionsSection() {
         ? <RevisionListPage
             key="pending"
             title="Revizije na čekanju"
-            description="Revizije koje čekaju vaše odobrenje. Sopstvene revizije se ovde ne prikazuju kada politika zahteva drugog odobravaoca."
-            emptyText="Nema revizija koje čekaju vaše odobrenje."
+            description="Revizije predate na pregled u kursevima u kojima imate pravo pregleda. Sopstvenu reviziju ne možete sami da odobrite kada politika kursa zahteva drugog odobravaoca."
+            emptyText="Nema revizija koje čekaju pregled."
             load={getPendingReviews}
             onOpen={id => setView({ tab: 'pending', revisionId: id })}
           />
