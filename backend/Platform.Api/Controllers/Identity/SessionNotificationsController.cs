@@ -1,17 +1,18 @@
 using Microsoft.AspNetCore.Mvc;
 using Platform.Access.AspNet;
 using Platform.Api.Interfaces.Identity;
+using Platform.Api.Security.IdentityAccess;
 using Platform.Identity.Interfaces;
 
 namespace Platform.Api.Controllers.Identity;
 
-[DelegatedAuthorization]
 [ApiController]
 [Route("api/auth/session-notifications")]
 public sealed class SessionNotificationsController(
     Platform.Api.Interfaces.Identity.IIdentityContext identity,
     ISessionNotificationPreferences preferences) : ControllerBase
 {
+    [RequireAccess(IdentityAccessActions.SessionNotificationsRead)]
     [HttpGet]
     public async Task<IActionResult> Get(CancellationToken ct)
     {
@@ -23,6 +24,7 @@ public sealed class SessionNotificationsController(
         return enabled is null ? NotFound() : Ok(new SessionNotificationPreferenceResponse(enabled.Value));
     }
 
+    [RequireAccess(IdentityAccessActions.SessionNotificationsUpdate)]
     [HttpPut]
     public async Task<IActionResult> Set(
         [FromBody] SessionNotificationPreferenceRequest? request,

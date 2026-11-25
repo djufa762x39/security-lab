@@ -31,4 +31,11 @@ public sealed class UserAccount(
 
     public void SetNewSessionNotificationsEnabled(bool enabled) =>
         NewSessionNotificationsEnabled = enabled;
+
+    /// <summary>IDN-05: administrator unlock. Ends the lockout and restarts the failure counter.</summary>
+    public void ClearLockout()
+    {
+        FailedLoginCount = 0;
+        LockoutEnd = null;
+    }
 }

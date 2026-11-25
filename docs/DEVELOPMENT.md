@@ -51,6 +51,40 @@ SMTP username and password are optional for relays that do not require authentic
 
 SMTP must use TLS (`Email__Smtp__EnableSsl=true`) outside Development. The SMTP client uses STARTTLS and validates the server certificate using the operating system trust store. Plaintext SMTP is rejected unless the environment is Development, `Email__Smtp__AllowInsecureLocalMailpit=true`, the SMTP host is loopback (`localhost` or a loopback IP), and SMTP authentication is not configured. This exception is intended only for a local Mailpit instance (for example, `localhost:1025`); never enable it in shared or production environments.
 
+## Local Audit database required by Identity login
+
+Successful login is fail-closed when its mandatory Audit record cannot be persisted. A local API
+therefore needs the Audit schema and the restricted runtime role as well as the Identity schema.
+The API never runs Audit migrations at startup and must not use the bootstrap account for runtime
+writes.
+
+After copying `.env.example` to the ignored `.env`, replace
+`AUDIT_RUNTIME_PASSWORD` with at least 32 letters, digits, underscores or hyphens. Then, from the
+repository root, restore the pinned EF tool and generate the idempotent Audit migration script:
+
+```powershell
+dotnet tool restore
+$env:AUDIT_MIGRATION_CONNECTION_STRING = 'Host=127.0.0.1;Port=5432;Database=securitylab'
+New-Item -ItemType Directory -Force TestResults | Out-Null
+dotnet ef migrations script --idempotent --project backend/Platform.Audit/Platform.Audit.csproj --startup-project backend/Platform.Audit/Platform.Audit.csproj --context AuditDbContext --output TestResults/audit-initial-migration.sql
+Remove-Item Env:AUDIT_MIGRATION_CONNECTION_STRING
+```
+
+Stop if generation fails. Review the generated SQL, then apply it through the local bootstrap
+account and provision the restricted runtime role:
+
+```powershell
+Get-Content -Raw TestResults/audit-initial-migration.sql | docker compose --env-file .env exec -T db sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+./scripts/audit/bootstrap-runtime.ps1
+```
+
+The checked-in `.env.example` builds `ConnectionStrings__Audit` from the ignored runtime password.
+Restart the API after provisioning so it reads that setting. A missing or invalid Audit connection
+causes successful credential verification to revoke the new session and return the generic
+`login_unavailable` response; no usable token is returned. See
+[`components/audit/PERSISTENCE.md`](components/audit/PERSISTENCE.md) for the privilege model,
+verification tests and production guidance.
+
 ## Reset the local identity database
 
 Use the reset script when you want a clean identity schema, for example after testing with throwaway data or when your local schema no longer matches the migrations. It deletes all identity data in your local database and cannot be undone.

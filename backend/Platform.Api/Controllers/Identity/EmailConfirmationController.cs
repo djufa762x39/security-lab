@@ -5,12 +5,13 @@ using Microsoft.AspNetCore.RateLimiting;
 using Platform.Access.AspNet;
 using Platform.Api.Interfaces.Identity;
 using Platform.Api.Modules.Identity.RateLimiting;
+using Platform.Api.Security.IdentityAccess;
 using Platform.Api.Services.Identity;
 using Platform.Identity.Interfaces;
 
 namespace Platform.Api.Controllers.Identity;
 
-[DelegatedAuthorization]
+[RequireAccess(IdentityAccessActions.EmailConfirmation)]
 [ApiController]
 [Route("api/auth/email-confirmation")]
 public sealed class EmailConfirmationController(
