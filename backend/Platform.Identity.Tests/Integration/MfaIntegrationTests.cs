@@ -335,7 +335,7 @@ public sealed class MfaIntegrationTests : IntegrationTestBase
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
     }
 
-    // owlCoder review point 1: the same code in two parallel requests (two pending logins of one user).
+    // US-18 replay: the same code in two parallel requests (two pending logins of one user).
     [Test]
     [Category("US-18")]
     public async Task Verification_SameCodeInParallelFromTwoPendingSessions_PromotesExactlyOne()
@@ -401,7 +401,7 @@ public sealed class MfaIntegrationTests : IntegrationTestBase
         Assert.That(credentials.PendingTotpSecretCiphertext, Is.Null);
     }
 
-    // owlCoder review point 2: the lockout is enforced, also against a new password login and a correct code.
+    // US-18 lockout: the lockout is enforced, also against a new password login and a correct code.
     [Test]
     [Category("US-18")]
     public async Task Verification_AfterThreshold_NewPasswordLoginWithCorrectCode_IsRefused()
@@ -481,7 +481,7 @@ public sealed class MfaIntegrationTests : IntegrationTestBase
         Assert.That(locked.MfaLockedUntil, Is.GreaterThan(DateTimeOffset.UtcNow));
     }
 
-    // owlCoder review point 3: MFA audit goes to the Audit module, atomically with the change.
+    // US-17/US-18 audit (AUD-01): MFA audit goes to the Audit module, atomically with the change.
     [Test]
     [Category("US-17")]
     public async Task EnrollConfirm_WhenAuditIsUnavailable_Returns503_AndMfaStaysDisabled()
@@ -592,7 +592,7 @@ public sealed class MfaIntegrationTests : IntegrationTestBase
         return rows;
     }
 
-    // milanPR15 review: enrollment edge cases.
+    // US-17: enrollment edge cases.
     [Test]
     [Category("US-17")]
     public async Task EnrollConfirm_WithoutEnrollment_ReturnsUnauthorized()

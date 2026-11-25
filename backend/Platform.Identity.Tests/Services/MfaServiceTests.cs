@@ -412,7 +412,7 @@ public sealed class MfaServiceTests
         Assert.That(_work.Committed, Is.True);
     }
 
-    // owlCoder review point 3: a failed Audit write must not give a false success.
+    // US-17/US-18 audit (AUD-01): a failed Audit write must not give a false success.
     [Test]
     public async Task Confirm_WhenAuditIsUnavailable_DoesNotCommit_AndReturnsUnavailable()
     {
@@ -495,7 +495,7 @@ public sealed class MfaServiceTests
         VerifyAuditDoesNotContainSecret("invalid_code", AuditEventTypes.AuthMfaVerify);
     }
 
-    // milanPR15 review: confirm without /mfa/enroll is a client error (401), not 503.
+    // US-17: confirm without /mfa/enroll is a client error (401), not 503.
     [Test]
     public async Task Confirm_WithoutEnrollment_IsInvalidCode_AndAuditsNoValidEnrollment()
     {
