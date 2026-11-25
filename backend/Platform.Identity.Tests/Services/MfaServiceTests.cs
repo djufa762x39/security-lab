@@ -86,9 +86,7 @@ public sealed class MfaServiceTests
 
         Assert.That(result.Outcome, Is.EqualTo(MfaOutcome.AlreadyEnabled));
         Assert.That(result.Uri, Is.Null);
-        _credentials.Verify(store => store.CreatePendingAsync(
-            It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<int>(),
-            It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Never);
+        Assert.That(_work.CreatePendingCalls, Is.Zero);
         Assert.That(_audit.Writes, Is.Empty);
     }
 
@@ -100,18 +98,18 @@ public sealed class MfaServiceTests
             .ReturnsAsync((MfaCredentials?)null);
         _credentials.Setup(store => store.GetEmailAsync(UserId, It.IsAny<CancellationToken>()))
             .ReturnsAsync("student@example.test");
-        _credentials.Setup(store => store.CreatePendingAsync(
-                UserId, It.IsAny<string>(), 1, _now.AddMinutes(10), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
 
         var result = await _service.EnrollAsync(Token, "corr-success", CancellationToken.None);
 
         Assert.That(result.Outcome, Is.EqualTo(MfaOutcome.Success));
         Assert.That(result.Uri, Does.StartWith("otpauth://totp/"));
         Assert.That(result.Uri, Does.Contain("student%40example.test"));
-        _credentials.Verify(store => store.CreatePendingAsync(
-            UserId, It.Is<string>(ciphertext => !string.IsNullOrWhiteSpace(ciphertext)),
-            1, _now.AddMinutes(10), It.IsAny<CancellationToken>()), Times.Once);
+        Assert.That(_work.LockedSession, Is.EqualTo((UserId, _sessionId, AuthLevel.Active)));
+        Assert.That(_work.CreatedPending?.UserId, Is.EqualTo(UserId));
+        Assert.That(_work.CreatedPending?.Ciphertext, Is.Not.Null.And.Not.Empty);
+        Assert.That(_work.CreatedPending?.KeyVersion, Is.EqualTo(1));
+        Assert.That(_work.CreatedPending?.ExpiresAt, Is.EqualTo(_now.AddMinutes(10)));
+        Assert.That(_work.Committed, Is.True);
         var started = _audit.Writes.Single();
         Assert.That(started.Draft.EventType, Is.EqualTo(AuditEventTypes.AuthMfaEnrollmentStarted));
         Assert.That(started.Transaction, Is.Null);
@@ -131,16 +129,14 @@ public sealed class MfaServiceTests
             });
         _credentials.Setup(store => store.GetEmailAsync(UserId, It.IsAny<CancellationToken>()))
             .ReturnsAsync("student@example.test");
-        _credentials.Setup(store => store.CreatePendingAsync(
-                UserId, It.IsAny<string>(), 1, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
+        _work.CreatePendingResult = false;
 
         var result = await _service.EnrollAsync(Token, "corr-4", CancellationToken.None);
 
         Assert.That(result.Outcome, Is.EqualTo(MfaOutcome.EnrollmentPending));
         Assert.That(result.Uri, Is.Null);
-        _credentials.Verify(store => store.CreatePendingAsync(
-            UserId, It.IsAny<string>(), 1, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Once);
+        Assert.That(_work.CreatePendingCalls, Is.EqualTo(1));
+        Assert.That(_work.Committed, Is.False);
     }
 
     [Test]
@@ -325,6 +321,64 @@ public sealed class MfaServiceTests
 
         Assert.That(result, Is.EqualTo(MfaOutcome.InvalidCode));
         Assert.That(_work.Committed, Is.False);
+    }
+
+    // IDN-03 and IDN-07: the session and the account are checked again under a lock in the writing transaction.
+    [Test]
+    public async Task Enroll_WhenSessionOrAccountIsNoLongerActiveAtTheWrite_IsUnauthorized_AndStoresNothing()
+    {
+        SetupSession();
+        _credentials.Setup(store => store.GetAsync(UserId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((MfaCredentials?)null);
+        _credentials.Setup(store => store.GetEmailAsync(UserId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync("student@example.test");
+        _work.SessionLockResult = false;
+
+        var result = await _service.EnrollAsync(Token, "corr-enroll-blocked", CancellationToken.None);
+
+        Assert.That(result.Outcome, Is.EqualTo(MfaOutcome.Unauthorized));
+        Assert.That(result.Uri, Is.Null);
+        Assert.That(_work.LockedSession, Is.EqualTo((UserId, _sessionId, AuthLevel.Active)));
+        Assert.That(_work.CreatePendingCalls, Is.Zero);
+        Assert.That(_work.Committed, Is.False);
+        Assert.That(_audit.Writes, Is.Empty);
+    }
+
+    [Test]
+    public async Task Confirm_WhenSessionOrAccountIsNoLongerActiveAtTheWrite_IsUnauthorized_AndDoesNotEnableMfa()
+    {
+        var current = DateTimeOffset.UtcNow;
+        var secret = TotpHelpers.GenerateSecret();
+        SetupConfirmation(secret, current);
+        _work.SessionLockResult = false;
+        var code = new Totp(Base32Encoding.ToBytes(secret)).ComputeTotp(current.UtcDateTime);
+
+        var result = await _service.ConfirmEnrollAsync(Token, code, "corr-confirm-blocked", CancellationToken.None);
+
+        Assert.That(result, Is.EqualTo(MfaOutcome.Unauthorized));
+        Assert.That(_work.LockedSession, Is.EqualTo((UserId, _sessionId, AuthLevel.Active)));
+        Assert.That(_work.ConfirmCalls, Is.Zero);
+        Assert.That(_work.Committed, Is.False);
+        VerifyAuditDoesNotContainSecret("session_inactive");
+    }
+
+    [Test]
+    public async Task Verify_WhenSessionOrAccountIsNoLongerActiveAtTheWrite_IsUnauthorized_AndConsumesNothing()
+    {
+        var current = DateTimeOffset.UtcNow;
+        var secret = TotpHelpers.GenerateSecret();
+        SetupVerification(secret, current);
+        _work.SessionLockResult = false;
+        var code = new Totp(Base32Encoding.ToBytes(secret)).ComputeTotp(current.UtcDateTime);
+
+        var result = await _service.VerifyAsync(Token, code, "corr-verify-blocked", CancellationToken.None);
+
+        Assert.That(result, Is.EqualTo(MfaOutcome.Unauthorized));
+        Assert.That(_work.LockedSession, Is.EqualTo((UserId, _sessionId, AuthLevel.MfaPending)));
+        Assert.That(_work.ConsumedStep, Is.Null);
+        Assert.That(_work.PromotedSession, Is.Null);
+        Assert.That(_work.Committed, Is.False);
+        VerifyAuditDoesNotContainSecret("session_inactive", AuditEventTypes.AuthMfaVerify);
     }
 
     [Test]
@@ -518,9 +572,7 @@ public sealed class MfaServiceTests
             .ReturnsAsync((MfaCredentials?)null);
         _credentials.Setup(store => store.GetEmailAsync(UserId, It.IsAny<CancellationToken>()))
             .ReturnsAsync("student@example.test");
-        _credentials.Setup(store => store.CreatePendingAsync(
-                UserId, It.IsAny<string>(), 1, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new Microsoft.EntityFrameworkCore.DbUpdateException("storage failed"));
+        _work.CreatePendingFailure = new Microsoft.EntityFrameworkCore.DbUpdateException("storage failed");
 
         var result = await _service.EnrollAsync(Token, "corr-db-down", CancellationToken.None);
 
@@ -585,6 +637,12 @@ public sealed class MfaServiceTests
 
     private sealed class FakeUnitOfWork : IMfaUnitOfWork
     {
+        public bool SessionLockResult { get; set; } = true;
+        public (Guid UserId, Guid SessionId, AuthLevel Level)? LockedSession { get; private set; }
+        public bool CreatePendingResult { get; set; } = true;
+        public Exception? CreatePendingFailure { get; set; }
+        public (Guid UserId, string Ciphertext, int KeyVersion, DateTimeOffset ExpiresAt)? CreatedPending { get; private set; }
+        public int CreatePendingCalls { get; private set; }
         public bool ConfirmResult { get; set; } = true;
         public bool ConsumeResult { get; set; } = true;
         public bool PromoteResult { get; set; } = true;
@@ -595,6 +653,25 @@ public sealed class MfaServiceTests
         public bool Disposed { get; private set; }
 
         public DbTransaction Transaction { get; } = new MarkerTransaction();
+
+        public Task<bool> TryLockActiveSessionAsync(
+            Guid userId, Guid sessionId, AuthLevel level, DateTimeOffset now, CancellationToken ct)
+        {
+            LockedSession = (userId, sessionId, level);
+            return Task.FromResult(SessionLockResult);
+        }
+
+        public Task<bool> TryCreatePendingAsync(
+            Guid userId, string encryptedSecret, int keyVersion, DateTimeOffset expiresAt, DateTimeOffset now,
+            CancellationToken ct)
+        {
+            CreatePendingCalls++;
+            if (CreatePendingFailure is not null)
+                return Task.FromException<bool>(CreatePendingFailure);
+            if (CreatePendingResult)
+                CreatedPending = (userId, encryptedSecret, keyVersion, expiresAt);
+            return Task.FromResult(CreatePendingResult);
+        }
 
         public Task<bool> TryConfirmEnrollmentAsync(
             Guid userId, string pendingCiphertext, long timeStep, DateTimeOffset now, CancellationToken ct)

@@ -229,7 +229,7 @@ public sealed class IdentityAuditPostgresIntegrationTests
                 TimeProvider.System),
             new StoreSessionCreator(sessionStore, NullLogger<StoreSessionCreator>.Instance),
             new SessionManager(identity),
-            new EfMfaCredentialsStore(identity, TimeProvider.System),
+            new EfMfaCredentialsStore(identity),
             CreateProducer(new UnavailableAuditWriter()));
 
         var result = await login.ExecuteAsync(email, Password, Guid.NewGuid().ToString("N"));

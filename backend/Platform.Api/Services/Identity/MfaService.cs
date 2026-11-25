@@ -61,25 +61,26 @@ public sealed class MfaService(
 
         var secret = TotpHelpers.GenerateSecret();
         var encryptedSecret = _secretProtector.Protect(secret);
-        var expiresAt = _clock.GetUtcNow().Add(EnrollmentLifetime);
-        bool stored;
         try
         {
-            stored = await _mfaCredentialsStore.CreatePendingAsync(
-                session.UserId,
-                encryptedSecret,
-                SecretKeyVersion,
-                expiresAt,
-                ct);
+            // The session and the account were read without a lock. The pending enrollment is stored only while
+            // both are still valid, in the same transaction, so a block or revocation in between stores nothing.
+            await using var work = await _mfaCredentialsStore.BeginAsync(ct);
+            var now = _clock.GetUtcNow();
+            if (!await work.TryLockActiveSessionAsync(session.UserId, session.Id, AuthLevel.Active, now, ct))
+                return (MfaOutcome.Unauthorized, null);
+
+            if (!await work.TryCreatePendingAsync(
+                    session.UserId, encryptedSecret, SecretKeyVersion, now.Add(EnrollmentLifetime), now, ct))
+                return (MfaOutcome.EnrollmentPending, null);
+
+            await work.CommitAsync(ct);
         }
         catch (Exception ex) when (ex is DbException or DbUpdateException)
         {
             _logger.LogError(ex, "MFA enrollment could not be stored: the database failed.");
             return (MfaOutcome.Unavailable, null);
         }
-
-        if (!stored)
-            return (MfaOutcome.EnrollmentPending, null);
 
         // A pending enrollment enables nothing; MFA is enabled only by the confirmation, which is atomic with its
         // record. The pending row is already stored, so the record must not be lost to a cancelled request.
@@ -131,13 +132,18 @@ public sealed class MfaService(
         if (!result.success || IsReplayed(credentials, result.timeStepMatched))
             return await RefuseEnableAsync(userId, "invalid_code", correlationId, MfaOutcome.InvalidCode, ct);
 
-        // The checks above read the row without a lock. The conditional UPDATE decides: of two parallel
-        // confirmations only one finds MFA still disabled and the same pending enrollment.
+        var sessionInactive = false;
+
+        // The checks above read the rows without a lock. In the transaction the session and the account are
+        // locked and checked again (a block or revocation in between enables nothing), and the conditional UPDATE
+        // decides: of two parallel confirmations only one finds MFA still disabled and the same pending enrollment.
         try
         {
             await using var work = await _mfaCredentialsStore.BeginAsync(ct);
-            if (await work.TryConfirmEnrollmentAsync(
-                    userId, pendingCiphertext, result.timeStepMatched, _clock.GetUtcNow(), ct))
+            var now = _clock.GetUtcNow();
+            if (!await work.TryLockActiveSessionAsync(userId, session.Id, AuthLevel.Active, now, ct))
+                sessionInactive = true;
+            else if (await work.TryConfirmEnrollmentAsync(userId, pendingCiphertext, result.timeStepMatched, now, ct))
             {
                 var recorded = await _audit.MfaEnabledAsync(userId, correlationId, work.Transaction, ct);
 
@@ -159,7 +165,9 @@ public sealed class MfaService(
         }
 
         // The transaction above is closed here; it changed nothing.
-        return await RefuseEnableAsync(userId, "no_valid_enrollment", correlationId, MfaOutcome.InvalidCode, ct);
+        return sessionInactive
+            ? await RefuseEnableAsync(userId, "session_inactive", correlationId, MfaOutcome.Unauthorized, ct)
+            : await RefuseEnableAsync(userId, "no_valid_enrollment", correlationId, MfaOutcome.InvalidCode, ct);
     }
 
     public async Task<MfaOutcome> VerifyAsync(
@@ -232,7 +240,12 @@ public sealed class MfaService(
         {
             await using var work = await _mfaCredentialsStore.BeginAsync(ct);
             var now = _clock.GetUtcNow();
-            if (!await work.TryConsumeTimeStepAsync(userId, result.timeStepMatched, now, ct))
+            if (!await work.TryLockActiveSessionAsync(userId, session.Id, AuthLevel.MfaPending, now, ct))
+            {
+                // Blocked, revoked or expired since it was read: nothing is consumed or promoted.
+                (refusal, refusalOutcome) = ("session_inactive", MfaOutcome.Unauthorized);
+            }
+            else if (!await work.TryConsumeTimeStepAsync(userId, result.timeStepMatched, now, ct))
             {
                 (refusal, refusalOutcome) = ("replayed", MfaOutcome.InvalidCode);
             }

@@ -7,12 +7,9 @@ using Platform.Identity.Interfaces.Mfa;
 
 namespace Platform.Identity.Persistence.Mfa;
 
-public class EfMfaCredentialsStore(
-    PlatformIdentityDbContext db,
-    TimeProvider clock) : IMfaCredentialsStore
+public class EfMfaCredentialsStore(PlatformIdentityDbContext db) : IMfaCredentialsStore
 {
     private readonly PlatformIdentityDbContext _db = db;
-    private readonly TimeProvider _clock = clock;
 
     public async Task<MfaCredentials?> GetAsync(Guid userId, CancellationToken ct)
     {
@@ -25,32 +22,6 @@ public class EfMfaCredentialsStore(
             .Where(account => account.Id == userId)
             .Select(account => account.Email)
             .SingleOrDefaultAsync(ct);
-    }
-
-    public async Task<bool> CreatePendingAsync(
-        Guid userId,
-        string encryptedSecret,
-        int keyVersion,
-        DateTimeOffset expiresAt,
-        CancellationToken ct)
-    {
-        // One statement, so parallel enrollments cannot both pass a read-then-write check. Without a row the INSERT
-        // wins; a parallel INSERT waits for it and then takes the UPDATE path. The UPDATE runs only while MFA is
-        // disabled and no unexpired enrollment is pending, checked again on the committed row after the wait.
-        // 0 rows: MFA is enabled or an enrollment is still pending.
-        var now = _clock.GetUtcNow();
-        var rows = await _db.Database.ExecuteSqlInterpolatedAsync($"""
-            INSERT INTO identity.mfa_credentials AS c
-                (user_id, pending_totp_secret_ciphertext, pending_totp_secret_key_version, pending_enrollment_expires_at)
-            VALUES ({userId}, {encryptedSecret}, {keyVersion}, {expiresAt})
-            ON CONFLICT (user_id) DO UPDATE
-            SET pending_totp_secret_ciphertext = EXCLUDED.pending_totp_secret_ciphertext,
-                pending_totp_secret_key_version = EXCLUDED.pending_totp_secret_key_version,
-                pending_enrollment_expires_at = EXCLUDED.pending_enrollment_expires_at
-            WHERE NOT c.mfa_enabled
-              AND (c.pending_totp_secret_ciphertext IS NULL OR c.pending_enrollment_expires_at <= {now})
-            """, ct);
-        return rows == 1;
     }
 
     public async Task<bool> RecordFailedAttemptAsync(
@@ -86,12 +57,72 @@ public class EfMfaCredentialsStore(
     public async Task<IMfaUnitOfWork> BeginAsync(CancellationToken ct) =>
         new UnitOfWork(_db, await _db.Database.BeginTransactionAsync(ct));
 
-    // Every operation is one UPDATE with its condition in WHERE. Under READ COMMITTED PostgreSQL locks the row;
-    // a parallel UPDATE of the same row waits, then checks WHERE again against the committed row and matches
-    // nothing. So the check and the change cannot be split by another request (no read-then-write race).
+    // TryLockActiveSessionAsync locks the account and the session first, so a block (IDN-03) or a revocation
+    // (IDN-07) cannot slip between the check and the change. Every other operation is one statement with its
+    // condition in WHERE. Under READ COMMITTED PostgreSQL locks the row; a parallel UPDATE of the same row waits,
+    // then checks WHERE again against the committed row and matches nothing (no read-then-write race).
     private sealed class UnitOfWork(PlatformIdentityDbContext db, IDbContextTransaction transaction) : IMfaUnitOfWork
     {
         public DbTransaction Transaction => transaction.GetDbTransaction();
+
+        public async Task<bool> TryLockActiveSessionAsync(
+            Guid userId,
+            Guid sessionId,
+            AuthLevel level,
+            DateTimeOffset now,
+            CancellationToken ct)
+        {
+            // Under READ COMMITTED a locking SELECT that waited returns the row as committed by the other
+            // transaction, so a block or a revocation that commits while we wait is seen here.
+            var account = await db.Accounts
+                .FromSqlInterpolated($"""
+                    SELECT * FROM identity.accounts WHERE id = {userId} FOR SHARE
+                    """)
+                .AsNoTracking()
+                .SingleOrDefaultAsync(ct);
+            if (account is null || account.Status != AccountStatus.Active)
+                return false;
+
+            // NO KEY UPDATE and not SHARE: verification updates this row later in the same transaction, and two
+            // requests holding SHARE on it would each wait for the other to give it up.
+            var session = await db.Sessions
+                .FromSqlInterpolated($"""
+                    SELECT * FROM identity.sessions WHERE id = {sessionId} FOR NO KEY UPDATE
+                    """)
+                .AsNoTracking()
+                .SingleOrDefaultAsync(ct);
+            return session is not null
+                   && session.UserId == userId
+                   && session.AuthLevel == level
+                   && session.RevokedAt == null
+                   && session.ExpiresAt > now;
+        }
+
+        public async Task<bool> TryCreatePendingAsync(
+            Guid userId,
+            string encryptedSecret,
+            int keyVersion,
+            DateTimeOffset expiresAt,
+            DateTimeOffset now,
+            CancellationToken ct)
+        {
+            // One statement, so parallel enrollments cannot both pass a read-then-write check. Without a row the
+            // INSERT wins; a parallel INSERT waits for it and then takes the UPDATE path. The UPDATE runs only while
+            // MFA is disabled and no unexpired enrollment is pending, checked again on the committed row after the
+            // wait. 0 rows: MFA is enabled or an enrollment is still pending.
+            var rows = await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO identity.mfa_credentials AS c
+                    (user_id, pending_totp_secret_ciphertext, pending_totp_secret_key_version, pending_enrollment_expires_at)
+                VALUES ({userId}, {encryptedSecret}, {keyVersion}, {expiresAt})
+                ON CONFLICT (user_id) DO UPDATE
+                SET pending_totp_secret_ciphertext = EXCLUDED.pending_totp_secret_ciphertext,
+                    pending_totp_secret_key_version = EXCLUDED.pending_totp_secret_key_version,
+                    pending_enrollment_expires_at = EXCLUDED.pending_enrollment_expires_at
+                WHERE NOT c.mfa_enabled
+                  AND (c.pending_totp_secret_ciphertext IS NULL OR c.pending_enrollment_expires_at <= {now})
+                """, ct);
+            return rows == 1;
+        }
 
         public async Task<bool> TryConfirmEnrollmentAsync(
             Guid userId,

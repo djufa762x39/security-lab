@@ -1,5 +1,6 @@
 using System.Data.Common;
 using Platform.Identity.Entities;
+using Platform.Identity.Enums;
 
 namespace Platform.Identity.Interfaces.Mfa;
 
@@ -7,17 +8,6 @@ public interface IMfaCredentialsStore
 {
     Task<MfaCredentials?> GetAsync(Guid userId, CancellationToken ct);
     Task<string?> GetEmailAsync(Guid userId, CancellationToken ct);
-
-    /// <summary>
-    /// US-17: stores a pending enrollment in one statement (insert, or update of an expired one). Returns false when
-    /// MFA is already enabled or an unexpired enrollment is pending, also when a parallel request stored one first.
-    /// </summary>
-    Task<bool> CreatePendingAsync(
-        Guid userId,
-        string encryptedSecret,
-        int keyVersion,
-        DateTimeOffset expiresAt,
-        CancellationToken ct);
 
     /// <summary>
     /// US-18: counts one wrong second factor in a single UPDATE, so parallel wrong codes cannot skip the threshold.
@@ -50,6 +40,33 @@ public interface IMfaUnitOfWork : IAsyncDisposable
 {
     /// <summary>The open database transaction, so that the Audit record can be written in it.</summary>
     DbTransaction Transaction { get; }
+
+    /// <summary>
+    /// IDN-03 and IDN-07: locks the account (<c>FOR SHARE</c>) and then the session (<c>FOR NO KEY UPDATE</c>) and
+    /// returns true only while the account is <c>Active</c> and the session belongs to it, has
+    /// <paramref name="level"/>, and is neither revoked nor expired at <paramref name="now"/>. Call it first in the
+    /// transaction: a status change or revocation that is already running makes this wait and then read the new
+    /// state; one that starts later waits for the commit. Always account before session, the same order as
+    /// <c>ChangeAccountStatus</c>, so the two cannot deadlock.
+    /// </summary>
+    Task<bool> TryLockActiveSessionAsync(
+        Guid userId,
+        Guid sessionId,
+        AuthLevel level,
+        DateTimeOffset now,
+        CancellationToken ct);
+
+    /// <summary>
+    /// US-17: stores a pending enrollment in one statement (insert, or update of an expired one). Returns false when
+    /// MFA is already enabled or an unexpired enrollment is pending, also when a parallel request stored one first.
+    /// </summary>
+    Task<bool> TryCreatePendingAsync(
+        Guid userId,
+        string encryptedSecret,
+        int keyVersion,
+        DateTimeOffset expiresAt,
+        DateTimeOffset now,
+        CancellationToken ct);
 
     /// <summary>
     /// US-17: turns the pending enrollment with <paramref name="pendingCiphertext"/> into the active secret.
