@@ -64,6 +64,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const logout = useCallback(async () => {
     await logoutRequest()
     setUser(null)
+    // US-15: logout removes the CSRF cookies of the ended session; get a new pair for the next login.
+    void refreshCsrfToken()
   }, [])
 
   const request = useCallback(
