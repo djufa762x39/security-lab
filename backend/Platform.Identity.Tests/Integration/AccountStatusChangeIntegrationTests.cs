@@ -90,7 +90,7 @@ public class AccountStatusChangeIntegrationTests : IntegrationTestBase
             builder.UseSetting("RateLimiting:AccountStatusChange:PermitLimit", "2");
             builder.UseSetting("RateLimiting:AccountStatusChange:WindowSeconds", "60");
         });
-        using var client = limited.CreateClient();
+        using var client = limited.CreateCsrfClient();
 
         async Task<HttpResponseMessage> PutAsync(string status)
         {
