@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Antiforgery;
+
 namespace Platform.Api.Services.Identity;
 
 /// <summary>
@@ -30,6 +32,26 @@ public static class CsrfToken
 
     /// <summary>As <see cref="Options"/>, but readable by the frontend's JavaScript.</summary>
     public static CookieOptions ReadableOptions() => Build(httpOnly: false);
+
+    /// <summary>
+    /// Issues a request token for the current session (see <see cref="CsrfSessionBinding"/>) and writes both cookies.
+    /// A new cookie token is only issued when the browser has no valid one yet, so other tabs keep working.
+    /// </summary>
+    public static string Issue(HttpContext context, IAntiforgery antiforgery)
+    {
+        var tokens = antiforgery.GetTokens(context);
+        if (tokens.CookieToken is not null)
+            context.Response.Cookies.Append(CookieName, tokens.CookieToken, Options());
+        context.Response.Cookies.Append(ReadableCookieName, tokens.RequestToken!, ReadableOptions());
+        return tokens.RequestToken!;
+    }
+
+    /// <summary>Removes both cookies, so the next state-changing request needs a new pair.</summary>
+    public static void Clear(HttpResponse response)
+    {
+        response.Cookies.Delete(CookieName, Options());
+        response.Cookies.Delete(ReadableCookieName, ReadableOptions());
+    }
 
     private static CookieOptions Build(bool httpOnly) => new()
     {

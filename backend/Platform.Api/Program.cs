@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Antiforgery;
 using Team21.Acc.Api;
 using Platform.Api.Security.RevisionAuthorization;
 using Platform.Api.Security.AccessAudit;
@@ -116,6 +117,7 @@ builder.Services.AddAntiforgery(options =>
     options.Cookie.Name = CsrfToken.CookieName;
     options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
 });
+builder.Services.AddSingleton<IAntiforgeryAdditionalDataProvider, CsrfSessionBinding>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton(TimeProvider.System);
 
@@ -222,6 +224,10 @@ app.UseRouting();
 
 // AUD-01/AUD-04 (S-10): correlation ID za svaki zahtev; mora biti prvi middleware
 app.UseCorrelationContext();
+// US-15 / SEC-03: right after routing and correlation, before session checks, Access, rate limiting, audit and
+// authentication, so a refused request has no side effect (US-14: the session is not extended). The token is bound
+// to the session cookie (CsrfSessionBinding), not to HttpContext.User.
+app.UseMiddleware<CsrfProtectionMiddleware>();
 if (administrationEnabled) app.UseMiddleware<AdministrationResponseMiddleware>();
 // Preserve KT1's non-enumerating public denial contract using the same central decider.
 if (kt1Enabled) app.UseMiddleware<Kt1AccessContractMiddleware>();
@@ -249,10 +255,6 @@ if (kt1Enabled)
     // Only the explicitly enabled simulator maps these namespaced Access actions.
     app.MapCourseworkKt1();
 }
-
-// US-15 / SEC-03: after authentication, so the token check sees the same HttpContext.User as the endpoint
-// that issued the token, and before every endpoint. The OIDC callback is finished by UseAuthentication above.
-app.UseMiddleware<CsrfProtectionMiddleware>();
 
 // IDN-01: politike i endpoint za kreiranje naloga
 app.MapAccountEndpoints();
