@@ -314,7 +314,7 @@ public sealed class LoginEndpointRateLimitingTests
         var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { email, password }));
         // US-15: login needs a CSRF token, as from the real frontend.
         using var tokenClient = api.CreateClient();
-        var csrf = await CsrfPair.FetchAsync(tokenClient);
+        var csrf = await CsrfPair.FetchAsync(tokenClient, cookie);
         return await api.Server.SendAsync(ctx =>
         {
             ctx.Request.Method = HttpMethods.Post;
