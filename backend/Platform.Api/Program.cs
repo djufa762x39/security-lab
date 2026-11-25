@@ -116,6 +116,9 @@ builder.Services.AddAntiforgery(options =>
     options.HeaderName = CsrfToken.HeaderName;
     options.Cookie.Name = CsrfToken.CookieName;
     options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+    // The token is read only from X-CSRF-TOKEN. The check runs before the ADM-08 body size limit and every other
+    // module limit, so antiforgery must never read (buffer) a form body to look for the token there.
+    options.SuppressReadingTokenFromFormBody = true;
 });
 builder.Services.AddSingleton<IAntiforgeryAdditionalDataProvider, CsrfSessionBinding>();
 builder.Services.AddHttpContextAccessor();

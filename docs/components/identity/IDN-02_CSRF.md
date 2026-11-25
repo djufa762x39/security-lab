@@ -51,6 +51,8 @@ The `__Host-` prefix makes the browser accept the cookies only with `Secure`, `P
 
 The client sends the request token back in the header `X-CSRF-TOKEN`. The server checks it against the cookie token with ASP.NET Core antiforgery (Data Protection), so there is no custom cryptography (specification 3.3). A foreign page cannot read either cookie or the response, so it cannot build the header.
 
+The token is read only from the header. Antiforgery is registered with `SuppressReadingTokenFromFormBody = true`, so it never reads a form body to look for a token there. The check runs before the ADM-08 16 KiB body limit and every other module limit, so reading the form would buffer a body that those limits have not yet seen. A token placed in a form field is ignored, and the request gets `403 csrf_invalid`.
+
 The request token is issued for the session cookie sent with `GET /api/auth/csrf`. When the session changes, the server issues a new one:
 
 | Moment | What the server does |
@@ -108,6 +110,8 @@ using var client = factory.CreateCsrfClient();   // instead of factory.CreateCli
 - The token endpoint sets both cookies with the right flags and keeps an existing cookie token.
 - With the KT1 demo cookie signed in, the token from `GET /api/auth/csrf` and the one login issues both work.
 - `POST /api/admin/accounts/{id}/unlock` (no body, a "simple" request) by an administrator without a token gets `403 csrf_invalid`; `lockout_end`, `failed_login_count` and the Audit log stay unchanged.
+
+`backend/Platform.Coursework.Tests/AdministrationHttpTests.cs` (ADM-08, PostgreSQL): `PUT /api/course-administration/{courseId}/settings` with a valid session and a valid token pair, but with the token in a form field instead of `X-CSRF-TOKEN`, gets `403 csrf_invalid` with `no-store`. The request body is never read (a probe placed first in the pipeline watches it), and the course settings stay unchanged.
 
 Frontend: `frontend/src/__tests__/csrf.test.ts`, and in `LoginForm.test.tsx` the `403` message and `403` followed by `429`.
 
