@@ -51,7 +51,8 @@ Servis:
 4. učitava email korisnika;
 5. generiše novu tajnu;
 6. šifruje Base32 tajnu ASP.NET Core Data Protection-om;
-7. čuva ciphertext, verziju ključa `1` i rok pending enrollment-a od 10 minuta;
+7. u jednoj transakciji ponovo proverava sesiju i nalog pod lock-om (videti 4.1), pa čuva ciphertext, verziju
+   ključa `1` i rok pending enrollment-a od 10 minuta;
 8. vraća `MfaEnrollResponse` sa `otpauth://` URI-jem.
 
 URI se vraća samo iz uspešnog enrollment odgovora. Ne čuva se ponovo u bazi
@@ -92,6 +93,26 @@ Potvrda:
 Uključivanje je jedan uslovni `UPDATE` (`mfa_enabled = false`, isti pending ciphertext, neistekao rok) u
 transakciji sa audit zapisom `auth.mfa.enabled`. Od dve paralelne potvrde prolazi samo jedna. Ako audit
 zapis nije upisan, transakcija se ne commit-uje: MFA ostaje isključen, a odgovor je `503 mfa_unavailable`.
+
+### 4.1 Sesija i nalog u trenutku upisa (IDN-03, IDN-07)
+
+Servis čita sesiju i nalog bez lock-a na početku zahteva. Blokiranje naloga ili opoziv sesije posle tog čitanja
+ne sme da dozvoli upis. Zato enrollment, potvrda i verifikacija (poglavlje 7) prvo u svojoj transakciji pozivaju
+`IMfaUnitOfWork.TryLockActiveSessionAsync`:
+
+1. `SELECT ... FROM identity.accounts ... FOR SHARE`: nalog mora biti `Active`;
+2. `SELECT ... FROM identity.sessions ... FOR NO KEY UPDATE`: sesija pripada nalogu, ima očekivani nivo
+   (`Active` za enrollment i potvrdu, `MfaPending` za verifikaciju) i nije opozvana ni istekla.
+
+Blokiranje (`ChangeAccountStatus`, `FOR UPDATE` naloga pa opoziv sesija) ili opoziv (IDN-07) koji je već u toku
+čeka se, pa se vidi novo stanje. Onaj koji počne kasnije čeka commit. Redosled je uvek nalog pa sesija, isti kao
+kod blokiranja, pa ne nastaje deadlock. Sesija se zaključava sa `FOR NO KEY UPDATE`, a ne sa `FOR SHARE`, jer je
+verifikacija kasnije menja u istoj transakciji. Dva zahteva koja drže `FOR SHARE` čekala bi jedan drugog.
+
+Ako provera ne prođe, ništa se ne upisuje i odgovor je `401 invalid_mfa`:
+- enrollment ne čuva pending tajnu i ne piše `auth.mfa.enrollment.started`;
+- potvrda ne uključuje MFA i piše odbijanje `auth.mfa.enabled` sa `reasonCode = session_inactive`;
+- verifikacija ne troši korak i ne promoviše sesiju (`auth.mfa.verify`, `session_inactive`).
 
 Neuspešni odgovori ne otkrivaju da li je problem bio u tajni, sesiji ili kodu.
 
@@ -183,7 +204,7 @@ Cookie: SecurityLab.Session=<mfa-pending-session>
   `IdentityLockout:LockoutMinutes`. Zaključan nalog se ne broji; posle isteka lockout-a brojač kreće od 1.
   Na pragu se pending sesija opoziva.
 - **Replay:** korak koji nije noviji od `last_totp_time_step` se odbija (isti i stariji).
-- **Uspeh:** jedna transakcija: `UPDATE` koji upisuje korak samo ako je noviji i nalog nije zaključan
+- **Uspeh:** jedna transakcija: provera sesije i naloga pod lock-om (4.1), `UPDATE` koji upisuje korak samo ako je noviji i nalog nije zaključan
   (i briše brojač i lockout), `UPDATE` sesije `MfaPending -> Active` (neopozvana, neistekla) i audit zapis.
   Paralelni zahtev sa istim kodom čeka zaključan red, ponovo proverava `WHERE` i ne menja ništa.
 
@@ -204,6 +225,8 @@ US-18 i audit testovi (`MfaServiceTests`, `MfaIntegrationTests` na PostgreSQL-u)
 
 - isti kod iz dve paralelne `MfaPending` sesije (tačno jedan uspeh) i stariji kod posle novijeg;
 - dve paralelne potvrde enrollment-a (jedan uspeh);
+- blokiran nalog ili opozvana sesija između čitanja i upisa, za enrollment i potvrdu (`401`, ništa nije upisano;
+  `*_AccountBlockedBeforeTheWrite_*` čeka otvoreno blokiranje na lock-u, `*_SessionRevokedBeforeTheWrite_*`);
 - prag pogrešnih kodova, pa nova prijava lozinkom i ispravan kod (`401`), i uspeh posle `LockoutMinutes`;
 - paralelne pogrešne kodove (tačan brojač, lockout tačno na pragu);
 - nedostupan audit pri potvrdi i verifikaciji (`503`, ništa nije promenjeno);
