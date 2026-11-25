@@ -157,14 +157,14 @@ internal static class LiveScenario
         {
             report.Stage = name;
             using var request = new HttpRequestMessage(method, path);
-            var cookies = Cookie;
+            var cookieHeader = Cookie;
             if (method != HttpMethod.Get && method != HttpMethod.Head)
             {
                 var pair = csrf ??= await FetchCsrfAsync(ct);
-                cookies = cookies is null ? pair.Cookie : cookies + "; " + pair.Cookie;
+                cookieHeader = cookieHeader is null ? pair.Cookie : cookieHeader + "; " + pair.Cookie;
                 request.Headers.Add(CsrfToken.HeaderName, pair.Token);
             }
-            if (cookies is not null) request.Headers.Add("Cookie", cookies);
+            if (cookieHeader is not null) request.Headers.Add("Cookie", cookieHeader);
             if (includeWriteHeader) request.Headers.Add("X-Coursework-Request", "1");
             if (origin is not null) request.Headers.Add("Origin", origin);
             if (body is not null) request.Content = JsonContent.Create(body);
