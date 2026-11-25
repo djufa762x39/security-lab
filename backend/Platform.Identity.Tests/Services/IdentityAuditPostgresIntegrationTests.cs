@@ -13,12 +13,14 @@ using Microsoft.Extensions.Options;
 using Npgsql;
 using Platform.Api.Enums.Identity;
 using Platform.Api.Services.Identity;
+using Platform.Audit.Composition;
 using Platform.Audit.Contracts;
 using Platform.Audit.Infrastructure.Persistence;
 using Platform.Identity;
 using Platform.Identity.Entities;
 using Platform.Identity.Enums;
 using Platform.Identity.Persistence;
+using Platform.Identity.Persistence.Mfa;
 using Platform.Identity.Services;
 using Testcontainers.PostgreSql;
 
@@ -227,6 +229,7 @@ public sealed class IdentityAuditPostgresIntegrationTests
                 TimeProvider.System),
             new StoreSessionCreator(sessionStore, NullLogger<StoreSessionCreator>.Instance),
             new SessionManager(identity),
+            new EfMfaCredentialsStore(identity, TimeProvider.System),
             CreateProducer(new UnavailableAuditWriter()));
 
         var result = await login.ExecuteAsync(email, Password, Guid.NewGuid().ToString("N"));
@@ -481,7 +484,7 @@ public sealed class IdentityAuditPostgresIntegrationTests
     }
 
     private static IdentityAuditProducer CreateProducer(ITrustedAuditWriter writer) =>
-        new(writer, NullLogger<IdentityAuditProducer>.Instance);
+        new(writer, new PostgresTransactionalAuditWriter(TimeProvider.System), NullLogger<IdentityAuditProducer>.Instance);
 
     private sealed class UnavailableAuditWriter : ITrustedAuditWriter
     {
