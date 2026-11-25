@@ -2,10 +2,16 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Npgsql;
 using Platform.Api.Middleware;
 using Platform.Api.Services.Identity;
+using Platform.Audit.Application;
+using Platform.Audit.Composition;
+using Platform.Audit.Contracts;
 using Platform.Identity.Entities;
 using Platform.Identity.Enums;
 using Platform.Identity.Persistence;
@@ -43,6 +49,11 @@ public class CsrfProtectionIntegrationTests : IntegrationTestBase
 
     [OneTimeTearDown]
     public void Release() => _http.Dispose();
+
+    // The unlock test reads audit.audit_events, as AccountUnlockIntegrationTests does.
+    [OneTimeSetUp]
+    public async Task MigrateAuditSchema() =>
+        await AuditPersistenceExtensions.MigrateAuditDatabaseAsync(TestDatabaseFixture.ConnectionString);
 
     // The token endpoint
 
@@ -425,7 +436,116 @@ public class CsrfProtectionIntegrationTests : IntegrationTestBase
         Assert.That((await UserTestData.GetAsync(Factory, target.Id))!.Status, Is.EqualTo(AccountStatus.Active));
     }
 
+    // Review of PR #228 by IDN-05
+
+    [Test]
+    public async Task Kt1Cookie_DoesNotBindTheTokenToTheKt1User_SoLoginAndTheNextRequestWork()
+    {
+        // With KT1 on and OIDC off, the KT1 cookie scheme is the only (so the default) scheme: the token endpoint
+        // and login run after UseAuthentication with the KT1 user, the check runs before it, as anonymous.
+        var user = await UserTestData.AddAsync(Factory, "user@example.com", Password);
+        var otherDevice = await SessionTestData.CreateAsync(Factory, user.Id);
+        using var kt1 = Factory.WithWebHostBuilder(builder => builder.UseSetting("Kt1Demo:Enabled", "true"));
+        using var http = kt1.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
+
+        using var signIn = new HttpRequestMessage(HttpMethod.Post, "/api/kt1/session/ana");
+        signIn.Headers.Add("X-Kt1-Demo", "1");
+        using var signedIn = await http.SendAsync(signIn);
+        Assert.That(signedIn.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        var kt1Cookie = $"{Kt1CookieName}={SetCookieValue(signedIn, Kt1CookieName)}";
+
+        using var tokenRequest = new HttpRequestMessage(HttpMethod.Get, "/api/auth/csrf");
+        tokenRequest.Headers.Add("Cookie", kt1Cookie);
+        using var tokenResponse = await http.SendAsync(tokenRequest);
+        var pair = await CsrfPair.ReadAsync(tokenResponse);
+
+        using var login = new HttpRequestMessage(HttpMethod.Post, LoginUrl)
+        {
+            Content = JsonContent.Create(new { email = "user@example.com", password = Password })
+        };
+        login.Headers.Add("Cookie", kt1Cookie);
+        pair.ApplyTo(login);
+        using var loggedIn = await http.SendAsync(login);
+        Assert.That(loggedIn.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        var session = SetCookieValue(loggedIn, SessionCookie.Name);
+        var issued = SetCookieValue(loggedIn, CsrfToken.ReadableCookieName);
+
+        // The token that login issued (also with the KT1 user signed in) works on the next request.
+        using var revoke = new HttpRequestMessage(HttpMethod.Delete, $"/api/auth/sessions/{otherDevice.Session.SessionHandle}");
+        revoke.Headers.Add("Cookie", kt1Cookie);
+        (pair with { Token = issued! }).ApplyTo(revoke, session);
+        using var revoked = await http.SendAsync(revoke);
+        Assert.That(revoked.StatusCode, Is.EqualTo(HttpStatusCode.NoContent));
+    }
+
+    [Test]
+    public async Task AdminUnlock_WithoutToken_IsRefused_KeepsTheLockout_AndRecordsNoUnlock()
+    {
+        var admin = new UserAccount(AdminId, "admin@example.com", AccountStatus.Active, AccountRole.Administrator);
+        await InsertAsync(admin);
+        var student = await UserTestData.AddAsync(Factory, "student@example.com", Password);
+        await LockAsync(student.Id, failedLogins: 2);
+        var before = (await UserTestData.GetAsync(Factory, student.Id))!;
+        var adminSession = await SessionTestData.CreateAsync(Factory, admin.Id);
+
+        // The real Audit writer, so "no account.unlocked row" means something (the shared factory stores nothing).
+        using var audited = Factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<ITrustedAuditWriter>();
+            services.AddScoped<ITrustedAuditWriter>(provider => provider.GetRequiredService<AuditWriter>());
+        }));
+        using var http = audited.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
+
+        // No body: a page can send this as a simple form POST, without a CORS preflight.
+        using var forged = new HttpRequestMessage(HttpMethod.Post, $"/api/admin/accounts/{student.Id}/unlock");
+        forged.Headers.Add("Cookie", $"{SessionCookie.Name}={adminSession.RawToken}");
+        forged.Headers.Add("Origin", AttackerOrigin);
+        using var response = await http.SendAsync(forged);
+
+        await AssertCsrfRejectedAsync(response);
+        var after = (await UserTestData.GetAsync(Factory, student.Id))!;
+        Assert.That(after.LockoutEnd, Is.EqualTo(before.LockoutEnd));
+        Assert.That(after.FailedLoginCount, Is.EqualTo(before.FailedLoginCount));
+        Assert.That(await UnlockRecordsAsync(student.Id), Is.Zero);
+
+        // Control: the same request with a valid token unlocks and is recorded, so the refusal above is the CSRF check.
+        var pair = await CsrfPair.FetchAsync(http, adminSession.RawToken);
+        using var valid = new HttpRequestMessage(HttpMethod.Post, $"/api/admin/accounts/{student.Id}/unlock");
+        pair.ApplyTo(valid, adminSession.RawToken);
+        using var unlocked = await http.SendAsync(valid);
+        Assert.That(unlocked.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(await UnlockRecordsAsync(student.Id), Is.EqualTo(1));
+    }
+
     // Helpers
+
+    private const string Kt1CookieName = "SecurityLab.CourseworkKt1";
+
+    private static async Task LockAsync(Guid accountId, int failedLogins)
+    {
+        await using var connection = new NpgsqlConnection(TestDatabaseFixture.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand("""
+            UPDATE identity.accounts
+            SET lockout_end = now() + interval '15 minutes', failed_login_count = @failures
+            WHERE id = @id
+            """, connection);
+        command.Parameters.AddWithValue("id", accountId);
+        command.Parameters.AddWithValue("failures", failedLogins);
+        Assert.That(await command.ExecuteNonQueryAsync(), Is.EqualTo(1));
+    }
+
+    private static async Task<long> UnlockRecordsAsync(Guid accountId)
+    {
+        await using var connection = new NpgsqlConnection(TestDatabaseFixture.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand("""
+            SELECT count(*) FROM audit.audit_events
+            WHERE event_type = 'account.unlocked' AND resource_id = @id
+            """, connection);
+        command.Parameters.AddWithValue("id", accountId.ToString("D"));
+        return (long)(await command.ExecuteScalarAsync())!;
+    }
 
     private static async Task<HttpResponseMessage> StatusChangeWithoutTokenAsync(Guid accountId, string sessionToken)
     {
