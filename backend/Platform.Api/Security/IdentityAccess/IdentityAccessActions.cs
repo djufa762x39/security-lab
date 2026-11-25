@@ -12,10 +12,10 @@ public static class IdentityAccessActions
 {
     public const string Login = "identity.login";
     public const string Logout = "identity.logout";
-    public const string EmailConfirmation = "identity.email-confirmation";
+    public const string EmailConfirmation = "identity.email.confirmation";
     public const string SessionRead = "identity.session.read";
-    public const string SessionNotificationsRead = "identity.session-notifications.read";
-    public const string SessionNotificationsUpdate = "identity.session-notifications.update";
+    public const string SessionNotificationsRead = "identity.session.notifications.read";
+    public const string SessionNotificationsUpdate = "identity.session.notifications.update";
 
     /// <summary>IDN-07: the caller lists their own active sessions (<c>GET /api/auth/sessions</c>).</summary>
     public const string SessionList = "identity.session.list";

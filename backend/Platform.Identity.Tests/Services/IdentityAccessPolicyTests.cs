@@ -1,5 +1,6 @@
 using Platform.Access.Domain.Enums;
 using Platform.Access.Domain.Models;
+using Platform.Access.Domain.ValueObjects;
 using Platform.Api.Security.IdentityAccess;
 
 namespace Platform.Identity.Tests.Services;
@@ -8,6 +9,14 @@ namespace Platform.Identity.Tests.Services;
 public sealed class IdentityAccessPolicyTests
 {
     private const string CorrelationId = "identity-policy-test";
+
+    [Test]
+    public void IdentityAccessActions_HaveValidIds()
+    {
+        Assert.That(ActionId.IsValid(IdentityAccessActions.EmailConfirmation), Is.True);
+        Assert.That(ActionId.IsValid(IdentityAccessActions.SessionNotificationsRead), Is.True);
+        Assert.That(ActionId.IsValid(IdentityAccessActions.SessionNotificationsUpdate), Is.True);
+    }
 
     [Test]
     public async Task PublicAuthenticationPolicy_AllowsEmailConfirmation()
