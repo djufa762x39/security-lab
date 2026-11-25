@@ -493,13 +493,14 @@ public sealed class IdentityAuditProducerTests
 
         var write = writer.Single();
         Assert.That(write.Transaction, Is.SameAs(transaction));
-        Assert.That(write.Draft.EventType, Is.EqualTo(AuditEventTypes.AuthMfaVerify));
+        Assert.That(write.Draft.EventType, Is.EqualTo(AuditEventTypes.AuthMfaVerified));
         Assert.That(write.Draft.Outcome, Is.EqualTo(AuditOutcome.Success));
     }
 
     [TestCase("enrollment.started")]
     [TestCase("enabled.failed")]
     [TestCase("verify.failed")]
+    [TestCase("verify.denied")]
     public async Task MfaEventsOutsideATransaction_UseTheTrustedWriter_AndOnlyAReasonCode(string which)
     {
         var writer = new RecordingWriter();
@@ -509,7 +510,8 @@ public sealed class IdentityAuditProducerTests
         {
             "enrollment.started" => await producer.MfaEnrollmentStartedAsync(ActorId, CorrelationId),
             "enabled.failed" => await producer.MfaEnableFailedAsync(ActorId, "invalid_code", CorrelationId),
-            _ => await producer.MfaVerifyFailedAsync(ActorId, "locked", CorrelationId)
+            "verify.failed" => await producer.MfaVerifyFailedAsync(ActorId, "replayed_code", CorrelationId),
+            _ => await producer.MfaVerifyDeniedByAttemptLimitAsync(ActorId, CorrelationId)
         };
 
         var write = writer.Single();
@@ -520,6 +522,39 @@ public sealed class IdentityAuditProducerTests
             Assert.That(write.Draft.Resource!.Id, Is.EqualTo(ActorId.ToString()));
             Assert.That(write.Draft.Details?.Keys ?? [], Is.SubsetOf(new[] { "reasonCode" }));
         }
+    }
+
+    // Every reason MfaService writes must be on the closed list of the Audit contract (CONTRACTS.md, MFA),
+    // otherwise the real writer rejects the refusal record.
+    [TestCase("enabled", "invalid_code")]
+    [TestCase("enabled", "no_valid_enrollment")]
+    [TestCase("enabled", "already_enabled")]
+    [TestCase("enabled", "invalid_enrollment")]
+    [TestCase("enabled", "session_inactive")]
+    [TestCase("verified", "invalid_code")]
+    [TestCase("verified", "replayed_code")]
+    [TestCase("verified", "invalid_secret")]
+    [TestCase("verified", "session_inactive")]
+    [TestCase("verified.denied", "attempt_limit")]
+    public async Task MfaRefusals_WithEveryReasonTheServiceWrites_PassTheAuditContract(string which, string reason)
+    {
+        // Arrange
+        var writer = new RecordingWriter();
+        var producer = CreateProducer(writer);
+
+        // Act
+        _ = which switch
+        {
+            "enabled" => await producer.MfaEnableFailedAsync(ActorId, reason, CorrelationId),
+            "verified" => await producer.MfaVerifyFailedAsync(ActorId, reason, CorrelationId),
+            _ => await producer.MfaVerifyDeniedByAttemptLimitAsync(ActorId, CorrelationId)
+        };
+
+        // Assert
+        var write = writer.Single();
+        Assert.That(write.Draft.Details!["reasonCode"], Is.EqualTo(reason));
+        Assert.That(new Platform.Audit.Application.AuditDraftValidator().Validate(write.Draft, write.Context),
+            Is.EqualTo(AuditRejectionCode.None));
     }
 
     [Test]

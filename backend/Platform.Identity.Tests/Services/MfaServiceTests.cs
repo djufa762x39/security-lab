@@ -378,21 +378,25 @@ public sealed class MfaServiceTests
         Assert.That(_work.ConsumedStep, Is.Null);
         Assert.That(_work.PromotedSession, Is.Null);
         Assert.That(_work.Committed, Is.False);
-        VerifyAuditDoesNotContainSecret("session_inactive", AuditEventTypes.AuthMfaVerify);
+        VerifyAuditDoesNotContainSecret("session_inactive", AuditEventTypes.AuthMfaVerified);
     }
 
     [Test]
     public async Task Verify_WithWrongCode_RecordsFailureWithoutPromotingSession()
     {
+        // Arrange
         var current = DateTimeOffset.UtcNow;
         SetupVerification(TotpHelpers.GenerateSecret(), current);
         _credentials.Setup(store => store.RecordFailedAttemptAsync(
                 UserId, 5, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
+        // Act
         var result = await _service.VerifyAsync(Token, "000000", "corr-wrong", CancellationToken.None);
 
+        // Assert
         Assert.That(result, Is.EqualTo(MfaOutcome.InvalidCode));
+        VerifyAuditDoesNotContainSecret("invalid_code", AuditEventTypes.AuthMfaVerified);
         _credentials.Verify(store => store.RecordFailedAttemptAsync(
             UserId, 5, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Once);
         _credentials.Verify(store => store.BeginAsync(It.IsAny<CancellationToken>()), Times.Never);
@@ -401,6 +405,7 @@ public sealed class MfaServiceTests
     [Test]
     public async Task Verify_WithReplay_IsRejected()
     {
+        // Arrange
         var current = DateTimeOffset.UtcNow;
         var secret = TotpHelpers.GenerateSecret();
         var code = new Totp(Base32Encoding.ToBytes(secret)).ComputeTotp(current.UtcDateTime);
@@ -410,15 +415,19 @@ public sealed class MfaServiceTests
                 UserId, 5, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
+        // Act
         var result = await _service.VerifyAsync(Token, code, "corr-replay", CancellationToken.None);
 
+        // Assert
         Assert.That(result, Is.EqualTo(MfaOutcome.InvalidCode));
         _credentials.Verify(store => store.BeginAsync(It.IsAny<CancellationToken>()), Times.Never);
+        VerifyAuditDoesNotContainSecret("replayed_code", AuditEventTypes.AuthMfaVerified);
     }
 
     [Test]
-    public async Task Verify_OnThreshold_RevokesPendingSession()
+    public async Task Verify_OnThreshold_RevokesPendingSession_AndAuditsTheAttemptLimit()
     {
+        // Arrange
         SetupVerification(TotpHelpers.GenerateSecret(), _now);
         _credentials.Setup(store => store.RecordFailedAttemptAsync(
                 UserId, 5, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
@@ -426,15 +435,19 @@ public sealed class MfaServiceTests
         _sessions.Setup(store => store.RevokeByTokenAsync(Token, It.IsAny<CancellationToken>()))
             .ReturnsAsync((Session?)null);
 
+        // Act
         var result = await _service.VerifyAsync(Token, "000000", "corr-lock", CancellationToken.None);
 
+        // Assert
         Assert.That(result, Is.EqualTo(MfaOutcome.InvalidCode));
         _sessions.Verify(store => store.RevokeByTokenAsync(Token, It.IsAny<CancellationToken>()), Times.Once);
+        VerifyAuditDoesNotContainSecret("attempt_limit", AuditEventTypes.AuthMfaVerified, AuditOutcome.Denied);
     }
 
     [Test]
     public async Task Verify_WhileLocked_RefusesEvenTheCorrectCode_WithoutCheckingIt()
     {
+        // Arrange
         var current = DateTimeOffset.UtcNow;
         var secret = TotpHelpers.GenerateSecret();
         SetupVerification(secret, current, lockedUntil: current.AddMinutes(10));
@@ -442,9 +455,12 @@ public sealed class MfaServiceTests
             .ReturnsAsync((Session?)null);
         var code = new Totp(Base32Encoding.ToBytes(secret)).ComputeTotp(current.UtcDateTime);
 
+        // Act
         var result = await _service.VerifyAsync(Token, code, "corr-locked", CancellationToken.None);
 
+        // Assert
         Assert.That(result, Is.EqualTo(MfaOutcome.InvalidCode));
+        VerifyAuditDoesNotContainSecret("attempt_limit", AuditEventTypes.AuthMfaVerified, AuditOutcome.Denied);
         _sessions.Verify(store => store.RevokeByTokenAsync(Token, It.IsAny<CancellationToken>()), Times.Once);
         _credentials.Verify(store => store.BeginAsync(It.IsAny<CancellationToken>()), Times.Never);
         _credentials.Verify(store => store.RecordFailedAttemptAsync(
@@ -528,7 +544,7 @@ public sealed class MfaServiceTests
         await _service.VerifyAsync(Token, code, "corr-verified", CancellationToken.None);
 
         var write = _audit.Writes.Single();
-        Assert.That(write.Draft.EventType, Is.EqualTo(AuditEventTypes.AuthMfaVerify));
+        Assert.That(write.Draft.EventType, Is.EqualTo(AuditEventTypes.AuthMfaVerified));
         Assert.That(write.Draft.Outcome, Is.EqualTo(AuditOutcome.Success));
         Assert.That(write.Transaction, Is.SameAs(_work.Transaction));
     }
@@ -546,7 +562,7 @@ public sealed class MfaServiceTests
         var result = await _service.VerifyAsync(Token, "000000", "corr-refused", CancellationToken.None);
 
         Assert.That(result, Is.EqualTo(MfaOutcome.InvalidCode));
-        VerifyAuditDoesNotContainSecret("invalid_code", AuditEventTypes.AuthMfaVerify);
+        VerifyAuditDoesNotContainSecret("invalid_code", AuditEventTypes.AuthMfaVerified);
     }
 
     // US-17: confirm without /mfa/enroll is a client error (401), not 503.
@@ -707,11 +723,17 @@ public sealed class MfaServiceTests
         }
     }
 
-    private void VerifyAuditDoesNotContainSecret(string expectedReason, string eventType = AuditEventTypes.AuthMfaEnabled)
+    private void VerifyAuditDoesNotContainSecret(
+        string expectedReason,
+        string eventType = AuditEventTypes.AuthMfaEnabled,
+        AuditOutcome outcome = AuditOutcome.Failure)
     {
         var write = _audit.Writes.Single();
         Assert.That(write.Draft.EventType, Is.EqualTo(eventType));
-        Assert.That(write.Draft.Outcome, Is.EqualTo(AuditOutcome.Failure));
+        Assert.That(write.Draft.Outcome, Is.EqualTo(outcome));
+        // The real Audit contract accepts the record: the reason is on the closed list of its event and outcome.
+        Assert.That(new Platform.Audit.Application.AuditDraftValidator().Validate(write.Draft, write.Context),
+            Is.EqualTo(AuditRejectionCode.None));
         Assert.That(write.Draft.Details, Is.EqualTo(new Dictionary<string, string> { ["reasonCode"] = expectedReason }));
         var serialized = string.Join('|', write.Draft.EventType, write.Draft.Resource?.Id, write.Context.CorrelationId,
             string.Join(',', write.Draft.Details!.Select(pair => $"{pair.Key}={pair.Value}")));

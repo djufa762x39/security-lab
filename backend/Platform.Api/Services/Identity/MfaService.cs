@@ -196,7 +196,7 @@ public sealed class MfaService(
         if (credentials.MfaLockedUntil is { } lockedUntil && lockedUntil > _clock.GetUtcNow())
         {
             await _sessionStore.RevokeByTokenAsync(rawToken, ct);
-            return await RefuseVerifyAsync(userId, "locked", correlationId, MfaOutcome.InvalidCode);
+            return await DenyVerifyByAttemptLimitAsync(userId, correlationId);
         }
 
         if (credentials.TotpSecretCiphertext is null
@@ -227,8 +227,11 @@ public sealed class MfaService(
             if (locked)
                 await _sessionStore.RevokeByTokenAsync(rawToken, ct);
 
-            var reason = locked ? "locked" : replayed ? "replayed" : "invalid_code";
-            return await RefuseVerifyAsync(userId, reason, correlationId, MfaOutcome.InvalidCode);
+            if (locked)
+                return await DenyVerifyByAttemptLimitAsync(userId, correlationId);
+
+            return await RefuseVerifyAsync(
+                userId, replayed ? "replayed_code" : "invalid_code", correlationId, MfaOutcome.InvalidCode);
         }
 
         // The check above is only a fast path. The step is consumed, the session promoted and the Audit record
@@ -247,7 +250,7 @@ public sealed class MfaService(
             }
             else if (!await work.TryConsumeTimeStepAsync(userId, result.timeStepMatched, now, ct))
             {
-                (refusal, refusalOutcome) = ("replayed", MfaOutcome.InvalidCode);
+                (refusal, refusalOutcome) = ("replayed_code", MfaOutcome.InvalidCode);
             }
             else if (!await work.TryPromoteSessionAsync(session.Id, now, ct))
             {
@@ -305,5 +308,15 @@ public sealed class MfaService(
     {
         await _audit.MfaVerifyFailedAsync(userId, reasonCode, correlationId, CancellationToken.None);
         return outcome;
+    }
+
+    /// <summary>
+    /// The attempt limit: the same 401 as a wrong code for the caller, Denied with attempt_limit in the audit.
+    /// The session may already be revoked, so the record is written with <see cref="CancellationToken.None"/>.
+    /// </summary>
+    private async Task<MfaOutcome> DenyVerifyByAttemptLimitAsync(Guid userId, string correlationId)
+    {
+        await _audit.MfaVerifyDeniedByAttemptLimitAsync(userId, correlationId, CancellationToken.None);
+        return MfaOutcome.InvalidCode;
     }
 }

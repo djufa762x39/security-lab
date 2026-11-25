@@ -522,7 +522,7 @@ public sealed class MfaIntegrationTests : IntegrationTestBase
         Assert.That((await SessionTestData.GetAsync(Factory, session.Session.Id))!.AuthLevel,
             Is.EqualTo(AuthLevel.MfaPending));
         Assert.That((await GetCredentialsAsync(user.Id))!.LastTotpTimeStep, Is.Null, "the step is not consumed");
-        Assert.That(await AuditRowsAsync(user.Id, "auth.mfa.verify"), Is.Empty);
+        Assert.That(await AuditRowsAsync(user.Id, "auth.mfa.verified"), Is.Empty);
     }
 
     [Test]
@@ -545,7 +545,7 @@ public sealed class MfaIntegrationTests : IntegrationTestBase
         Assert.That(verify.StatusCode, Is.EqualTo(HttpStatusCode.OK));
 
         var enabled = (await AuditRowsAsync(user!.Id, "auth.mfa.enabled")).Single();
-        var verified = (await AuditRowsAsync(user.Id, "auth.mfa.verify")).Single();
+        var verified = (await AuditRowsAsync(user.Id, "auth.mfa.verified")).Single();
         foreach (var (row, response) in new[] { (enabled, confirm), (verified, verify) })
         {
             Assert.That(row.Outcome, Is.EqualTo("Success"));

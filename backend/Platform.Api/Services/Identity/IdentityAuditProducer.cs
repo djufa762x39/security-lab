@@ -263,13 +263,17 @@ public sealed class IdentityAuditProducer(
         CancellationToken cancellationToken = default) =>
         WriteAsync(
             new AuditEventDraft(
-                AuditEventTypes.AuthMfaVerify,
+                AuditEventTypes.AuthMfaVerified,
                 AuditOutcome.Success,
                 Resource: Account(userId)),
             UserContext(userId, correlationId),
             transaction,
             cancellationToken);
 
+    /// <summary>
+    /// IDN-06 (US-18): the code was checked and refused (wrong, replayed), or the verification could not finish.
+    /// <paramref name="reasonCode"/> is one of the Failure codes of <c>auth.mfa.verified</c> in CONTRACTS.md.
+    /// </summary>
     public ValueTask<AuditWriteResult> MfaVerifyFailedAsync(
         Guid userId,
         string reasonCode,
@@ -277,10 +281,27 @@ public sealed class IdentityAuditProducer(
         CancellationToken cancellationToken = default) =>
         WriteAsync(
             new AuditEventDraft(
-                AuditEventTypes.AuthMfaVerify,
+                AuditEventTypes.AuthMfaVerified,
                 AuditOutcome.Failure,
                 Resource: Account(userId),
                 Details: Details(("reasonCode", reasonCode))),
+            UserContext(userId, correlationId),
+            cancellationToken);
+
+    /// <summary>
+    /// IDN-06 (US-18): the attempt limit refused the second factor, with the code that reached it or while the lock
+    /// lasts. <c>Denied</c>, like <c>auth.login.throttled</c>, and not <c>Failure</c> like a wrong code.
+    /// </summary>
+    public ValueTask<AuditWriteResult> MfaVerifyDeniedByAttemptLimitAsync(
+        Guid userId,
+        string correlationId,
+        CancellationToken cancellationToken = default) =>
+        WriteAsync(
+            new AuditEventDraft(
+                AuditEventTypes.AuthMfaVerified,
+                AuditOutcome.Denied,
+                Resource: Account(userId),
+                Details: Details(("reasonCode", "attempt_limit"))),
             UserContext(userId, correlationId),
             cancellationToken);
 
