@@ -4,7 +4,6 @@ using Platform.Audit.Application;
 using Platform.Audit.Contracts;
 using Platform.Identity.Enums;
 using Microsoft.Extensions.Logging.Abstractions;
-using Platform.Identity.Tests.Helpers;
 
 namespace Platform.Identity.Tests.Services;
 
@@ -596,4 +595,13 @@ public sealed class IdentityAuditProducerTests
             CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("sensitive storage diagnostic");
     }
+
+    private sealed class MarkerTransaction : DbTransaction
+    {
+        public override System.Data.IsolationLevel IsolationLevel => System.Data.IsolationLevel.ReadCommitted;
+        protected override DbConnection? DbConnection => null;
+        public override void Commit() { }
+        public override void Rollback() { }
+    }
+
 }

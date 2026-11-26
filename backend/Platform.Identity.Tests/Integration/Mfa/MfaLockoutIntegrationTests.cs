@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Moq;
 using Platform.Identity.Enums;
 using Platform.Identity.Helpers;
 using Platform.Identity.Tests.Helpers;
@@ -63,11 +64,14 @@ public sealed class MfaLockoutIntegrationTests : MfaIntegrationTestBase
     [Category("US-18")]
     public async Task Verification_AfterLockoutMinutes_CorrectCodeWorksAgain()
     {
-        var clock = new ShiftedClock();
+        // The system clock moved by offset; the other TimeProvider members keep their behavior (CallBase).
+        var offset = TimeSpan.Zero;
+        var clock = new Mock<TimeProvider> { CallBase = true };
+        clock.Setup(provider => provider.GetUtcNow()).Returns(() => DateTimeOffset.UtcNow + offset);
         using var shifted = Factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<TimeProvider>();
-            services.AddSingleton<TimeProvider>(clock);
+            services.AddSingleton(clock.Object);
         }));
         using var client = shifted.CreateClient();
         var secret = TotpHelpers.GenerateSecret();
@@ -78,7 +82,7 @@ public sealed class MfaLockoutIntegrationTests : MfaIntegrationTestBase
             await PostWithSessionAsync("/api/auth/mfa/verify", locking.RawToken, new { Code = "000000" }, client);
         Assert.That((await GetCredentialsAsync(user.Id))!.MfaLockedUntil, Is.Not.Null);
 
-        clock.Offset = TimeSpan.FromMinutes(LockoutMinutes) + TimeSpan.FromSeconds(1);
+        offset = TimeSpan.FromMinutes(LockoutMinutes) + TimeSpan.FromSeconds(1);
         var fresh = await SessionTestData.CreateAsync(Factory, user.Id, AuthLevel.MfaPending);
         var response = await PostWithSessionAsync(
             "/api/auth/mfa/verify", fresh.RawToken, new { Code = MfaTestData.CurrentCode(secret) }, client);

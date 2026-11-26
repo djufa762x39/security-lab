@@ -16,15 +16,15 @@ public sealed class MfaServiceAuditTests : MfaServiceTestBase
         var current = DateTimeOffset.UtcNow;
         var secret = TotpHelpers.GenerateSecret();
         SetupConfirmation(secret, current);
-        _audit.TransactionalResult = AuditWriteResult.Unavailable();
+        SetupAuditResults(transactional: AuditWriteResult.Unavailable());
         var code = new Totp(Base32Encoding.ToBytes(secret)).ComputeTotp(current.UtcDateTime);
 
         var result = await _service.ConfirmEnrollAsync(Token, code, "corr-audit-down", CancellationToken.None);
 
         Assert.That(result, Is.EqualTo(MfaOutcome.Unavailable));
-        Assert.That(_work.ConfirmCalls, Is.EqualTo(1));
-        Assert.That(_work.Committed, Is.False);
-        Assert.That(_work.Disposed, Is.True);
+        VerifyConfirm(Times.Once());
+        VerifyCommitted(false);
+        VerifyDisposed();
     }
 
     [Test]
@@ -37,10 +37,10 @@ public sealed class MfaServiceAuditTests : MfaServiceTestBase
 
         await _service.ConfirmEnrollAsync(Token, code, "corr-audited", CancellationToken.None);
 
-        var write = _audit.Writes.Single();
+        var write = _auditWrites.Single();
         Assert.That(write.Draft.EventType, Is.EqualTo(AuditEventTypes.AuthMfaEnabled));
         Assert.That(write.Draft.Outcome, Is.EqualTo(AuditOutcome.Success));
-        Assert.That(write.Transaction, Is.SameAs(_work.Transaction));
+        Assert.That(write.Transaction, Is.SameAs(_transaction));
         Assert.That(write.Context.CorrelationId, Is.EqualTo("corr-audited"));
     }
 
@@ -50,14 +50,14 @@ public sealed class MfaServiceAuditTests : MfaServiceTestBase
         var current = DateTimeOffset.UtcNow;
         var secret = TotpHelpers.GenerateSecret();
         SetupVerification(secret, current);
-        _audit.TransactionalResult = AuditWriteResult.Unavailable();
+        SetupAuditResults(transactional: AuditWriteResult.Unavailable());
         var code = new Totp(Base32Encoding.ToBytes(secret)).ComputeTotp(current.UtcDateTime);
 
         var (result, _) = await _service.VerifyAsync(Token, code, "corr-audit-down", CancellationToken.None);
 
         Assert.That(result, Is.EqualTo(MfaOutcome.Unavailable));
-        Assert.That(_work.Committed, Is.False);
-        Assert.That(_work.Disposed, Is.True);
+        VerifyCommitted(false);
+        VerifyDisposed();
     }
 
     [Test]
@@ -70,10 +70,10 @@ public sealed class MfaServiceAuditTests : MfaServiceTestBase
 
         await _service.VerifyAsync(Token, code, "corr-verified", CancellationToken.None);
 
-        var write = _audit.Writes.Single();
+        var write = _auditWrites.Single();
         Assert.That(write.Draft.EventType, Is.EqualTo(AuditEventTypes.AuthMfaVerified));
         Assert.That(write.Draft.Outcome, Is.EqualTo(AuditOutcome.Success));
-        Assert.That(write.Transaction, Is.SameAs(_work.Transaction));
+        Assert.That(write.Transaction, Is.SameAs(_transaction));
     }
 
     [Test]
@@ -81,7 +81,7 @@ public sealed class MfaServiceAuditTests : MfaServiceTestBase
     {
         var current = DateTimeOffset.UtcNow;
         SetupVerification(TotpHelpers.GenerateSecret(), current);
-        _audit.TrustedResult = AuditWriteResult.Unavailable();
+        SetupAuditResults(trusted: AuditWriteResult.Unavailable());
         _credentials.Setup(store => store.RecordFailedAttemptAsync(
                 UserId, 5, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);

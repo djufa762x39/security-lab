@@ -21,11 +21,7 @@ public sealed class MfaServiceLockoutTests : MfaServiceTestBase
         // Arrange
         var current = DateTimeOffset.UtcNow;
         SetupVerification(TotpHelpers.GenerateSecret(), current);
-        var service = new MfaService(_credentials.Object, _sessions.Object,
-            new IdentityAuditProducer(_audit, _audit, NullLogger<IdentityAuditProducer>.Instance),
-            _clock.Object, _protector,
-            Options.Create(new MfaLockoutOptions { MaxFailedAttempts = 3, LockoutMinutes = 30 }),
-            NullLogger<MfaService>.Instance);
+        var service = CreateService(new MfaLockoutOptions { MaxFailedAttempts = 3, LockoutMinutes = 30 });
         _credentials.Setup(store => store.RecordFailedAttemptAsync(
                 UserId, 3, current, current.AddMinutes(30), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
@@ -94,6 +90,6 @@ public sealed class MfaServiceLockoutTests : MfaServiceTestBase
         var (result, _) = await _service.VerifyAsync(Token, code, "corr-expired-lock", CancellationToken.None);
 
         Assert.That(result, Is.EqualTo(MfaOutcome.Success));
-        Assert.That(_work.Committed, Is.True);
+        VerifyCommitted(true);
     }
 }

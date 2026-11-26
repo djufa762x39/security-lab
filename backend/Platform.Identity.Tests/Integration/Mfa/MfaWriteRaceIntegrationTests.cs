@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Moq;
 using Npgsql;
 using Platform.Identity.Entities;
 using Platform.Identity.Helpers;
@@ -113,14 +114,36 @@ public sealed class MfaWriteRaceIntegrationTests : MfaIntegrationTestBase
         Assert.That(await AuditTestData.RowsAsync(user.Id, "auth.mfa.enrollment.started"), Is.Empty);
     }
 
+    // The real store, through a mock that runs the interruption once, before the writing transaction begins.
     private static WebApplicationFactory<Program> WithInterruptionBeforeTheWrite(Func<Task> interruption) =>
         Factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IMfaCredentialsStore>();
             services.AddScoped<EfMfaCredentialsStore>();
             services.AddScoped<IMfaCredentialsStore>(provider =>
-                new InterruptedMfaCredentialsStore(provider.GetRequiredService<EfMfaCredentialsStore>(), interruption));
+                InterruptedBeforeTheWrite(provider.GetRequiredService<EfMfaCredentialsStore>(), interruption));
         }));
+
+    private static IMfaCredentialsStore InterruptedBeforeTheWrite(IMfaCredentialsStore inner, Func<Task> interruption)
+    {
+        var store = new Mock<IMfaCredentialsStore>(MockBehavior.Strict);
+        store.Setup(s => s.GetAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .Returns((Guid userId, CancellationToken ct) => inner.GetAsync(userId, ct));
+        store.Setup(s => s.GetEmailAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .Returns((Guid userId, CancellationToken ct) => inner.GetEmailAsync(userId, ct));
+        store.Setup(s => s.RecordFailedAttemptAsync(
+                It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(),
+                It.IsAny<CancellationToken>()))
+            .Returns((Guid userId, int maxAttempts, DateTimeOffset now, DateTimeOffset lockedUntil, CancellationToken ct) =>
+                inner.RecordFailedAttemptAsync(userId, maxAttempts, now, lockedUntil, ct));
+        store.Setup(s => s.BeginAsync(It.IsAny<CancellationToken>()))
+            .Returns(async (CancellationToken ct) =>
+            {
+                await interruption();
+                return await inner.BeginAsync(ct);
+            });
+        return store.Object;
+    }
 
     private static async Task<bool> AnyQueryWaitsForALockAsync()
     {
@@ -132,25 +155,6 @@ public sealed class MfaWriteRaceIntegrationTests : MfaIntegrationTestBase
                 WHERE datname = current_database() AND wait_event_type = 'Lock')
             """, connection);
         return (bool)(await command.ExecuteScalarAsync())!;
-    }
-
-    /// <summary>Delegates to the real store; runs the interruption once, before the writing transaction begins.</summary>
-    private sealed class InterruptedMfaCredentialsStore(IMfaCredentialsStore inner, Func<Task> interruption)
-        : IMfaCredentialsStore
-    {
-        public Task<MfaCredentials?> GetAsync(Guid userId, CancellationToken ct) => inner.GetAsync(userId, ct);
-
-        public Task<string?> GetEmailAsync(Guid userId, CancellationToken ct) => inner.GetEmailAsync(userId, ct);
-
-        public Task<bool> RecordFailedAttemptAsync(
-            Guid userId, int maxAttempts, DateTimeOffset now, DateTimeOffset lockedUntil, CancellationToken ct) =>
-            inner.RecordFailedAttemptAsync(userId, maxAttempts, now, lockedUntil, ct);
-
-        public async Task<IMfaUnitOfWork> BeginAsync(CancellationToken ct)
-        {
-            await interruption();
-            return await inner.BeginAsync(ct);
-        }
     }
 
     /// <summary>

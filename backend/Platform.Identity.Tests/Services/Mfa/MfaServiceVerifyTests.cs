@@ -3,9 +3,9 @@ using OtpNet;
 using Platform.Api.Enums.Identity;
 using Platform.Api.Services.Identity;
 using Platform.Audit.Contracts;
+using Platform.Identity.Entities;
 using Platform.Identity.Enums;
 using Platform.Identity.Helpers;
-using Platform.Identity.Tests.Helpers;
 
 namespace Platform.Identity.Tests.Services.Mfa;
 
@@ -28,14 +28,16 @@ public sealed class MfaServiceVerifyTests : MfaServiceTestBase
 
         // Assert
         Assert.That(result, Is.EqualTo(MfaOutcome.Success));
-        Assert.That(_work.ConsumedStep, Is.EqualTo(TotpHelpers.Verify(code, secret).timeStepMatched));
-        Assert.That(_work.ReplacedSession, Is.EqualTo((UserId, _sessionId, StoreSessionCreator.Lifetime)));
+        VerifyConsumedStep(TotpHelpers.Verify(code, secret).timeStepMatched);
+        _work.Verify(work => work.TryReplaceWithActiveSessionAsync(
+            UserId, _sessionId, StoreSessionCreator.Lifetime, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()),
+            Times.Once);
         Assert.That(session, Is.Not.Null);
-        Assert.That(session!.Token, Is.EqualTo(FakeMfaUnitOfWork.NewToken));
+        Assert.That(session!.Token, Is.EqualTo(NewToken));
         Assert.That(session.Token, Is.Not.EqualTo(Token));
-        Assert.That(session.Handle, Is.EqualTo(_work.NewSession!.SessionHandle));
-        Assert.That(session.ExpiresAt, Is.EqualTo(_work.NewSession.ExpiresAt));
-        Assert.That(_work.Committed, Is.True);
+        Assert.That(session.Handle, Is.EqualTo(_newActiveSession.SessionHandle));
+        Assert.That(session.ExpiresAt, Is.EqualTo(_newActiveSession.ExpiresAt));
+        VerifyCommitted(true);
     }
 
     [Test]
@@ -54,7 +56,7 @@ public sealed class MfaServiceVerifyTests : MfaServiceTestBase
         // Assert
         Assert.That(result, Is.EqualTo(MfaOutcome.InvalidCode));
         Assert.That(session, Is.Null);
-        Assert.That(_work.ReplacedSession, Is.Null);
+        VerifyReplaced(Times.Never());
     }
 
     [Test]
@@ -82,15 +84,17 @@ public sealed class MfaServiceVerifyTests : MfaServiceTestBase
         var current = DateTimeOffset.UtcNow;
         var secret = TotpHelpers.GenerateSecret();
         SetupVerification(secret, current);
-        _work.ConsumeResult = false;
+        _work.Setup(work => work.TryConsumeTimeStepAsync(
+                It.IsAny<Guid>(), It.IsAny<long>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
         var code = new Totp(Base32Encoding.ToBytes(secret)).ComputeTotp(current.UtcDateTime);
 
         var (result, _) = await _service.VerifyAsync(Token, code, "corr-race", CancellationToken.None);
 
         Assert.That(result, Is.EqualTo(MfaOutcome.InvalidCode));
-        Assert.That(_work.ReplacedSession, Is.Null);
-        Assert.That(_work.Committed, Is.False);
-        Assert.That(_work.Disposed, Is.True);
+        VerifyReplaced(Times.Never());
+        VerifyCommitted(false);
+        VerifyDisposed();
     }
 
     [Test]
@@ -99,14 +103,17 @@ public sealed class MfaServiceVerifyTests : MfaServiceTestBase
         var current = DateTimeOffset.UtcNow;
         var secret = TotpHelpers.GenerateSecret();
         SetupVerification(secret, current);
-        _work.ReplaceResult = false;
+        _work.Setup(work => work.TryReplaceWithActiveSessionAsync(
+                It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<TimeSpan>(), It.IsAny<DateTimeOffset>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(((string, Session)?)null);
         var code = new Totp(Base32Encoding.ToBytes(secret)).ComputeTotp(current.UtcDateTime);
 
         var (result, _) = await _service.VerifyAsync(Token, code, "corr-revoked", CancellationToken.None);
 
         Assert.That(result, Is.EqualTo(MfaOutcome.Unauthorized));
-        Assert.That(_work.Committed, Is.False);
-        Assert.That(_work.Disposed, Is.True);
+        VerifyCommitted(false);
+        VerifyDisposed();
     }
 
     [Test]
@@ -115,16 +122,18 @@ public sealed class MfaServiceVerifyTests : MfaServiceTestBase
         var current = DateTimeOffset.UtcNow;
         var secret = TotpHelpers.GenerateSecret();
         SetupVerification(secret, current);
-        _work.SessionLockResult = false;
+        _work.Setup(work => work.TryLockActiveSessionAsync(
+                It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<AuthLevel>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
         var code = new Totp(Base32Encoding.ToBytes(secret)).ComputeTotp(current.UtcDateTime);
 
         var (result, _) = await _service.VerifyAsync(Token, code, "corr-verify-blocked", CancellationToken.None);
 
         Assert.That(result, Is.EqualTo(MfaOutcome.Unauthorized));
-        Assert.That(_work.LockedSession, Is.EqualTo((UserId, _sessionId, AuthLevel.MfaPending)));
-        Assert.That(_work.ConsumedStep, Is.Null);
-        Assert.That(_work.ReplacedSession, Is.Null);
-        Assert.That(_work.Committed, Is.False);
+        VerifyLockedSession(AuthLevel.MfaPending);
+        VerifyNoStepConsumed();
+        VerifyReplaced(Times.Never());
+        VerifyCommitted(false);
         VerifyAuditDoesNotContainSecret("session_inactive", AuditEventTypes.AuthMfaVerified);
     }
 

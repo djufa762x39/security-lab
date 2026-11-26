@@ -22,7 +22,7 @@ public sealed class MfaServiceConfirmTests : MfaServiceTestBase
         var result = await _service.ConfirmEnrollAsync(Token, "000000", "corr-5", CancellationToken.None);
 
         Assert.That(result, Is.EqualTo(MfaOutcome.InvalidCode));
-        Assert.That(_work.ConfirmCalls, Is.Zero);
+        VerifyConfirm(Times.Never());
         VerifyAuditDoesNotContainSecret("invalid_code");
     }
 
@@ -39,8 +39,8 @@ public sealed class MfaServiceConfirmTests : MfaServiceTestBase
         var result = await _service.ConfirmEnrollAsync(Token, code, "corr-confirm", CancellationToken.None);
 
         Assert.That(result, Is.EqualTo(MfaOutcome.Success));
-        Assert.That(_work.ConfirmCalls, Is.EqualTo(1));
-        Assert.That(_work.Committed, Is.True);
+        VerifyConfirm(Times.Once());
+        VerifyCommitted(true);
     }
 
     [Test]
@@ -55,8 +55,8 @@ public sealed class MfaServiceConfirmTests : MfaServiceTestBase
         var result = await _service.ConfirmEnrollAsync(Token, code, "corr-previous-period", CancellationToken.None);
 
         Assert.That(result, Is.EqualTo(MfaOutcome.Success));
-        Assert.That(_work.ConfirmCalls, Is.EqualTo(1));
-        Assert.That(_work.Committed, Is.True);
+        VerifyConfirm(Times.Once());
+        VerifyCommitted(true);
     }
 
     [Test]
@@ -71,8 +71,8 @@ public sealed class MfaServiceConfirmTests : MfaServiceTestBase
         var result = await _service.ConfirmEnrollAsync(Token, code, "corr-next-period", CancellationToken.None);
 
         Assert.That(result, Is.EqualTo(MfaOutcome.Success));
-        Assert.That(_work.ConfirmCalls, Is.EqualTo(1));
-        Assert.That(_work.Committed, Is.True);
+        VerifyConfirm(Times.Once());
+        VerifyCommitted(true);
     }
 
     [Test]
@@ -87,7 +87,7 @@ public sealed class MfaServiceConfirmTests : MfaServiceTestBase
         var result = await _service.ConfirmEnrollAsync(Token, code, "corr-outside-window", CancellationToken.None);
 
         Assert.That(result, Is.EqualTo(MfaOutcome.InvalidCode));
-        Assert.That(_work.ConfirmCalls, Is.Zero);
+        VerifyConfirm(Times.Never());
     }
 
     [Test]
@@ -99,7 +99,7 @@ public sealed class MfaServiceConfirmTests : MfaServiceTestBase
         var result = await _service.ConfirmEnrollAsync(Token, "123456", "corr-6", CancellationToken.None);
 
         Assert.That(result, Is.EqualTo(MfaOutcome.InvalidCode));
-        Assert.That(_work.ConfirmCalls, Is.Zero);
+        VerifyConfirm(Times.Never());
     }
 
     [Test]
@@ -111,7 +111,7 @@ public sealed class MfaServiceConfirmTests : MfaServiceTestBase
         var result = await _service.ConfirmEnrollAsync(Token, "123456", "corr-7", CancellationToken.None);
 
         Assert.That(result, Is.EqualTo(MfaOutcome.Unavailable));
-        Assert.That(_work.ConfirmCalls, Is.Zero);
+        VerifyConfirm(Times.Never());
     }
 
     [Test]
@@ -120,13 +120,16 @@ public sealed class MfaServiceConfirmTests : MfaServiceTestBase
         var current = DateTimeOffset.UtcNow;
         var secret = TotpHelpers.GenerateSecret();
         SetupConfirmation(secret, current);
-        _work.ConfirmResult = false;
+        _work.Setup(work => work.TryConfirmEnrollmentAsync(
+                It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<long>(), It.IsAny<DateTimeOffset>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
         var code = new Totp(Base32Encoding.ToBytes(secret)).ComputeTotp(current.UtcDateTime);
 
         var result = await _service.ConfirmEnrollAsync(Token, code, "corr-confirm-race", CancellationToken.None);
 
         Assert.That(result, Is.EqualTo(MfaOutcome.InvalidCode));
-        Assert.That(_work.Committed, Is.False);
+        VerifyCommitted(false);
     }
 
     [Test]
@@ -135,15 +138,17 @@ public sealed class MfaServiceConfirmTests : MfaServiceTestBase
         var current = DateTimeOffset.UtcNow;
         var secret = TotpHelpers.GenerateSecret();
         SetupConfirmation(secret, current);
-        _work.SessionLockResult = false;
+        _work.Setup(work => work.TryLockActiveSessionAsync(
+                It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<AuthLevel>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
         var code = new Totp(Base32Encoding.ToBytes(secret)).ComputeTotp(current.UtcDateTime);
 
         var result = await _service.ConfirmEnrollAsync(Token, code, "corr-confirm-blocked", CancellationToken.None);
 
         Assert.That(result, Is.EqualTo(MfaOutcome.Unauthorized));
-        Assert.That(_work.LockedSession, Is.EqualTo((UserId, _sessionId, AuthLevel.Active)));
-        Assert.That(_work.ConfirmCalls, Is.Zero);
-        Assert.That(_work.Committed, Is.False);
+        VerifyLockedSession(AuthLevel.Active);
+        VerifyConfirm(Times.Never());
+        VerifyCommitted(false);
         VerifyAuditDoesNotContainSecret("session_inactive");
     }
 
