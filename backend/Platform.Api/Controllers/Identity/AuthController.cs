@@ -113,12 +113,18 @@ public class AuthController(
     [HttpPost("mfa/verify")]
     public async Task<IActionResult> MfaVerify([FromBody] MfaVerifyRequest request, CancellationToken ct)
     {
-        var outcome = await _mfaService.VerifyAsync(Request.Cookies[SessionCookie.Name], request.Code,
+        var (outcome, session) = await _mfaService.VerifyAsync(Request.Cookies[SessionCookie.Name], request.Code,
             HttpContext.TraceIdentifier, ct);
         Response.Headers.CacheControl = "no-store";
+        if (outcome == MfaOutcome.Success)
+        {
+            // IDN-11: the pending session is revoked, so the cookie gets the token of the new active session.
+            Response.Cookies.Append(SessionCookie.Name, session!.Token, SessionCookie.Options(session.ExpiresAt));
+            return Ok();
+        }
+
         return outcome switch
         {
-            MfaOutcome.Success => Ok(),
             MfaOutcome.InvalidRequest => BadRequest(new { code = "invalid_request" }),
             MfaOutcome.Unavailable => StatusCode(503, new { code = "mfa_unavailable" }),
             _ => Unauthorized(new { code = "invalid_mfa" })

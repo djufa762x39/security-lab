@@ -187,18 +187,58 @@ public sealed class MfaIntegrationTests : IntegrationTestBase
         Assert.That(me.StatusCode, Is.EqualTo(HttpStatusCode.OK));
     }
 
+    // IDN-11: the second factor changes the privilege level, so the session identifier changes too.
     [Test]
-    public async Task Verification_ValidCode_PromotesPendingSessionToActive()
+    [Category("US-18")]
+    [Category("IDN-11")]
+    public async Task Verification_ValidCode_ReplacesPendingSessionWithNewActiveSession()
     {
+        // Arrange
         var secret = TotpHelpers.GenerateSecret();
         var user = await UserTestData.AddAsync(Factory, "mfa-verify@platform.com", Password);
         await MfaTestData.AddEnabledAsync(Factory, user.Id, secret);
         await LoginExistingAsync("mfa-verify@platform.com");
+        var pending = await GetCurrentSessionAsync();
+        var pendingToken = CurrentSessionToken();
 
+        // Act
         var response = await Client.PostAsJsonAsync("/api/auth/mfa/verify", new { Code = CurrentCode(secret) });
 
+        // Assert
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
-        Assert.That((await Client.GetAsync("/api/auth/me")).StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        var activeToken = SessionTokenFrom(response);
+        Assert.That(activeToken, Is.Not.EqualTo(pendingToken));
+        var active = await SessionTestData.FindByTokenAsync(Factory, activeToken);
+        Assert.That(active!.AuthLevel, Is.EqualTo(AuthLevel.Active));
+        Assert.That(active.UserId, Is.EqualTo(user.Id));
+        Assert.That(active.SessionHandle, Is.Not.EqualTo(pending!.SessionHandle));
+        var replaced = await SessionTestData.GetAsync(Factory, pending.Id);
+        Assert.That(replaced!.RevokedAt, Is.Not.Null, "the pending session is revoked");
+        Assert.That(replaced.AuthLevel, Is.EqualTo(AuthLevel.MfaPending), "the pending session is never promoted");
+        Assert.That((await GetWithSessionAsync("/api/auth/me", activeToken)).StatusCode, Is.EqualTo(HttpStatusCode.OK));
+    }
+
+    [Test]
+    [Category("US-18")]
+    [Category("IDN-11")]
+    public async Task Verification_ValidCode_TheCookieFromBeforeTheSecondFactorIsRejectedAfterwards()
+    {
+        // Arrange
+        var secret = TotpHelpers.GenerateSecret();
+        var user = await UserTestData.AddAsync(Factory, "mfa-verify-old-cookie@platform.com", Password);
+        await MfaTestData.AddEnabledAsync(Factory, user.Id, secret);
+        await LoginExistingAsync("mfa-verify-old-cookie@platform.com");
+        var pendingToken = CurrentSessionToken();
+        var verify = await Client.PostAsJsonAsync("/api/auth/mfa/verify", new { Code = CurrentCode(secret) });
+        Assert.That(verify.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+
+        // Act
+        var me = await GetWithSessionAsync("/api/auth/me", pendingToken);
+        var sessions = await GetWithSessionAsync("/api/auth/sessions", pendingToken);
+
+        // Assert
+        Assert.That(me.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+        Assert.That(sessions.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
     }
 
     [Test]
@@ -214,20 +254,28 @@ public sealed class MfaIntegrationTests : IntegrationTestBase
         Assert.That((await Client.GetAsync("/api/auth/me")).StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
     }
 
+    // The first verification replaces its session, so the replay comes from a second pending login.
     [Test]
     public async Task Verification_ReplayedCode_ReturnsUnauthorized()
     {
+        // Arrange
         var secret = TotpHelpers.GenerateSecret();
         var user = await UserTestData.AddAsync(Factory, "mfa-verify-replay@platform.com", Password);
         await MfaTestData.AddEnabledAsync(Factory, user.Id, secret);
-        await LoginExistingAsync("mfa-verify-replay@platform.com");
+        var firstLogin = await SessionTestData.CreateAsync(Factory, user.Id, AuthLevel.MfaPending);
+        var secondLogin = await SessionTestData.CreateAsync(Factory, user.Id, AuthLevel.MfaPending);
         var code = CurrentCode(secret);
 
-        var first = await Client.PostAsJsonAsync("/api/auth/mfa/verify", new { Code = code });
-        var second = await Client.PostAsJsonAsync("/api/auth/mfa/verify", new { Code = code });
+        // Act
+        var first = await PostWithSessionAsync("/api/auth/mfa/verify", firstLogin.RawToken, new { Code = code });
+        var second = await PostWithSessionAsync("/api/auth/mfa/verify", secondLogin.RawToken, new { Code = code });
 
+        // Assert
         Assert.That(first.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(second.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+        var replayed = await SessionTestData.GetAsync(Factory, secondLogin.Session.Id);
+        Assert.That(replayed!.AuthLevel, Is.EqualTo(AuthLevel.MfaPending));
+        Assert.That(replayed.RevokedAt, Is.Null);
     }
 
     [Test]
@@ -310,6 +358,7 @@ public sealed class MfaIntegrationTests : IntegrationTestBase
         var pending = await Client.GetAsync("/api/auth/me");
         var verify = await Client.PostAsJsonAsync(
             "/api/auth/mfa/verify", new { Code = NextCode(secret) });
+        SetSessionCookie(verify);
         var active = await Client.GetAsync("/api/auth/me");
 
         Assert.That(pending.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
@@ -354,12 +403,16 @@ public sealed class MfaIntegrationTests : IntegrationTestBase
 
         Assert.That(responses.Count(r => r.StatusCode == HttpStatusCode.OK), Is.EqualTo(1));
         Assert.That(responses.Count(r => r.StatusCode == HttpStatusCode.Unauthorized), Is.EqualTo(1));
-        var levels = new[]
+        var pendingSessions = new[]
         {
-            (await SessionTestData.GetAsync(Factory, first.Session.Id))!.AuthLevel,
-            (await SessionTestData.GetAsync(Factory, second.Session.Id))!.AuthLevel
+            (await SessionTestData.GetAsync(Factory, first.Session.Id))!,
+            (await SessionTestData.GetAsync(Factory, second.Session.Id))!
         };
-        Assert.That(levels, Is.EquivalentTo(new[] { AuthLevel.Active, AuthLevel.MfaPending }));
+        Assert.That(pendingSessions.Count(s => s.RevokedAt is not null), Is.EqualTo(1), "only the winner is replaced");
+        Assert.That(pendingSessions.All(s => s.AuthLevel == AuthLevel.MfaPending), Is.True);
+        var winner = responses.Single(r => r.StatusCode == HttpStatusCode.OK);
+        var active = await SessionTestData.FindByTokenAsync(Factory, SessionTokenFrom(winner));
+        Assert.That(active!.AuthLevel, Is.EqualTo(AuthLevel.Active));
     }
 
     [Test]
@@ -456,7 +509,9 @@ public sealed class MfaIntegrationTests : IntegrationTestBase
             "/api/auth/mfa/verify", fresh.RawToken, new { Code = CurrentCode(secret) }, client);
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
-        Assert.That((await SessionTestData.GetAsync(Factory, fresh.Session.Id))!.AuthLevel, Is.EqualTo(AuthLevel.Active));
+        Assert.That((await SessionTestData.GetAsync(Factory, fresh.Session.Id))!.RevokedAt, Is.Not.Null);
+        Assert.That((await SessionTestData.FindByTokenAsync(Factory, SessionTokenFrom(response)))!.AuthLevel,
+            Is.EqualTo(AuthLevel.Active));
         var credentials = await GetCredentialsAsync(user.Id);
         Assert.That(credentials!.MfaLockedUntil, Is.Null);
         Assert.That(credentials.MfaFailedAttempts, Is.Zero);
@@ -934,4 +989,25 @@ public sealed class MfaIntegrationTests : IntegrationTestBase
     }
 
     private static void ClearSessionCookie() => Client.DefaultRequestHeaders.Remove("Cookie");
+
+    private static string CurrentSessionToken()
+    {
+        var cookie = Client.DefaultRequestHeaders.GetValues("Cookie").Single();
+        return cookie[(cookie.IndexOf('=') + 1)..];
+    }
+
+    private static string SessionTokenFrom(HttpResponseMessage response)
+    {
+        var cookie = response.Headers.GetValues("Set-Cookie")
+            .Single(value => value.StartsWith(SessionCookie.Name + "=", StringComparison.Ordinal))
+            .Split(';')[0];
+        return cookie[(cookie.IndexOf('=') + 1)..];
+    }
+
+    private static async Task<HttpResponseMessage> GetWithSessionAsync(string path, string rawToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        request.Headers.Add("Cookie", $"{SessionCookie.Name}={rawToken}");
+        return await Client.SendAsync(request);
+    }
 }

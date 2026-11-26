@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Platform.Identity.Entities;
 using Platform.Identity.Enums;
 using Platform.Identity.Interfaces.Mfa;
+using Platform.Identity.Services;
 
 namespace Platform.Identity.Persistence.Mfa;
 
@@ -168,15 +169,36 @@ public class EfMfaCredentialsStore(PlatformIdentityDbContext db) : IMfaCredentia
             return rows == 1;
         }
 
-        public async Task<bool> TryPromoteSessionAsync(Guid sessionId, DateTimeOffset now, CancellationToken ct)
+        public async Task<(string RawToken, Session Session)?> TryReplaceWithActiveSessionAsync(
+            Guid userId,
+            Guid pendingSessionId,
+            TimeSpan lifetime,
+            DateTimeOffset now,
+            CancellationToken ct)
         {
             var rows = await db.Sessions
-                .Where(s => s.Id == sessionId
+                .Where(s => s.Id == pendingSessionId
+                            && s.UserId == userId
                             && s.AuthLevel == AuthLevel.MfaPending
                             && s.RevokedAt == null
                             && s.ExpiresAt > now)
-                .ExecuteUpdateAsync(set => set.SetProperty(s => s.AuthLevel, AuthLevel.Active), ct);
-            return rows == 1;
+                .ExecuteUpdateAsync(set => set.SetProperty(s => s.RevokedAt, (DateTimeOffset?)now), ct);
+            if (rows != 1)
+                return null;
+
+            var rawToken = SessionTokenGenerator.NewToken();
+            var session = new Session(
+                id: Guid.NewGuid(),
+                userId: userId,
+                tokenHash: SessionTokenGenerator.Hash(rawToken),
+                sessionHandle: Guid.NewGuid(),
+                authLevel: AuthLevel.Active,
+                createdAt: now,
+                expiresAt: now.Add(lifetime));
+            db.Sessions.Add(session);
+            await db.SaveChangesAsync(ct);
+
+            return (rawToken, session);
         }
 
         public Task CommitAsync(CancellationToken ct) => transaction.CommitAsync(ct);

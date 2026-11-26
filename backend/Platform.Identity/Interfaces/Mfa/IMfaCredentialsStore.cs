@@ -88,9 +88,18 @@ public interface IMfaUnitOfWork : IAsyncDisposable
     Task<bool> TryConsumeTimeStepAsync(Guid userId, long timeStep, DateTimeOffset now, CancellationToken ct);
 
     /// <summary>
-    /// US-18: raises the session from <c>MfaPending</c> to <c>Active</c> while it is neither revoked nor expired.
+    /// US-18 and IDN-11: replaces the <c>MfaPending</c> session with a new <c>Active</c> session. The pending session
+    /// is revoked in one conditional UPDATE (still <c>MfaPending</c>, neither revoked nor expired at
+    /// <paramref name="now"/>), and a new session of <paramref name="userId"/> with a new token and handle is stored,
+    /// expiring after <paramref name="lifetime"/>. The token from before the second factor is rejected afterwards.
+    /// Returns null, and stores nothing, when the pending session was revoked or expired in the meantime.
     /// </summary>
-    Task<bool> TryPromoteSessionAsync(Guid sessionId, DateTimeOffset now, CancellationToken ct);
+    Task<(string RawToken, Session Session)?> TryReplaceWithActiveSessionAsync(
+        Guid userId,
+        Guid pendingSessionId,
+        TimeSpan lifetime,
+        DateTimeOffset now,
+        CancellationToken ct);
 
     Task CommitAsync(CancellationToken ct);
 }

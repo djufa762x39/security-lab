@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Platform.Api.Enums.Identity;
 using Platform.Api.Interfaces.Identity;
+using Platform.Api.Models.Identity;
 using Platform.Identity.Entities;
 using Platform.Identity.Enums;
 using Platform.Identity.Helpers;
@@ -15,7 +16,7 @@ namespace Platform.Api.Services.Identity;
 
 /// <summary>
 /// IDN-06: TOTP enrollment (US-17) and the second factor of a login (US-18).
-/// A successful change (MFA enabled, session promoted) is one transaction with its Audit record: if the record is
+/// A successful change (MFA enabled, or the pending session replaced by a new active one) is one transaction with its Audit record: if the record is
 /// not stored, nothing is committed and the answer is <see cref="MfaOutcome.Unavailable"/>.
 /// A refusal stays a refusal when its Audit record fails (CONTRACTS.md, producer obligation 2).
 /// </summary>
@@ -170,25 +171,25 @@ public sealed class MfaService(
             : await RefuseEnableAsync(userId, "no_valid_enrollment", correlationId, MfaOutcome.InvalidCode, ct);
     }
 
-    public async Task<MfaOutcome> VerifyAsync(
+    public async Task<(MfaOutcome Outcome, IssuedSession? Session)> VerifyAsync(
         string? rawToken,
         string? code,
         string correlationId,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(code))
-            return MfaOutcome.InvalidRequest;
+            return (MfaOutcome.InvalidRequest, null);
         if (string.IsNullOrWhiteSpace(rawToken))
-            return MfaOutcome.Unauthorized;
+            return (MfaOutcome.Unauthorized, null);
 
         var session = await _sessionStore.FindByTokenAsync(rawToken, ct);
         if (session is null || !session.IsActiveAt(_clock.GetUtcNow()) || session.AuthLevel != AuthLevel.MfaPending)
-            return MfaOutcome.Unauthorized;
+            return (MfaOutcome.Unauthorized, null);
 
         var userId = session.UserId;
         var credentials = await _mfaCredentialsStore.GetAsync(userId, ct);
         if (credentials is null || !credentials.MfaEnabled)
-            return MfaOutcome.Unauthorized;
+            return (MfaOutcome.Unauthorized, null);
 
         // US-18 lockout: while it lasts no code is checked, not even a correct one. The answer is the same
         // 401 invalid_mfa as for a wrong code, so it does not tell an attacker that the account is locked.
@@ -196,12 +197,12 @@ public sealed class MfaService(
         if (credentials.MfaLockedUntil is { } lockedUntil && lockedUntil > _clock.GetUtcNow())
         {
             await _sessionStore.RevokeByTokenAsync(rawToken, ct);
-            return await DenyVerifyByAttemptLimitAsync(userId, correlationId);
+            return (await DenyVerifyByAttemptLimitAsync(userId, correlationId), null);
         }
 
         if (credentials.TotpSecretCiphertext is null
             || credentials.TotpSecretKeyVersion != SecretKeyVersion)
-            return MfaOutcome.Unavailable;
+            return (MfaOutcome.Unavailable, null);
 
         string secret;
         try
@@ -210,7 +211,7 @@ public sealed class MfaService(
         }
         catch (CryptographicException)
         {
-            return await RefuseVerifyAsync(userId, "invalid_secret", correlationId, MfaOutcome.Unavailable);
+            return (await RefuseVerifyAsync(userId, "invalid_secret", correlationId, MfaOutcome.Unavailable), null);
         }
 
         var result = TotpHelpers.Verify(code, secret);
@@ -228,15 +229,17 @@ public sealed class MfaService(
                 await _sessionStore.RevokeByTokenAsync(rawToken, ct);
 
             if (locked)
-                return await DenyVerifyByAttemptLimitAsync(userId, correlationId);
+                return (await DenyVerifyByAttemptLimitAsync(userId, correlationId), null);
 
-            return await RefuseVerifyAsync(
-                userId, replayed ? "replayed_code" : "invalid_code", correlationId, MfaOutcome.InvalidCode);
+            return (await RefuseVerifyAsync(
+                userId, replayed ? "replayed_code" : "invalid_code", correlationId, MfaOutcome.InvalidCode), null);
         }
 
-        // The check above is only a fast path. The step is consumed, the session promoted and the Audit record
-        // written in one transaction, and each UPDATE repeats its condition: a parallel request with the same
+        // The check above is only a fast path. The step is consumed, the pending session replaced and the Audit
+        // record written in one transaction, and each UPDATE repeats its condition: a parallel request with the same
         // code (also from another pending session of this user) waits for the row and then matches nothing.
+        // IDN-11: the replacement is a new session with a new token, so the cookie from before the second factor
+        // stops working; a rollback keeps the pending session and stores no new one.
         string refusal;
         MfaOutcome refusalOutcome;
         try
@@ -245,14 +248,15 @@ public sealed class MfaService(
             var now = _clock.GetUtcNow();
             if (!await work.TryLockActiveSessionAsync(userId, session.Id, AuthLevel.MfaPending, now, ct))
             {
-                // Blocked, revoked or expired since it was read: nothing is consumed or promoted.
+                // Blocked, revoked or expired since it was read: nothing is consumed or replaced.
                 (refusal, refusalOutcome) = ("session_inactive", MfaOutcome.Unauthorized);
             }
             else if (!await work.TryConsumeTimeStepAsync(userId, result.timeStepMatched, now, ct))
             {
                 (refusal, refusalOutcome) = ("replayed_code", MfaOutcome.InvalidCode);
             }
-            else if (!await work.TryPromoteSessionAsync(session.Id, now, ct))
+            else if (await work.TryReplaceWithActiveSessionAsync(userId, session.Id, StoreSessionCreator.Lifetime, now, ct)
+                     is not { } active)
             {
                 // Revoked or expired in the meantime: leaving without a commit also gives the step back.
                 (refusal, refusalOutcome) = ("session_inactive", MfaOutcome.Unauthorized);
@@ -265,21 +269,22 @@ public sealed class MfaService(
                 if (!recorded.IsRecorded)
                 {
                     _logger.LogError("MFA verification was rolled back: Audit write ended as {Status}.", recorded.Status);
-                    return MfaOutcome.Unavailable;
+                    return (MfaOutcome.Unavailable, null);
                 }
 
                 await work.CommitAsync(ct);
-                return MfaOutcome.Success;
+                return (MfaOutcome.Success,
+                    new IssuedSession(active.RawToken, active.Session.SessionHandle, active.Session.ExpiresAt));
             }
         }
         catch (Exception ex) when (ex is DbException or DbUpdateException)
         {
             _logger.LogError(ex, "MFA verification was rolled back: the database failed.");
-            return MfaOutcome.Unavailable;
+            return (MfaOutcome.Unavailable, null);
         }
 
         // The transaction above is closed here; it changed nothing.
-        return await RefuseVerifyAsync(userId, refusal, correlationId, refusalOutcome);
+        return (await RefuseVerifyAsync(userId, refusal, correlationId, refusalOutcome), null);
     }
 
     // A TOTP step can be used once: the same step and every older one are refused.

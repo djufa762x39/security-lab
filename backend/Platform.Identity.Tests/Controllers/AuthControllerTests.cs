@@ -216,9 +216,12 @@ public class AuthControllerTests
         var http = HttpContextWithCookie(token);
         _controller.ControllerContext.HttpContext = http;
         var request = new MfaVerifyRequest("123456");
+        IssuedSession? issued = outcome == MfaOutcome.Success
+            ? new IssuedSession("new-active-token", Guid.NewGuid(), DateTimeOffset.UtcNow.AddHours(8))
+            : null;
         _mfa.Setup(service => service.VerifyAsync(
                 token, request.Code, http.TraceIdentifier, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(outcome);
+            .ReturnsAsync((outcome, issued));
 
         var response = await _controller.MfaVerify(request, CancellationToken.None);
 
@@ -230,6 +233,47 @@ public class AuthControllerTests
         };
         Assert.That(statusCode, Is.EqualTo(expectedStatusCode));
         Assert.That(http.Response.Headers.CacheControl.ToString(), Is.EqualTo("no-store"));
+    }
+
+    [Test]
+    public async Task MfaVerify_Success_SetsTheCookieOfTheNewSession()
+    {
+        // Arrange
+        const string pendingToken = "pending-session-token";
+        var http = HttpContextWithCookie(pendingToken);
+        _controller.ControllerContext.HttpContext = http;
+        var request = new MfaVerifyRequest("123456");
+        var issued = new IssuedSession("new-active-token", Guid.NewGuid(), DateTimeOffset.UtcNow.AddHours(8));
+        _mfa.Setup(service => service.VerifyAsync(
+                pendingToken, request.Code, http.TraceIdentifier, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((MfaOutcome.Success, issued));
+
+        // Act
+        await _controller.MfaVerify(request, CancellationToken.None);
+
+        // Assert
+        var setCookie = http.Response.Headers.SetCookie.ToString();
+        Assert.That(setCookie, Does.Contain($"{SessionCookie.Name}={issued.Token}"));
+        Assert.That(setCookie, Does.Not.Contain(pendingToken));
+    }
+
+    [Test]
+    public async Task MfaVerify_Refused_DoesNotSetACookie()
+    {
+        // Arrange
+        const string pendingToken = "pending-session-token";
+        var http = HttpContextWithCookie(pendingToken);
+        _controller.ControllerContext.HttpContext = http;
+        var request = new MfaVerifyRequest("000000");
+        _mfa.Setup(service => service.VerifyAsync(
+                pendingToken, request.Code, http.TraceIdentifier, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((MfaOutcome.InvalidCode, (IssuedSession?)null));
+
+        // Act
+        await _controller.MfaVerify(request, CancellationToken.None);
+
+        // Assert
+        Assert.That(http.Response.Headers.ContainsKey("Set-Cookie"), Is.False);
     }
 
     private static DefaultHttpContext HttpContextWithCookie(string? token)
