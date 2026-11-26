@@ -119,7 +119,7 @@ The cookie token and its hash, passwords, and password hashes are not included i
 
 ## Test evidence and local verification
 
-Identity tests cover login, logout, credential checking, session validation and middleware behavior, identity mapping (including `MfaPending` being unauthenticated) and MFA (`MfaServiceTests`; the PostgreSQL tests in `Integration/Mfa/`: enrollment, verification, lockout, audit, writes racing a block or revocation, and the end-to-end flow). Tests are in `backend/Platform.Identity.Tests`.
+Identity tests cover login, logout, credential checking, session validation and middleware behavior, identity mapping (including `MfaPending` being unauthenticated) and MFA (unit tests of `MfaService` in `Services/Mfa/`: enroll, confirm, verify, lockout and audit; the PostgreSQL tests in `Integration/Mfa/`: enrollment, verification, lockout, audit, writes racing a block or revocation, and the end-to-end flow). Tests are in `backend/Platform.Identity.Tests`.
 
 From the repository root:
 
