@@ -21,6 +21,7 @@ using Platform.Identity.Enums;
 using Platform.Identity.Persistence;
 using Platform.Identity.Services;
 using Testcontainers.PostgreSql;
+using Platform.Identity.Testing;
 
 namespace Platform.Identity.Tests.Services;
 
@@ -109,7 +110,7 @@ public sealed class IdentityAuditPostgresIntegrationTests
                         postgres.MigrationsHistoryTable("__EFMigrationsHistory", "audit")));
             });
         });
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        using var client = factory.CreateCsrfClient(new WebApplicationFactoryClientOptions
         {
             BaseAddress = new Uri("https://localhost"),
             HandleCookies = true,
@@ -248,7 +249,7 @@ public sealed class IdentityAuditPostgresIntegrationTests
         var email = $"throttled-{userId:N}@example.com";
         if (knownAccount) await SeedAccountAsync(userId, email);
         await using var factory = CreateIdentityHost();
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        using var client = factory.CreateCsrfClient(new WebApplicationFactoryClientOptions
         {
             BaseAddress = new Uri("https://localhost"), HandleCookies = true
         });
@@ -296,7 +297,7 @@ public sealed class IdentityAuditPostgresIntegrationTests
     {
         var email = $"no-audit-{Guid.NewGuid():N}@example.com";
         await using var factory = CreateIdentityHost();
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        using var client = factory.CreateCsrfClient(new WebApplicationFactoryClientOptions
         {
             BaseAddress = new Uri("https://localhost")
         });
@@ -340,7 +341,7 @@ public sealed class IdentityAuditPostgresIntegrationTests
         var email = $"lockout-audit-{userId:N}@example.com";
         await SeedAccountAsync(userId, email);
         await using var factory = CreateIdentityHost(loginPermitLimit: 1000, maxFailedAttempts: 3);
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        using var client = factory.CreateCsrfClient(new WebApplicationFactoryClientOptions
         {
             BaseAddress = new Uri("https://localhost")
         });
@@ -393,7 +394,7 @@ public sealed class IdentityAuditPostgresIntegrationTests
         var email = $"lockout-audit-down-{userId:N}@example.com";
         await SeedAccountAsync(userId, email);
         await using var factory = CreateIdentityHost(loginPermitLimit: 1000, maxFailedAttempts: 1);
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        using var client = factory.CreateCsrfClient(new WebApplicationFactoryClientOptions
         {
             BaseAddress = new Uri("https://localhost")
         });
