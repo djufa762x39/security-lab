@@ -200,14 +200,14 @@ public sealed class IdentityAuditProducerTests
     }
 
     [Test]
-    public async Task MfaEnrollmentConfirmed_UsesSuccessAccountResourceAndUserActor()
+    public async Task MfaEnabled_UsesSuccessAccountResourceAndUserActor()
     {
         var writer = new RecordingWriter();
-        await CreateProducer(writer).MfaEnrollmentConfirmedAsync(ActorId, CorrelationId);
+        await CreateProducer(writer).MfaEnabledAsync(ActorId, CorrelationId);
         var write = writer.Single();
         Assert.Multiple(() =>
         {
-            Assert.That(write.Draft.EventType, Is.EqualTo(AuditEventTypes.AuthMfaEnrollmentConfirmed));
+            Assert.That(write.Draft.EventType, Is.EqualTo(AuditEventTypes.AuthMfaEnabled));
             Assert.That(write.Draft.Outcome, Is.EqualTo(AuditOutcome.Success));
             Assert.That(write.Draft.Resource, Is.EqualTo(new AuditResourceRef(AuditResourceTypes.Account, ActorId.ToString())));
             Assert.That(write.Draft.Details, Is.Null);
@@ -217,31 +217,31 @@ public sealed class IdentityAuditProducerTests
     }
 
     [Test]
-    public async Task MfaEnrollmentStartFailed_UsesStartedFailureReasonAndAccountResource()
+    public async Task MfaEnableFailedWithAlreadyEnabled_UsesFailureReasonAndAccountResource()
     {
         var writer = new RecordingWriter();
-        await CreateProducer(writer).MfaEnrollmentStartFailedAsync(ActorId, "mfa_already_active", CorrelationId);
+        await CreateProducer(writer).MfaEnableFailedAsync(ActorId, "already_enabled", CorrelationId);
         var write = writer.Single();
         Assert.Multiple(() =>
         {
-            Assert.That(write.Draft.EventType, Is.EqualTo(AuditEventTypes.AuthMfaEnrollmentStarted));
+            Assert.That(write.Draft.EventType, Is.EqualTo(AuditEventTypes.AuthMfaEnabled));
             Assert.That(write.Draft.Outcome, Is.EqualTo(AuditOutcome.Failure));
             Assert.That(write.Draft.Resource!.Id, Is.EqualTo(ActorId.ToString()));
-            Assert.That(write.Draft.Details, Is.EquivalentTo(new Dictionary<string, string> { ["reasonCode"] = "mfa_already_active" }));
+            Assert.That(write.Draft.Details, Is.EquivalentTo(new Dictionary<string, string> { ["reasonCode"] = "already_enabled" }));
             Assert.That(write.Context.Actor, Is.EqualTo(AuditActor.ForUser(ActorId)));
             Assert.That(write.Context.CorrelationId, Is.EqualTo(CorrelationId));
         });
     }
 
     [Test]
-    public async Task MfaEnrollmentConfirmFailed_UsesConfirmedFailureReasonAndAccountResource()
+    public async Task MfaEnableFailed_UsesFailureReasonAndAccountResource()
     {
         var writer = new RecordingWriter();
-        await CreateProducer(writer).MfaEnrollmentConfirmFailedAsync(ActorId, "invalid_code", CorrelationId);
+        await CreateProducer(writer).MfaEnableFailedAsync(ActorId, "invalid_code", CorrelationId);
         var write = writer.Single();
         Assert.Multiple(() =>
         {
-            Assert.That(write.Draft.EventType, Is.EqualTo(AuditEventTypes.AuthMfaEnrollmentConfirmed));
+            Assert.That(write.Draft.EventType, Is.EqualTo(AuditEventTypes.AuthMfaEnabled));
             Assert.That(write.Draft.Outcome, Is.EqualTo(AuditOutcome.Failure));
             Assert.That(write.Draft.Resource!.Id, Is.EqualTo(ActorId.ToString()));
             Assert.That(write.Draft.Details, Is.EquivalentTo(new Dictionary<string, string> { ["reasonCode"] = "invalid_code" }));
@@ -251,14 +251,14 @@ public sealed class IdentityAuditProducerTests
     }
 
     [Test]
-    public async Task MfaVerifySucceeded_UsesSuccessAccountResourceAndUserActor()
+    public async Task MfaVerified_UsesSuccessAccountResourceAndUserActor()
     {
         var writer = new RecordingWriter();
-        await CreateProducer(writer).MfaVerifySucceededAsync(ActorId, CorrelationId);
+        await CreateProducer(writer).MfaVerifiedAsync(ActorId, CorrelationId);
         var write = writer.Single();
         Assert.Multiple(() =>
         {
-            Assert.That(write.Draft.EventType, Is.EqualTo(AuditEventTypes.AuthMfaVerify));
+            Assert.That(write.Draft.EventType, Is.EqualTo(AuditEventTypes.AuthMfaVerified));
             Assert.That(write.Draft.Outcome, Is.EqualTo(AuditOutcome.Success));
             Assert.That(write.Draft.Resource!.Id, Is.EqualTo(ActorId.ToString()));
             Assert.That(write.Draft.Details, Is.Null);
@@ -271,14 +271,32 @@ public sealed class IdentityAuditProducerTests
     public async Task MfaVerifyFailed_UsesFailureReasonAndAccountResource()
     {
         var writer = new RecordingWriter();
-        await CreateProducer(writer).MfaVerifyFailedAsync(ActorId, "code_replayed", CorrelationId);
+        await CreateProducer(writer).MfaVerifyFailedAsync(ActorId, "replayed_code", CorrelationId);
         var write = writer.Single();
         Assert.Multiple(() =>
         {
-            Assert.That(write.Draft.EventType, Is.EqualTo(AuditEventTypes.AuthMfaVerify));
+            Assert.That(write.Draft.EventType, Is.EqualTo(AuditEventTypes.AuthMfaVerified));
             Assert.That(write.Draft.Outcome, Is.EqualTo(AuditOutcome.Failure));
             Assert.That(write.Draft.Resource!.Id, Is.EqualTo(ActorId.ToString()));
-            Assert.That(write.Draft.Details, Is.EquivalentTo(new Dictionary<string, string> { ["reasonCode"] = "code_replayed" }));
+            Assert.That(write.Draft.Details, Is.EquivalentTo(new Dictionary<string, string> { ["reasonCode"] = "replayed_code" }));
+            Assert.That(write.Context.Actor, Is.EqualTo(AuditActor.ForUser(ActorId)));
+            Assert.That(write.Context.CorrelationId, Is.EqualTo(CorrelationId));
+        });
+    }
+
+    [Test]
+    public async Task MfaVerifyDeniedByAttemptLimit_UsesDeniedReasonAndAccountResource()
+    {
+        var writer = new RecordingWriter();
+        await CreateProducer(writer).MfaVerifyDeniedByAttemptLimitAsync(ActorId, CorrelationId);
+        var write = writer.Single();
+        Assert.Multiple(() =>
+        {
+            Assert.That(write.Draft.EventType, Is.EqualTo(AuditEventTypes.AuthMfaVerified));
+            Assert.That(write.Draft.Outcome, Is.EqualTo(AuditOutcome.Denied));
+            Assert.That(write.Draft.Resource!.Id, Is.EqualTo(ActorId.ToString()));
+            Assert.That(write.Draft.Details, Is.EquivalentTo(
+                new Dictionary<string, string> { ["reasonCode"] = "attempt_limit" }));
             Assert.That(write.Context.Actor, Is.EqualTo(AuditActor.ForUser(ActorId)));
             Assert.That(write.Context.CorrelationId, Is.EqualTo(CorrelationId));
         });
@@ -324,27 +342,59 @@ public sealed class IdentityAuditProducerTests
     }
 
     [Test]
-    public async Task SerializedNewEventDraft_DoesNotContainSecretFields()
+    public async Task ProducerMethods_DoNotAcceptOrWriteCredentialMaterial()
     {
         var writer = new RecordingWriter();
-        await CreateProducer(writer).SessionRevokedAsync(
+        var producer = CreateProducer(writer);
+        await producer.MfaEnrollmentStartedAsync(ActorId, CorrelationId);
+        await producer.MfaEnabledAsync(ActorId, CorrelationId);
+        await producer.MfaEnableFailedAsync(ActorId, "invalid_code", CorrelationId);
+        await producer.MfaVerifiedAsync(ActorId, CorrelationId);
+        await producer.MfaVerifyFailedAsync(ActorId, "replayed_code", CorrelationId);
+        await producer.MfaVerifyDeniedByAttemptLimitAsync(ActorId, CorrelationId);
+        await producer.SessionRevokedAsync(
             ActorId,
             Guid.Parse("33333333-3333-3333-3333-333333333333"),
             "user_request",
             CorrelationId);
-        var serialized = Serialized(writer.Single());
-        Assert.That(serialized, Does.Not.Contain("secret").And
-            .Not.Contain("otpauth").And
-            .Not.Contain("token").And
-            .Not.Contain("password"));
+        await producer.SessionRevokeFailedAsync(ActorId, "not_found", CorrelationId);
+
+        var forbiddenParameterNames = new[]
+        {
+            "code", "secret", "otpauth", "otpauthuri", "password", "token"
+        };
+        var producerMethods = typeof(IdentityAuditProducer).GetMethods(
+            System.Reflection.BindingFlags.Instance |
+            System.Reflection.BindingFlags.Public |
+            System.Reflection.BindingFlags.DeclaredOnly);
+        var parameterNames = producerMethods
+            .SelectMany(method => method.GetParameters())
+            .Select(parameter => parameter.Name);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(parameterNames.Any(name =>
+                forbiddenParameterNames.Contains(name, StringComparer.OrdinalIgnoreCase)), Is.False);
+            Assert.That(writer.Writes, Has.Count.EqualTo(8));
+            foreach (var write in writer.Writes)
+            {
+                var detailKeys = write.Draft.Details?.Keys ?? Array.Empty<string>();
+                Assert.That(detailKeys.Any(key =>
+                    forbiddenParameterNames.Contains(key, StringComparer.OrdinalIgnoreCase)), Is.False);
+                Assert.That(Serialized(write), Does.Not.Contain("otpauth").And
+                    .Not.Contain("secret").And
+                    .Not.Contain("token").And
+                    .Not.Contain("password"));
+            }
+        });
     }
 
     [TestCase("MfaEnrollmentStarted")]
-    [TestCase("MfaEnrollmentConfirmed")]
-    [TestCase("MfaEnrollmentStartFailed")]
-    [TestCase("MfaEnrollmentConfirmFailed")]
-    [TestCase("MfaVerifySucceeded")]
+    [TestCase("MfaEnabled")]
+    [TestCase("MfaEnableFailed")]
+    [TestCase("MfaVerified")]
     [TestCase("MfaVerifyFailed")]
+    [TestCase("MfaVerifyDeniedByAttemptLimit")]
     [TestCase("SessionRevoked")]
     [TestCase("SessionRevokeFailed")]
     public async Task NewProducerMethod_DraftMatchesRealAuditSchema(string method)
@@ -358,20 +408,20 @@ public sealed class IdentityAuditProducerTests
             case "MfaEnrollmentStarted":
                 await producer.MfaEnrollmentStartedAsync(ActorId, CorrelationId);
                 break;
-            case "MfaEnrollmentConfirmed":
-                await producer.MfaEnrollmentConfirmedAsync(ActorId, CorrelationId);
+            case "MfaEnabled":
+                await producer.MfaEnabledAsync(ActorId, CorrelationId);
                 break;
-            case "MfaEnrollmentStartFailed":
-                await producer.MfaEnrollmentStartFailedAsync(ActorId, "mfa_already_active", CorrelationId);
+            case "MfaEnableFailed":
+                await producer.MfaEnableFailedAsync(ActorId, "already_enabled", CorrelationId);
                 break;
-            case "MfaEnrollmentConfirmFailed":
-                await producer.MfaEnrollmentConfirmFailedAsync(ActorId, "invalid_code", CorrelationId);
-                break;
-            case "MfaVerifySucceeded":
-                await producer.MfaVerifySucceededAsync(ActorId, CorrelationId);
+            case "MfaVerified":
+                await producer.MfaVerifiedAsync(ActorId, CorrelationId);
                 break;
             case "MfaVerifyFailed":
-                await producer.MfaVerifyFailedAsync(ActorId, "code_replayed", CorrelationId);
+                await producer.MfaVerifyFailedAsync(ActorId, "replayed_code", CorrelationId);
+                break;
+            case "MfaVerifyDeniedByAttemptLimit":
+                await producer.MfaVerifyDeniedByAttemptLimitAsync(ActorId, CorrelationId);
                 break;
             case "SessionRevoked":
                 await producer.SessionRevokedAsync(ActorId, revokedHandle, "user_request", CorrelationId);

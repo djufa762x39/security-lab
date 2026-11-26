@@ -166,11 +166,11 @@ with `EventIdConflict` and never replaces the stored record.
 | Method | Event type | Outcome | Allowed `reasonCode` |
 |-|-|-|-|
 | `MfaEnrollmentStartedAsync` | `auth.mfa.enrollment.started` | Success | none |
-| `MfaEnrollmentConfirmedAsync` | `auth.mfa.enrollment.confirmed` | Success | none |
-| `MfaEnrollmentStartFailedAsync` | `auth.mfa.enrollment.started` | Failure | `mfa_already_active` and other stable codes |
-| `MfaEnrollmentConfirmFailedAsync` | `auth.mfa.enrollment.confirmed` | Failure | `invalid_code` and other stable codes |
-| `MfaVerifySucceededAsync` | `auth.mfa.verify` | Success | none |
-| `MfaVerifyFailedAsync` | `auth.mfa.verify` | Failure | `code_replayed`, `attempts_exceeded` and other stable codes |
+| `MfaEnabledAsync` | `auth.mfa.enabled` | Success | none |
+| `MfaEnableFailedAsync` | `auth.mfa.enabled` | Failure | `invalid_code`, `no_valid_enrollment`, `already_enabled`, `invalid_enrollment`, `session_inactive` |
+| `MfaVerifiedAsync` | `auth.mfa.verified` | Success | none |
+| `MfaVerifyFailedAsync` | `auth.mfa.verified` | Failure | `invalid_code`, `replayed_code`, `invalid_secret`, `session_inactive` |
+| `MfaVerifyDeniedByAttemptLimitAsync` | `auth.mfa.verified` | Denied | `attempt_limit` |
 | `SessionRevokedAsync` | `auth.session.revoked` | Success | none; uses `revocationCause=user_request` and `revokedHandle` |
 | `SessionRevokeFailedAsync` | `auth.session.revoked` | Failure | `not_found` and other stable codes |
 
@@ -185,9 +185,9 @@ as used by `SessionController` and `LogoutService`; it must not come from a call
 | `auth.login` | Identity (IDN-02) | Success, Failure | Success: `User`. Failure: `Anonymous`, or `User` when the credentials were valid but the account is not active | forbidden | optional `Account` (the account that logged in) | `reasonCode` |
 | `auth.logout` | Identity (IDN-02) | Success | `User` | forbidden | none | none |
 | `auth.login.throttled` | Identity (IDN-05) | Denied | `Anonymous` | forbidden | none | none |
-| `auth.mfa.enrollment.started` | Identity (IDN-06) | Success, Failure | `User` | forbidden | `Account` (required) | `reasonCode` (Failure only) |
-| `auth.mfa.enrollment.confirmed` | Identity (IDN-06) | Success, Failure | `User` | forbidden | `Account` (required) | `reasonCode` (Failure only) |
-| `auth.mfa.verify` | Identity (IDN-06) | Success, Failure | `User` (recognized after password verification, MFA-pending session) | forbidden | `Account` (required) | `reasonCode` (Failure only) |
+| `auth.mfa.enrollment.started` | Identity (IDN-06) | Success | `User` | forbidden | `Account` (required) | none |
+| `auth.mfa.enabled` | Identity (IDN-06) | Success, Failure | `User` | forbidden | `Account` (required) | `reasonCode` (Failure only) |
+| `auth.mfa.verified` | Identity (IDN-06) | Success, Failure, Denied | `User` (recognized after password verification, MFA-pending session) | forbidden | `Account` (required) | `reasonCode` (Failure or Denied) |
 | `auth.session.revoked` | Identity (IDN-07) | Success, Failure | `User` | forbidden | `Account` (required) | `revocationCause`, `revokedHandle` (optional), `reasonCode` (Failure only) |
 | `account.status.changed` | Identity (IDN-03), Admin (ADM-01) | Success, Denied, Failure | `User` or `Anonymous` (Denied, not logged in) | forbidden | `Account` (required) | `oldStatus`, `newStatus`, `reasonCode` |
 | `account.unlocked` | Identity (IDN-05, administrator unlock) | Success, Denied, Failure | `User` or `Anonymous` (Denied, not logged in) | forbidden | `Account` (required) | `lockoutEnd` (Success only), `reasonCode` |
@@ -198,9 +198,9 @@ as used by `SessionController` and `LogoutService`; it must not come from a call
 | `access.denied` | Access, Team 3 (ACC-05), through the host adapter | Denied | `User` or `Anonymous` | optional, only from a trusted resource resolver | optional | `action`, `denialReason`, `policyId`, `policyVersion` |
 | `audit.events.viewed` | Audit (AUD-06) | Success | `User` | required | `Course` (required) | `filterType`, `filterOutcome`, `filterFrom`, `filterTo`, `resultCount` |
 
-`reasonCode` is allowed for `Denied` or `Failure` in schemas that define it; for the MFA enrollment,
-MFA verification and session revocation events it is limited to `Failure`. An empty GUID is never a
-valid `CourseId`.
+`reasonCode` is allowed for `Denied` or `Failure` in schemas that define it. For MFA enablement and
+session revocation it is limited to `Failure`. MFA verification permits both `Failure` and `Denied`.
+`auth.mfa.enrollment.started` has no `reasonCode`. An empty GUID is never a valid `CourseId`.
 
 The catalog is `AuditEventCatalog` in `Platform.Audit.Contracts`, so producers can see what each
 type allows. The checks are done by the internal `AuditDraftValidator` in
@@ -210,7 +210,7 @@ type allows. The checks are done by the internal `AuditDraftValidator` in
 
 | Key | Format |
 |-|-|
-| `reasonCode` | code: `^[a-z][a-z0-9_]{0,31}$`, for example `invalid_credentials`, `account_blocked`, `account_locked` (IDN-05: `auth.login` Failure while the account is temporarily locked), `mfa_already_active`, `invalid_code`, `code_replayed`, `attempts_exceeded`, `forbidden`, `not_found` |
+| `reasonCode` | code: `^[a-z][a-z0-9_]{0,31}$`, for example `invalid_credentials`, `account_blocked`, `account_locked` (IDN-05: `auth.login` Failure while the account is temporarily locked), `no_valid_enrollment`, `already_enabled`, `invalid_enrollment`, `invalid_code`, `replayed_code`, `invalid_secret`, `session_inactive`, `attempt_limit`, `forbidden`, `not_found` |
 | `revocationCause` | code: `^[a-z][a-z0-9_]{0,31}$`, for example `user_request`, `mfa_attempts_exceeded` |
 | `revokedHandle` | UUID |
 | `oldStatus`, `newStatus` | one of `active`, `blocked`, `archived` |

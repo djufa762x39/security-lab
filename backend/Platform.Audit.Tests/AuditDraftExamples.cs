@@ -74,14 +74,14 @@ internal static class AuditDraftExamples
 
         yield return (
             new AuditEventDraft(
-                AuditEventTypes.AuthMfaEnrollmentConfirmed,
+                AuditEventTypes.AuthMfaEnabled,
                 AuditOutcome.Success,
                 Resource: TargetAccount),
             UserContext);
 
         yield return (
             new AuditEventDraft(
-                AuditEventTypes.AuthMfaVerify,
+                AuditEventTypes.AuthMfaVerified,
                 AuditOutcome.Success,
                 Resource: TargetAccount),
             UserContext);

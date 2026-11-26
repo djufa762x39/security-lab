@@ -71,53 +71,39 @@ public sealed class IdentityAuditProducer(
             UserContext(userId, correlationId),
             cancellationToken);
 
-    public ValueTask<AuditWriteResult> MfaEnrollmentConfirmedAsync(
+    public ValueTask<AuditWriteResult> MfaEnabledAsync(
         Guid userId,
         string correlationId,
         CancellationToken cancellationToken = default) =>
         WriteAsync(
             new AuditEventDraft(
-                AuditEventTypes.AuthMfaEnrollmentConfirmed,
+                AuditEventTypes.AuthMfaEnabled,
                 AuditOutcome.Success,
                 Resource: Account(userId)),
             UserContext(userId, correlationId),
             cancellationToken);
 
-    public ValueTask<AuditWriteResult> MfaEnrollmentStartFailedAsync(
+    public ValueTask<AuditWriteResult> MfaEnableFailedAsync(
         Guid userId,
         string reasonCode,
         string correlationId,
         CancellationToken cancellationToken = default) =>
         WriteAsync(
             new AuditEventDraft(
-                AuditEventTypes.AuthMfaEnrollmentStarted,
+                AuditEventTypes.AuthMfaEnabled,
                 AuditOutcome.Failure,
                 Resource: Account(userId),
                 Details: Details(("reasonCode", reasonCode))),
             UserContext(userId, correlationId),
             cancellationToken);
 
-    public ValueTask<AuditWriteResult> MfaEnrollmentConfirmFailedAsync(
-        Guid userId,
-        string reasonCode,
-        string correlationId,
-        CancellationToken cancellationToken = default) =>
-        WriteAsync(
-            new AuditEventDraft(
-                AuditEventTypes.AuthMfaEnrollmentConfirmed,
-                AuditOutcome.Failure,
-                Resource: Account(userId),
-                Details: Details(("reasonCode", reasonCode))),
-            UserContext(userId, correlationId),
-            cancellationToken);
-
-    public ValueTask<AuditWriteResult> MfaVerifySucceededAsync(
+    public ValueTask<AuditWriteResult> MfaVerifiedAsync(
         Guid userId,
         string correlationId,
         CancellationToken cancellationToken = default) =>
         WriteAsync(
             new AuditEventDraft(
-                AuditEventTypes.AuthMfaVerify,
+                AuditEventTypes.AuthMfaVerified,
                 AuditOutcome.Success,
                 Resource: Account(userId)),
             UserContext(userId, correlationId),
@@ -130,10 +116,23 @@ public sealed class IdentityAuditProducer(
         CancellationToken cancellationToken = default) =>
         WriteAsync(
             new AuditEventDraft(
-                AuditEventTypes.AuthMfaVerify,
+                AuditEventTypes.AuthMfaVerified,
                 AuditOutcome.Failure,
                 Resource: Account(userId),
                 Details: Details(("reasonCode", reasonCode))),
+            UserContext(userId, correlationId),
+            cancellationToken);
+
+    public ValueTask<AuditWriteResult> MfaVerifyDeniedByAttemptLimitAsync(
+        Guid userId,
+        string correlationId,
+        CancellationToken cancellationToken = default) =>
+        WriteAsync(
+            new AuditEventDraft(
+                AuditEventTypes.AuthMfaVerified,
+                AuditOutcome.Denied,
+                Resource: Account(userId),
+                Details: Details(("reasonCode", "attempt_limit"))),
             UserContext(userId, correlationId),
             cancellationToken);
 

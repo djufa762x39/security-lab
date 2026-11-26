@@ -93,6 +93,14 @@ public static class AuditEventCatalog
 
         new AuditEventSchema(
             AuditEventTypes.AuthMfaEnrollmentStarted,
+            Outcomes((AuditOutcome.Success, User)),
+            AuditPresence.Forbidden,
+            AuditPresence.Required,
+            AuditResourceTypes.Account,
+            Fields()),
+
+        new AuditEventSchema(
+            AuditEventTypes.AuthMfaEnabled,
             Outcomes((AuditOutcome.Success, User), (AuditOutcome.Failure, User)),
             AuditPresence.Forbidden,
             AuditPresence.Required,
@@ -100,20 +108,15 @@ public static class AuditEventCatalog
             Fields(("reasonCode", FailureReasonCode))),
 
         new AuditEventSchema(
-            AuditEventTypes.AuthMfaEnrollmentConfirmed,
-            Outcomes((AuditOutcome.Success, User), (AuditOutcome.Failure, User)),
+            AuditEventTypes.AuthMfaVerified,
+            Outcomes(
+                (AuditOutcome.Success, User),
+                (AuditOutcome.Failure, User),
+                (AuditOutcome.Denied, User)),
             AuditPresence.Forbidden,
             AuditPresence.Required,
             AuditResourceTypes.Account,
-            Fields(("reasonCode", FailureReasonCode))),
-
-        new AuditEventSchema(
-            AuditEventTypes.AuthMfaVerify,
-            Outcomes((AuditOutcome.Success, User), (AuditOutcome.Failure, User)),
-            AuditPresence.Forbidden,
-            AuditPresence.Required,
-            AuditResourceTypes.Account,
-            Fields(("reasonCode", FailureReasonCode))),
+            Fields(("reasonCode", ReasonCode))),
 
         new AuditEventSchema(
             AuditEventTypes.AuthSessionRevoked,
