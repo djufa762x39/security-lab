@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Platform.Api.Modules.SessionSecurity;
 using Platform.SessionSecurity.Contracts;
 using Platform.SessionSecurity.Domain;
@@ -86,6 +87,10 @@ public sealed class SessionSecurityModuleTests
         services.AddLogging();
         services.AddSingleton<TimeProvider>(new FixedTimeProvider(Now));
         services.AddSessionSecurity();
+        // This test exercises the module's wiring in isolation, not a real store adapter
+        // (Platform.Identity.Tests/SessionSecurity covers that over PostgreSQL), so the
+        // in-memory store is pinned regardless of what AddSessionSecuritySessions() resolves to.
+        services.Replace(ServiceDescriptor.Singleton<ISessionRotationStore, InMemorySessionRotationStore>());
         return services.BuildServiceProvider();
     }
 }
