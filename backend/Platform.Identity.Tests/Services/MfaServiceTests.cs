@@ -790,7 +790,7 @@ public sealed class MfaServiceTests
         var write = _audit.Writes.Single();
         Assert.That(write.Draft.EventType, Is.EqualTo(eventType));
         Assert.That(write.Draft.Outcome, Is.EqualTo(outcome));
-        // The real Audit contract accepts the record: the reason is on the closed list of its event and outcome.
+        // The real Audit validator accepts the record with this reason for its event and outcome.
         Assert.That(new Platform.Audit.Application.AuditDraftValidator().Validate(write.Draft, write.Context),
             Is.EqualTo(AuditRejectionCode.None));
         Assert.That(write.Draft.Details, Is.EqualTo(new Dictionary<string, string> { ["reasonCode"] = expectedReason }));

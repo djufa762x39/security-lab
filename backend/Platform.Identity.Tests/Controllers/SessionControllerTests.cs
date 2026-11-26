@@ -31,6 +31,7 @@ public class SessionControllerTests
         _correlation = new StubCorrelationContext("corr-session-test");
         _audit = new IdentityAuditProducer(
             _auditWriter,
+            Mock.Of<ITransactionalAuditWriter>(),
             NullLogger<IdentityAuditProducer>.Instance);
 
         _controller = new SessionController(

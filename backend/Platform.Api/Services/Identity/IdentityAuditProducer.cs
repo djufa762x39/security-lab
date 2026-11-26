@@ -73,9 +73,14 @@ public sealed class IdentityAuditProducer(
             UserContext(userId, correlationId),
             cancellationToken);
 
+    /// <summary>
+    /// IDN-06 (US-17): MFA was enabled. Written in the caller's transaction; the caller commits the change only
+    /// when this returns <see cref="AuditWriteResult.IsRecorded"/>.
+    /// </summary>
     public ValueTask<AuditWriteResult> MfaEnabledAsync(
         Guid userId,
         string correlationId,
+        DbTransaction transaction,
         CancellationToken cancellationToken = default) =>
         WriteAsync(
             new AuditEventDraft(
@@ -83,6 +88,7 @@ public sealed class IdentityAuditProducer(
                 AuditOutcome.Success,
                 Resource: Account(userId)),
             UserContext(userId, correlationId),
+            transaction,
             cancellationToken);
 
     public ValueTask<AuditWriteResult> MfaEnableFailedAsync(
@@ -99,9 +105,14 @@ public sealed class IdentityAuditProducer(
             UserContext(userId, correlationId),
             cancellationToken);
 
+    /// <summary>
+    /// IDN-06 (US-18): the second factor was verified and the session is being promoted. Written in the caller's
+    /// transaction; the caller commits only when this returns <see cref="AuditWriteResult.IsRecorded"/>.
+    /// </summary>
     public ValueTask<AuditWriteResult> MfaVerifiedAsync(
         Guid userId,
         string correlationId,
+        DbTransaction transaction,
         CancellationToken cancellationToken = default) =>
         WriteAsync(
             new AuditEventDraft(
@@ -109,6 +120,7 @@ public sealed class IdentityAuditProducer(
                 AuditOutcome.Success,
                 Resource: Account(userId)),
             UserContext(userId, correlationId),
+            transaction,
             cancellationToken);
 
     public ValueTask<AuditWriteResult> MfaVerifyFailedAsync(
@@ -205,104 +217,6 @@ public sealed class IdentityAuditProducer(
             actorId is Guid id
                 ? UserContext(id, correlationId)
                 : AnonymousContext(correlationId),
-            cancellationToken);
-
-    // IDN-06 (US-17): a pending enrollment was stored. Nothing is enabled yet, so this is written after the change.
-    public ValueTask<AuditWriteResult> MfaEnrollmentStartedAsync(
-        Guid userId,
-        string correlationId,
-        CancellationToken cancellationToken = default) =>
-        WriteAsync(
-            new AuditEventDraft(
-                AuditEventTypes.AuthMfaEnrollmentStarted,
-                AuditOutcome.Success,
-                Resource: Account(userId)),
-            UserContext(userId, correlationId),
-            cancellationToken);
-
-    /// <summary>
-    /// IDN-06 (US-17): MFA was enabled. Written in the caller's transaction; the caller commits the change only
-    /// when this returns <see cref="AuditWriteResult.IsRecorded"/>.
-    /// </summary>
-    public ValueTask<AuditWriteResult> MfaEnabledAsync(
-        Guid userId,
-        string correlationId,
-        DbTransaction transaction,
-        CancellationToken cancellationToken = default) =>
-        WriteAsync(
-            new AuditEventDraft(
-                AuditEventTypes.AuthMfaEnabled,
-                AuditOutcome.Success,
-                Resource: Account(userId)),
-            UserContext(userId, correlationId),
-            transaction,
-            cancellationToken);
-
-    public ValueTask<AuditWriteResult> MfaEnableFailedAsync(
-        Guid userId,
-        string reasonCode,
-        string correlationId,
-        CancellationToken cancellationToken = default) =>
-        WriteAsync(
-            new AuditEventDraft(
-                AuditEventTypes.AuthMfaEnabled,
-                AuditOutcome.Failure,
-                Resource: Account(userId),
-                Details: Details(("reasonCode", reasonCode))),
-            UserContext(userId, correlationId),
-            cancellationToken);
-
-    /// <summary>
-    /// IDN-06 (US-18): the second factor was verified and the session is being promoted. Written in the caller's
-    /// transaction; the caller commits only when this returns <see cref="AuditWriteResult.IsRecorded"/>.
-    /// </summary>
-    public ValueTask<AuditWriteResult> MfaVerifiedAsync(
-        Guid userId,
-        string correlationId,
-        DbTransaction transaction,
-        CancellationToken cancellationToken = default) =>
-        WriteAsync(
-            new AuditEventDraft(
-                AuditEventTypes.AuthMfaVerified,
-                AuditOutcome.Success,
-                Resource: Account(userId)),
-            UserContext(userId, correlationId),
-            transaction,
-            cancellationToken);
-
-    /// <summary>
-    /// IDN-06 (US-18): the code was checked and refused (wrong, replayed), or the verification could not finish.
-    /// <paramref name="reasonCode"/> is one of the Failure codes of <c>auth.mfa.verified</c> in CONTRACTS.md.
-    /// </summary>
-    public ValueTask<AuditWriteResult> MfaVerifyFailedAsync(
-        Guid userId,
-        string reasonCode,
-        string correlationId,
-        CancellationToken cancellationToken = default) =>
-        WriteAsync(
-            new AuditEventDraft(
-                AuditEventTypes.AuthMfaVerified,
-                AuditOutcome.Failure,
-                Resource: Account(userId),
-                Details: Details(("reasonCode", reasonCode))),
-            UserContext(userId, correlationId),
-            cancellationToken);
-
-    /// <summary>
-    /// IDN-06 (US-18): the attempt limit refused the second factor, with the code that reached it or while the lock
-    /// lasts. <c>Denied</c>, like <c>auth.login.throttled</c>, and not <c>Failure</c> like a wrong code.
-    /// </summary>
-    public ValueTask<AuditWriteResult> MfaVerifyDeniedByAttemptLimitAsync(
-        Guid userId,
-        string correlationId,
-        CancellationToken cancellationToken = default) =>
-        WriteAsync(
-            new AuditEventDraft(
-                AuditEventTypes.AuthMfaVerified,
-                AuditOutcome.Denied,
-                Resource: Account(userId),
-                Details: Details(("reasonCode", "attempt_limit"))),
-            UserContext(userId, correlationId),
             cancellationToken);
 
     private ValueTask<AuditWriteResult> WriteAsync(
