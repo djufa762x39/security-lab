@@ -207,9 +207,18 @@ Cookie: SecurityLab.Session=<mfa-pending-session>
 - **Lockout:** dok je `mfa_locked_until` u budućnosti, kod se ne proverava (ni ispravan), pending sesija se
   opoziva, a odgovor je isti `401 invalid_mfa` kao za pogrešan kod.
 - **Pogrešan kod:** jedan `UPDATE` povećava `mfa_failed_attempts`, a na pragu
-  (`IdentityLockout:MaxFailedAccessAttempts`) postavlja `mfa_locked_until` na
-  `IdentityLockout:LockoutMinutes`. Zaključan nalog se ne broji; posle isteka lockout-a brojač kreće od 1.
+  (`Identity:Mfa:Lockout:MaxFailedAttempts`) postavlja `mfa_locked_until` na
+  `Identity:Mfa:Lockout:LockoutMinutes`. Zaključan nalog se ne broji; posle isteka lockout-a brojač kreće od 1.
   Na pragu se pending sesija opoziva.
+- **Podešavanja lockout-a:** `Identity:Mfa:Lockout` (`MfaLockoutOptions`) je odvojeno od lockout-a lozinke
+  (`Identity:Lockout`, IDN-05), pa promena IDN-05 podešavanja ne menja MFA. Podrazumevano je 5 kodova i 15 minuta.
+  Granice su strože nego za lozinku: 1 do 10 kodova i 15 do 1440 minuta. Šestocifreni kod sa prozorom od jednog
+  koraka ima 3 važeće vrednosti, pa granice dozvoljavaju najviše oko 960 pokušaja dnevno (oko 0,3% verovatnoće
+  pogotka dnevno po nalogu), a podrazumevane vrednosti oko 480 (oko 0,14%). Vrednost van granica zaustavlja start
+  (`MfaLockoutOptionsTests`).
+- **Lockout lozinke (IDN-05) tokom MFA koraka:** `mfa/verify` ne proverava `lockout_end` naloga. `MfaPending`
+  sesija znači da je lozinka već bila tačna pre lockout-a, a lockout lozinke ne gasi ni `Active` sesije, nego
+  sprečava nove pokušaje lozinkom. Pogađanje koda ograničava MFA lockout.
 - **Replay:** korak koji nije noviji od `last_totp_time_step` se odbija (isti i stariji).
 - **Uspeh:** jedna transakcija: provera sesije i naloga pod lock-om (4.1), `UPDATE` koji upisuje korak samo ako je noviji i nalog nije zaključan
   (i briše brojač i lockout), opoziv `MfaPending` sesije (neopozvane, neistekle), nova `Active` sesija sa novim
@@ -252,8 +261,14 @@ US-18 i audit testovi (`MfaServiceTests`, `MfaIntegrationTests` na PostgreSQL-u)
 Recovery kodovi i administratorski MFA reset nisu deo US-17. TOTP nije
 phishing-resistant MFA; WebAuthn/passkeys mogu biti buduće poboljšanje.
 
-HTTP rate limit (SEC-04) za `POST /api/auth/mfa/verify` nije uključen. Pokušaje danas ograničava MFA
-lockout po nalogu (odeljak 7), a zahtev bez važeće sesije odbija `SessionCheckMiddleware` pre handler-a.
-Limiter i njegove politike pripadaju IDN-05 (`Platform.Api/Modules/Identity/RateLimiting`). Postojeća
-politika `identity-login` ne odgovara ovoj ruti: delila bi brojač sa prijavom, a njen `429` upisuje
+HTTP rate limit (SEC-04) za `POST /api/auth/mfa/verify` i `POST /api/auth/mfa/enroll/confirm` nije uključen.
+Pokušaje danas ograničava MFA lockout po nalogu (odeljak 7), a zahtev bez važeće sesije odbija
+`SessionCheckMiddleware` pre handler-a. Po IP adresi (više naloga, opterećenje baze) zaštite nema. Limiter i
+njegove politike pripadaju IDN-05 (`Platform.Api/Modules/Identity/RateLimiting`). Postojeća politika
+`identity-login` ne odgovara ovim rutama: delila bi brojač sa prijavom, a njen `429` upisuje
 `auth.login.throttled`.
+
+Administratorsko otključavanje (IDN-05, `POST /api/admin/accounts/{id}/unlock`) briše samo lockout lozinke
+(`lockout_end` i brojač u `identity.accounts`). `mfa_failed_attempts` i `mfa_locked_until` ostaju, pa nalog
+zaključan samo na MFA koraku dobija `409 account_not_locked` i čeka istek `Identity:Mfa:Lockout:LockoutMinutes`.
+Skidanje MFA lockout-a pri otključavanju i test u `AccountUnlockIntegrationTests` pripadaju IDN-05.

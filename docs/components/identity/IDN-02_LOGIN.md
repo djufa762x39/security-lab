@@ -8,10 +8,10 @@
 
 | Result | Status | Body | Cookie |
 |-|-|-|-|
-| Success | `200` | `{ "userId": "<guid>" }` | `SecurityLab.Session` is set |
+| Success | `200` | `{ "userId": "<guid>", "mfaRequired": false }`; `mfaRequired` is `true` when the account has MFA enabled and the session is `MfaPending`, so the client asks for the TOTP code (`POST /api/auth/mfa/verify`, IDN-06) | `SecurityLab.Session` is set |
 | Wrong password, unknown e-mail, account without password, blocked or archived account | `401` | `{ "code": "invalid_credentials" }` (identical for all of them) | none |
 | Missing, empty or too long input (e-mail over 320, password over 128 characters), or not valid JSON | `400` | `{ "code": "invalid_request" }` (invalid JSON gets the standard ASP.NET problem details) | none |
-| Session could not be stored (database error) | `503` | `{ "code": "login_unavailable" }` | none |
+| Session could not be stored, or the MFA state could not be read (database error) | `503` | `{ "code": "login_unavailable" }` | none |
 
 Cookie `SecurityLab.Session`: `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/`, expires with the session. The session token is **never** in the response body. Responses carry `Cache-Control: no-store`.
 
