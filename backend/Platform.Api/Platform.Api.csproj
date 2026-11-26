@@ -20,11 +20,8 @@
     <ProjectReference Include="..\Platform.LaboratoryPersistence\Platform.LaboratoryPersistence.csproj" />
     <ProjectReference Include="..\Platform.Authoring\Platform.Authoring.csproj" />
     <ProjectReference Include="..\Platform.Competencies\Platform.Competencies.csproj" />
-<<<<<<< HEAD
-    <ProjectReference Include="..\Platform.SessionSecurity\Platform.SessionSecurity.csproj" />
-=======
     <ProjectReference Include="..\Platform.LabLocalization\Platform.LabLocalization.csproj" />
->>>>>>> origin/main
+    <ProjectReference Include="..\Platform.SessionSecurity\Platform.SessionSecurity.csproj" />
   </ItemGroup>
 
   <ItemGroup>
