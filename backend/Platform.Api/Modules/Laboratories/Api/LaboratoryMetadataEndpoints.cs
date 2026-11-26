@@ -132,7 +132,7 @@ public static class LaboratoryMetadataEndpoints
                     $"{BasePath}/{id}/metadata",
                     response);
             })
-            .DelegatesToLegacyAuthorization();
+            .RequireAccess(AccessActions.LabDraftManage.Id, "laboratory", "id");
 
 
         app.MapPatch(
@@ -237,7 +237,7 @@ public static class LaboratoryMetadataEndpoints
                     updated.Type,
                     updated.Tags));
             })
-            .DelegatesToLegacyAuthorization();
+            .RequireAccess(AccessActions.LabDraftManage.Id, "laboratory", "id");
 
 
         return app;

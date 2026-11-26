@@ -1,6 +1,6 @@
 # IDN-05: Ograničenje broja pokušaja (rate limiting)
 
-Limit po IP adresi klijenta za prijavu i reset lozinke. Prekoračenje vraća `429 Too Many Requests`
+Limit po IP adresi klijenta za prijavu, reset lozinke i promenu statusa naloga (IDN-03, `PUT /api/admin/accounts/{id}/status`). Prekoračenje vraća `429 Too Many Requests`
 sa `Retry-After` (sekunde) i generičkim telom `{ "code": "rate_limited", ... }` koje ne otkriva da li nalog postoji.
 
 ## Kako se koristi (IDN-02 / IDN-04)
@@ -10,7 +10,7 @@ Kontroler (npr. `LoginController`):
 ```csharp
 [HttpPost("login")]
 [AllowAnonymous] // Identity: prijava ne zahteva postojecu sesiju.
-[AllowPublic]    // ACC-05: eksplicitno javna ruta, bez legacy delegata.
+[RequireAccess(IdentityAccessActions.Login)] // ACC-05: registrovana Public akcija i politika.
 [EnableRateLimiting(RateLimitPolicies.Login)]
 public async Task<IActionResult> Login(...)
 ```
@@ -29,6 +29,8 @@ app.MapPost("/api/auth/password-reset", ...).RequireRateLimiting(RateLimitPolici
 | `RateLimiting__Login__WindowSeconds` | 60 |
 | `RateLimiting__PasswordReset__PermitLimit` | 10 |
 | `RateLimiting__PasswordReset__WindowSeconds` | 900 |
+| `RateLimiting__AccountStatusChange__PermitLimit` | 20 |
+| `RateLimiting__AccountStatusChange__WindowSeconds` | 60 |
 | `RateLimiting__KnownProxies__0`, `__1`, ... | prazno |
 | `RateLimiting__KnownNetworks__0`, ... (CIDR) | prazno |
 
@@ -82,6 +84,15 @@ važi za login politiku; politika za reset lozinke ne emituje login događaj.
   `429` i `Retry-After` pripadaju ogranicenju po IP adresi, pre provere lozinke.
 
 ## Provera integracije
+
+Na grani `feature/ACC-05-deny-action-by-default` sve tri `/api/auth/*` rute imaju
+tacno jednu `RequireAccess` akciju. `AddIdentityAuthenticationAccess()` registruje
+`identity.login` i `identity.logout` kao `ActionScope.Public`, a `identity.session.read`
+kao `Authenticated`, sa eksplicitnim politikama pre `AddAccessControl()`.
+Stari `AllowPublic` i delegirani markeri nisu dozvola za pristup.
+Login i logout ostaju dostupni bez sesije; `/me` dobija subjekat iz proverene sesije
+kroz `IdentitySessionSubjectProvider`. WebApplicationFactory testovi koriste
+ove iste Program registracije, bez zasebnog ili zaobilaznog Access sloja.
 
 `LoginEndpointRateLimitingTests` proverava pravi login endpoint: `401` pre IP limita,
 `429` sa `Retry-After` posle limita, `200` za uspesnu prijavu i odsustvo poziva

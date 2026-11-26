@@ -159,6 +159,12 @@ serverom dobijenim subjektom, akcijom `lab.draft.manage`, konkretnim resursom i
 `HttpContext.TraceIdentifier`. Svaki ishod razlicit od `Allow` se odbija.
 Podrazumevano odbijanje nepoznate akcije obezbedjuje postojeci Access modul.
 
+Uskladjivanje 26. 11. 2026: obe metadata rute koriste
+`RequireAccess(AccessActions.LabDraftManage.Id, "laboratory", "id")`.
+Centralni Access middleware proverava istu radnju i konkretni resurs pre
+handlera; postojece provere u handlerima ostaju. Stari marker delegirane
+autorizacije i spisak odobrenih ruta vise se ne koriste u aktuelnom `main`-u.
+
 Ovaj prikaz opisuje deo Osobe 4 za ukljucivanje u zajednicki dijagram Osobe 1:
 
 ```mermaid
