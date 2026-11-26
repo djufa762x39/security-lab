@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useAuth } from '../auth/AuthContext'
 import { DEFAULT_PAGE_SIZE, getLoginHistory, localDayEndIso, localDayStartIso, MAX_RANGE_DAYS, MS_PER_DAY } from '../api/loginHistory'
 import LoginHistoryFilters from '../components/loginHistory/LoginHistoryFilters'
 import LoginHistoryTable from '../components/loginHistory/LoginHistoryTable'
@@ -29,8 +30,10 @@ function toFilter(values: LoginHistoryFormValues): Validation {
 /**
  * IDN-22: "Istorija prijava" page. Shows only the signed-in user's own logins; the subject comes from the
  * server session, never from this page (SEC-01). Errors are fixed Serbian messages (OPS-07).
+ * Requests go through `useAuth().request`, so a 401 signs the user out and ProtectedRoute redirects to login.
  */
 export default function LoginHistoryPage() {
+  const { request } = useAuth()
   const [values, setValues] = useState<LoginHistoryFormValues>(INITIAL_VALUES)
   const [applied, setApplied] = useState<LoginHistoryFilter>(INITIAL_FILTER)
   const [result, setResult] = useState<LoginHistoryResult | null>(null)
@@ -44,7 +47,7 @@ export default function LoginHistoryPage() {
     const requestNumber = ++latestRequest.current
     setLoading(true)
     setError('')
-    const response = await getLoginHistory(filter)
+    const response = await getLoginHistory(filter, request)
     if (requestNumber !== latestRequest.current) return
     setLoading(false)
     if (!response.ok) {
@@ -55,7 +58,7 @@ export default function LoginHistoryPage() {
     focusPending.current = moveFocus
     setApplied(filter)
     setResult(response.data)
-  }, [])
+  }, [request])
 
   useEffect(() => {
     void load(INITIAL_FILTER, false)

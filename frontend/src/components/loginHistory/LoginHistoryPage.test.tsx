@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import LoginHistoryPage from '../../pages/LoginHistoryPage'
+import { MemoryRouter } from 'react-router-dom'
+import App from '../../App'
 // IDN-22 TIM 09
 
 type Item = { occurredAt: string; succeeded: boolean; maskedSourceAddress: string }
 
 const SUCCEEDED: Item = { occurredAt: '2026-11-10T09:00:00.000Z', succeeded: true, maskedSourceAddress: '203.0.113.*' }
 const FAILED: Item = { occurredAt: '2026-11-09T08:30:00.000Z', succeeded: false, maskedSourceAddress: '2001:db8:85a3:8d3::*' }
+const SIGNED_IN_USER = { userId: '10000000-0000-0000-0000-000000000001', level: 'Active' }
 
 function json(status: number, body: unknown, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), { status, headers })
@@ -16,12 +18,24 @@ function page(items: Item[], pageNumber = 1, pageSize = 20) {
   return json(200, { items, page: pageNumber, pageSize })
 }
 
+// Returns a mock that records only login history calls; the session check (/api/auth/me) answers with a signed-in user.
 function serverResponds(...responses: Response[]) {
   const queue = [...responses]
   // The last response repeats; clone() because a Response body can be read only once.
   const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => (queue.length > 1 ? queue.shift() ?? queue[0] : queue[0]).clone())
-  vi.stubGlobal('fetch', fetchMock)
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (url === '/api/auth/me') return json(200, SIGNED_IN_USER)
+    if (url.startsWith('/api/auth/login-history')) return fetchMock(url, init)
+    return json(404, {})
+  }))
   return fetchMock
+}
+
+// The page runs inside the real AuthProvider and ProtectedRoute, as in the app.
+async function renderPage() {
+  render(<MemoryRouter initialEntries={['/login-history']}><App /></MemoryRouter>)
+  await screen.findByRole('heading', { level: 1, name: 'Istorija prijava' })
 }
 
 function query(fetchMock: ReturnType<typeof serverResponds>, call: number): URLSearchParams {
@@ -29,7 +43,7 @@ function query(fetchMock: ReturnType<typeof serverResponds>, call: number): URLS
 }
 
 async function renderLoaded() {
-  render(<LoginHistoryPage />)
+  await renderPage()
   await waitFor(() => expect(screen.getByRole('status').textContent).not.toContain('Učitavanje'))
 }
 
@@ -133,7 +147,7 @@ describe('IDN-22 login history page', () => {
   it('load_WhenServerReturnsRangeTooLarge_ShowsOwnMessageNotServerText', async () => {
     serverResponds(json(400, { code: 'range_too_large', message: 'SECRET stack trace at Npgsql' }))
 
-    render(<LoginHistoryPage />)
+    await renderPage()
 
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toBe('Period može biti najviše 90 dana.')
@@ -141,19 +155,22 @@ describe('IDN-22 login history page', () => {
     expect(document.body.textContent).not.toContain('range_too_large')
   })
 
-  it('load_WhenServerReturns401_ShowsSessionExpired', async () => {
+  it('load_WhenServerReturns401SessionInvalid_SignsOutAndRedirectsToLogin', async () => {
     serverResponds(json(401, { code: 'session_invalid', message: 'token abc revoked' }))
 
-    render(<LoginHistoryPage />)
+    render(<MemoryRouter initialEntries={['/login-history']}><App /></MemoryRouter>)
 
-    expect((await screen.findByRole('alert')).textContent).toBe('Sesija je istekla. Prijavite se ponovo.')
+    await screen.findByRole('heading', { name: 'Log in' })
+    expect(screen.queryByRole('heading', { name: 'Istorija prijava' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Istorija prijava' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Log out' })).toBeNull()
     expect(document.body.textContent).not.toContain('abc')
   })
 
   it('load_WhenServerReturns429_ShowsRetryAfterSeconds', async () => {
     serverResponds(json(429, { code: 'too_many_requests' }, { 'Retry-After': '30' }))
 
-    render(<LoginHistoryPage />)
+    await renderPage()
 
     expect((await screen.findByRole('alert')).textContent).toBe('Previše zahteva. Pokušajte ponovo za 30 s.')
   })
@@ -161,7 +178,7 @@ describe('IDN-22 login history page', () => {
   it('load_WhenServerFailsUnexpectedly_ShowsGenericMessage', async () => {
     serverResponds(json(500, { code: 'db_down', message: 'Connection string Host=db;Password=x' }))
 
-    render(<LoginHistoryPage />)
+    await renderPage()
 
     expect((await screen.findByRole('alert')).textContent).toBe('Istorija prijava trenutno nije dostupna. Pokušajte kasnije.')
     expect(document.body.textContent).not.toContain('Password')

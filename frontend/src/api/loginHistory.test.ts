@@ -76,6 +76,27 @@ describe('IDN-22 login history API client', () => {
     if (!result.ok) expect(result.error).toMatchObject({ status: 400, code: 'range_too_large' })
   })
 
+  it('getLoginHistory_WhenAuthRequestGiven_SendsThroughItSoA401SignsOut', async () => {
+    const globalFetch = serverReturns(200, { items: [], page: 1, pageSize: 20 })
+    const request = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => json(401, { code: 'session_invalid' }))
+
+    const result = await getLoginHistory({ page: 1, pageSize: 20 }, request)
+
+    expect(request).toHaveBeenCalledTimes(1)
+    expect(String(request.mock.calls[0][0])).toBe('/api/auth/login-history?page=1&pageSize=20')
+    expect(globalFetch).not.toHaveBeenCalled()
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toMatchObject({ status: 401, code: 'session_invalid' })
+  })
+
+  it('getLoginHistory_WhenNetworkFails_ReturnsNetworkErrorWithoutDetails', async () => {
+    const request = vi.fn(async () => { throw new TypeError('connect ECONNREFUSED 192.0.2.10:5000') })
+
+    const result = await getLoginHistory({ page: 1, pageSize: 20 }, request)
+
+    expect(result).toEqual({ ok: false, error: { status: 0, code: 'network_error', message: '' } })
+  })
+
   it('localDayBounds_WhenValidDate_ReturnStartAndEndOfLocalDay', () => {
     expect(localDayStartIso('2026-11-01')).toBe(new Date(2026, 10, 1, 0, 0, 0, 0).toISOString())
     expect(localDayEndIso('2026-11-01')).toBe(new Date(2026, 10, 1, 23, 59, 59, 999).toISOString())

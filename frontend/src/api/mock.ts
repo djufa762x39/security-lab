@@ -162,48 +162,6 @@ function handleLogin(body: { email?: string; password?: string }): Response {
   return json(401, { code: 'invalid_credentials', message: 'Pogrešan imejl ili lozinka.' })
 }
 
-// IDN-22 TIM 09: synthetic login events per mock user, already masked, documentation ranges only.
-type MockLoginEvent = { minutesAgo: number; succeeded: boolean; maskedSourceAddress: string }
-const MOCK_LOGIN_ADDRESSES = ['203.0.113.*', '198.51.100.*', '2001:db8:85a3:8d3::*', '*']
-const MOCK_LOGIN_EVENTS: Record<string, MockLoginEvent[]> = Object.fromEntries(USERS.map((u, userIndex) => [
-  u.id,
-  Array.from({ length: 30 + userIndex * 7 }, (_, i) => ({
-    minutesAgo: 90 + i * (37 * 60 + userIndex * 11),
-    succeeded: (i + userIndex) % 4 !== 0,
-    maskedSourceAddress: MOCK_LOGIN_ADDRESSES[(i + userIndex) % MOCK_LOGIN_ADDRESSES.length],
-  })),
-]))
-const LOGIN_HISTORY_DAY_MS = 24 * 60 * 60 * 1000
-const LOGIN_HISTORY_DEFAULT_RANGE_MS = 30 * LOGIN_HISTORY_DAY_MS
-const LOGIN_HISTORY_MAX_RANGE_MS = 90 * LOGIN_HISTORY_DAY_MS
-const LOGIN_HISTORY_MAX_PAGE_SIZE = 50
-
-// Mirrors the server: the subject is the session user only; userId/subjectId in the query are ignored.
-function handleLoginHistory(url: URL, user: MockUser): Response {
-  const q = url.searchParams
-  const bad = (code: string) => json(400, { code, message: 'Zahtev nije ispravan.' })
-  const now = Date.now()
-  const to = q.get('to') ? Date.parse(q.get('to') ?? '') : now
-  const from = q.get('from') ? Date.parse(q.get('from') ?? '') : to - LOGIN_HISTORY_DEFAULT_RANGE_MS
-  const outcome = q.get('outcome')
-  const page = Number(q.get('page') ?? '1')
-  const pageSize = Number(q.get('pageSize') ?? '20')
-  if (Number.isNaN(from) || Number.isNaN(to)) return bad('invalid_request')
-  if (outcome !== null && outcome !== 'succeeded' && outcome !== 'failed') return bad('invalid_request')
-  if (!Number.isInteger(page) || page < 1) return bad('invalid_page')
-  if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > LOGIN_HISTORY_MAX_PAGE_SIZE) return bad('invalid_page_size')
-  if (from > to) return bad('invalid_time_range')
-  if (to - from > LOGIN_HISTORY_MAX_RANGE_MS) return bad('range_too_large')
-
-  const items = (MOCK_LOGIN_EVENTS[user.id] ?? [])
-    .map(e => ({ occurredAt: new Date(now - e.minutesAgo * 60_000).toISOString(), succeeded: e.succeeded, maskedSourceAddress: e.maskedSourceAddress }))
-    .filter(e => {
-      const at = Date.parse(e.occurredAt)
-      return at >= from && at <= to && (outcome === null || e.succeeded === (outcome === 'succeeded'))
-    })
-  return json(200, { items: items.slice((page - 1) * pageSize, page * pageSize), page, pageSize })
-}
-
 export const mockFetcher: Fetcher = async (input, init) => {
   await new Promise(r => setTimeout(r, 250)) // simulacija mreze
   const method = init?.method ?? 'GET'
@@ -223,7 +181,6 @@ export const mockFetcher: Fetcher = async (input, init) => {
   const token = headers.Authorization?.replace(/^Bearer /, '')
   const user = USERS.find(u => token === `mock-token:${u.id}`)
   if (!user) return json(401, { code: 'unauthenticated', message: 'Niste prijavljeni.' })
-  if (method === 'GET' && path === '/api/auth/login-history') return handleLoginHistory(url, user)
 
   if (method === 'GET' && path === '/api/revisions/pending-reviews') {
     const list = user.teacher

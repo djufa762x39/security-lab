@@ -1,4 +1,6 @@
-import { apiRequest, type ApiResult } from './http'
+import { apiFetch } from '../auth/apiClient'
+import { toApiError, type ApiResult } from './http'
+import type { AuthContextValue } from '../types/auth'
 import type { LoginHistoryFilter, LoginHistoryPage } from '../types/loginHistory'
 // IDN-22 TIM 09
 
@@ -11,18 +13,37 @@ export const MS_PER_DAY = 24 * 60 * 60 * 1000
 const LOGIN_HISTORY_PATH = '/api/auth/login-history'
 const DATE_INPUT_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/
 
+const NETWORK_ERROR = { status: 0, code: 'network_error', message: '' }
+
 /**
  * IDN-22: reads the caller's own login history. Only the whitelisted filter fields are copied into the query,
  * so a userId/subjectId can never reach the server from here (SEC-01).
+ * `request` is `useAuth().request`: on a 401 (`session_invalid` after IDN-07 revoke or IDN-03 block, or
+ * `unauthenticated`) it clears the signed-in user, and ProtectedRoute then sends the browser to the login page.
  */
-export function getLoginHistory(filter: LoginHistoryFilter): Promise<ApiResult<LoginHistoryPage>> {
+export async function getLoginHistory(
+  filter: LoginHistoryFilter,
+  request: AuthContextValue['request'] = apiFetch,
+): Promise<ApiResult<LoginHistoryPage>> {
   const params = new URLSearchParams()
   if (filter.from) params.set('from', filter.from)
   if (filter.to) params.set('to', filter.to)
   if (filter.outcome) params.set('outcome', filter.outcome)
   params.set('page', String(filter.page))
   params.set('pageSize', String(filter.pageSize))
-  return apiRequest<LoginHistoryPage>('GET', `${LOGIN_HISTORY_PATH}?${params}`)
+
+  let response: Response
+  try {
+    response = await request(`${LOGIN_HISTORY_PATH}?${params}`, { method: 'GET', headers: { Accept: 'application/json' } })
+  } catch {
+    return { ok: false, error: NETWORK_ERROR }
+  }
+  if (!response.ok) return { ok: false, error: await toApiError(response) }
+  try {
+    return { ok: true, data: (await response.json()) as LoginHistoryPage }
+  } catch {
+    return { ok: false, error: { status: response.status, code: 'invalid_response', message: '' } }
+  }
 }
 
 function localDate(value: string, hours: number, minutes: number, seconds: number, ms: number): string | undefined {
