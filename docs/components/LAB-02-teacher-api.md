@@ -99,7 +99,7 @@ delimicno spajanje samo prosledjenih polja.
 | `objective` | Neprazan tekst, najvise 2000 znakova nakon uklanjanja okolnih razmaka |
 | `difficulty` | Broj: `0` Easy, `1` Medium, `2` Hard |
 | `type` | Broj: `0` AccessControl, `1` LogAnalysis, `2` SecurityConfiguration, `3` ThreatModeling, `4` MfaAndSessions, `5` ContextualAuthorization, `6` IncidentResponse, `7` IsolatedService |
-| `tags` | Niz stringova koji nije `null`; prazna lista je dozvoljena |
+| `tags` | Niz koji nije `null`, najvise 20 stavki, najvise 64 znaka po stavci; prazna lista je dozvoljena |
 
 Slati numericke vrednosti enum polja. Trenutni ugovor koristi nenullabilne enum
 vrednosti: izostavljeni `difficulty` ili `type` dobijaju podrazumevanu vrednost
@@ -108,6 +108,9 @@ Strozu proveru prisustva treba usaglasiti sa Osobom 3.
 
 Domenski model uklanja okolne razmake cilja, a oznake pretvara u mala slova,
 uklanja prazne oznake, okolne razmake i duplikate.
+Broj i duzina oznaka proveravaju se pre normalizacije, pa se broje i duplikati.
+POST i PATCH prihvataju najvise 32 KiB tela zahteva. Ogranicenje se proverava
+pre deserijalizacije i kada `Content-Length` nije poslat.
 
 ## Odgovori i greske
 
@@ -129,13 +132,15 @@ Content-Type: application/json
 PATCH vraca isti oblik JSON-a sa sacuvanim novim vrednostima, bez kreiranja
 novog ID-a laboratorije.
 
-| Status | Uslov u metadata handleru |
+| Status | Uslov |
 | --- | --- |
 | `400 Bad Request` | Neispravan JSON, `null` telo ili neuspesna validacija |
 | `401 Unauthorized` | `IAccessSubjectProvider` nije pronasao subjekta |
 | `403 Forbidden` | Odluka Access modula nije `Allow` |
 | `404 Not Found` | Laboratorija ne postoji; za PATCH i kada metapodaci ne postoje |
 | `409 Conflict` | POST kada metapodaci vec postoje |
+| `413 Payload Too Large` | Telo zahteva prelazi 32 KiB |
+| `415 Unsupported Media Type` | Telo nije poslato kao JSON |
 
 Pristup se proverava pre citanja zahteva i metapodataka. Postojeci middleware
 moze odbiti zahtev pre handlera; prikazani odgovori nisu zamena za integraciju
@@ -172,13 +177,13 @@ Primeri poruka koje sam handler vraca:
 {"error": "Laboratory metadata was not found."}
 ```
 
-Greske `401`, `403` i `404` za nepostojecu laboratoriju u handleru nemaju
-posebno definisano JSON telo. Klijent ne treba da pokusava da ih bezuslovno
-deserijalizuje kao JSON. Neispravan GUID u putanji ne odgovara ruti.
+Centralni Access middleware oblikuje odgovore `401` i `403`. Handler za
+nepostojecu laboratoriju vraca `404` bez tela. Klijent ne treba da svaki odgovor
+bezuslovno deserijalizuje kao JSON. Neispravan GUID u putanji ne odgovara ruti.
 
 ## Provera prava i dijagram arhitekture
 
-API ne odlucuje prema ulozi koju posalje klijent. Poziva `IAccessDecision` sa
+API ne odlucuje prema ulozi koju posalje klijent. Centralni middleware poziva `IAccessDecision` sa
 serverom dobijenim subjektom, akcijom `lab.draft.manage`, konkretnim resursom i
 `HttpContext.TraceIdentifier`. Svaki ishod razlicit od `Allow` se odbija.
 Podrazumevano odbijanje nepoznate akcije obezbedjuje postojeci Access modul.
@@ -186,10 +191,10 @@ Podrazumevano odbijanje nepoznate akcije obezbedjuje postojeci Access modul.
 Uskladjivanje 26. 11. 2026: obe metadata rute koriste
 `RequireAccess(AccessActions.LabDraftManage.Id, "laboratory", "id")`.
 Centralni Access middleware proverava istu radnju i konkretni resurs pre
-handlera; postojece provere u handlerima ostaju. Stari marker delegirane
+handlera; handleri ne ponavljaju poziv `IAccessDecision`. Stari marker delegirane
 autorizacije i spisak odobrenih ruta vise se ne koriste u aktuelnom `main`-u.
 
-Ovaj prikaz opisuje deo Osobe 4 za ukljucivanje u zajednicki dijagram Osobe 1:
+Tok metadata zahteva:
 
 ```mermaid
 flowchart TD
@@ -226,6 +231,19 @@ dotnet test backend/Laboratories.Tests/Laboratories.Tests.csproj --configuration
 | `ConfiguredPersistentStorage_RegistersAdapterAndBothRoutes` | Production/Testing: DI bira PostgreSQL adapter i mapira obe metadata rute |
 | `PostgreSql_PostCatalogPatchCatalog_UsesOnePersistentStore` | Tri okruzenja sa pravim PostgreSQL-om; upis, konkurentni konflikt, GET kataloga, izmena i novi GET |
 | `WithoutCatalogStore_HostStartsAndCatalogIsNotMapped` | Nedostatak skladista ne rusi host niti izlaze nefunkcionalne rute kataloga |
+| `Post_WithoutPermission_DoesNotCreateMetadata` | Student i nastavnik drugog kursa: `403`; anonimni zahtev: `401`, bez upisa |
+| `Post_MissingLaboratory_DoesNotCreateMetadata` | Dozvoljen kurs, nepostojeca laboratorija: `404`, bez upisa |
+| `InvalidMetadata_IsRejectedWithoutChangingStorage` | POST/PATCH: nepoznati difficulty/type, previse oznaka i preduga oznaka daju `400` sa greskom polja, bez promene podataka |
+| `OversizedBody_IsRejectedWithAndWithoutContentLength` | POST/PATCH: telo iznad 32 KiB daje `413`, sa i bez poznate duzine, bez promene podataka |
+| `BoundaryValues_AreAccepted_WithOneCentralAccessDecision` | POST/PATCH prihvataju granicne vrednosti i koriste tacno jednu centralnu odluku pristupa |
+
+Dopuna review-a 26. 11. 2026: 18 novih HTTP slucajeva u
+`LaboratoryMetadataRequestTests`. Ceo `Laboratories.Tests`: 375 proslih,
+0 neuspesnih i 3 uslovno preskocena PostgreSQL slucaja. Svih 7 PostgreSQL
+HTTP testova proslo je zasebno, bez preskakanja. `Platform.Tests`: 436 proslih;
+`Platform.LabMetadata.Tests`: 21 prosao. Izvestaji:
+`TestResults/lab02-request-review/` i
+`TestResults/metadata-96683bffba62461bb5c45fa22d4c6eb1/metadata.trx`.
 
 Lokalna provera 18. 11. 2026, nakon uskladjivanja sa `main` (`b43cdd0`):
 svih 9 LAB-02 testova prolazi. Ceo `Laboratories.Tests` paket: 343 prosla,

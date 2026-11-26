@@ -1,10 +1,7 @@
-﻿
+
 using System.Text.Json;
 using Platform.Access.AspNet;
-using Platform.Access.Contracts;
 using Platform.Access.Domain.Constants;
-using Platform.Access.Domain.Enums;
-using Platform.Access.Domain.Models;
 using Platform.Api.Modules.Laboratories.Application;
 using Platform.LabMetadata;
 
@@ -13,6 +10,8 @@ namespace Platform.Api.Modules.Laboratories.Api;
 public static class LaboratoryMetadataEndpoints
 {
     public const string BasePath = "/api/laboratories";
+    public const int MaxBodyBytes = 32 * 1024;
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public static IEndpointRouteBuilder MapLaboratoryMetadataEndpoints(
         this IEndpointRouteBuilder app)
@@ -31,38 +30,11 @@ public static class LaboratoryMetadataEndpoints
             async (
                 Guid id,
                 HttpContext httpContext,
-                IAccessSubjectProvider subjectProvider,
-                Platform.Access.Contracts.IAccessDecision accessDecision,
                 ILaboratoryRepository laboratoryRepository,
                 ILaboratoryMetadataRepository metadataRepository,
                 CancellationToken cancellationToken) =>
             {
-                // 1. Identitet korisnika
-                var subject = await subjectProvider.GetSubjectAsync(
-                    httpContext,
-                    cancellationToken);
-
-                if (subject is null)
-                    return Results.Unauthorized();
-
-                // 2. ACC provera prava
-                var resource = new ResourceRef(
-                    "laboratory",
-                    id.ToString());
-
-                var decision = await accessDecision.DecideAsync(
-                    new AccessRequest(
-                        subject,
-                        AccessActions.LabDraftManage.Id,
-                        resource,
-                        httpContext.TraceIdentifier),
-                    cancellationToken);
-
-                if (decision.Outcome != AccessOutcome.Allow)
-                    return Results.StatusCode(
-                        StatusCodes.Status403Forbidden);
-
-                // 3. Provera postojanja laboratorije
+                // Provera postojanja laboratorije
                 var laboratory = await laboratoryRepository.GetByIdAsync(
                     id,
                     cancellationToken);
@@ -70,35 +42,15 @@ public static class LaboratoryMetadataEndpoints
                 if (laboratory is null)
                     return Results.NotFound();
 
-                // 4. Citanje zahteva
-                LaboratoryMetadataRequest? request;
-
-                try
-                {
-                    request = await httpContext.Request.ReadFromJsonAsync<
-                        LaboratoryMetadataRequest>(
-                        cancellationToken);
-                }
-                catch (JsonException)
-                {
-                    return Results.BadRequest(new
-                    {
-                        error = "Invalid JSON request."
-                    });
-                }
-
-                if (request is null)
-                    return Results.BadRequest(new
-                    {
-                        error = "Request body is required."
-                    });
-
-                // 5. Validacija metapodataka
+                var (request, error) = await ReadRequestAsync(httpContext, cancellationToken);
+                if (error is not null)
+                    return error;
+                // Validacija metapodataka
                 var validator = new LaboratoryMetadataValidator();
 
                 var validation = validator.Validate(
                     id,
-                    request.Objective,
+                    request!.Objective,
                     request.Difficulty,
                     request.Type,
                     request.Tags);
@@ -120,7 +72,7 @@ public static class LaboratoryMetadataEndpoints
                         error = "Laboratory metadata already exists."
                     });
 
-                // 8. Uspesan odgovor
+                // Uspesan odgovor
                 var response = new LaboratoryMetadataResponse(
                     metadata.LaboratoryId,
                     metadata.Objective,
@@ -140,35 +92,10 @@ public static class LaboratoryMetadataEndpoints
             async (
                 Guid id,
                 HttpContext httpContext,
-                IAccessSubjectProvider subjectProvider,
-                Platform.Access.Contracts.IAccessDecision accessDecision,
                 ILaboratoryRepository laboratoryRepository,
                 ILaboratoryMetadataRepository metadataRepository,
                 CancellationToken cancellationToken) =>
             {
-                var subject = await subjectProvider.GetSubjectAsync(
-                    httpContext,
-                    cancellationToken);
-
-                if (subject is null)
-                    return Results.Unauthorized();
-
-                var resource = new ResourceRef(
-                    "laboratory",
-                    id.ToString());
-
-                var decision = await accessDecision.DecideAsync(
-                    new AccessRequest(
-                        subject,
-                        AccessActions.LabDraftManage.Id,
-                        resource,
-                        httpContext.TraceIdentifier),
-                    cancellationToken);
-
-                if (decision.Outcome != AccessOutcome.Allow)
-                    return Results.StatusCode(
-                        StatusCodes.Status403Forbidden);
-
                 var laboratory = await laboratoryRepository.GetByIdAsync(
                     id,
                     cancellationToken);
@@ -185,33 +112,14 @@ public static class LaboratoryMetadataEndpoints
                         error = "Laboratory metadata was not found."
                     });
 
-                LaboratoryMetadataRequest? request;
-
-                try
-                {
-                    request = await httpContext.Request
-                        .ReadFromJsonAsync<LaboratoryMetadataRequest>(
-                            cancellationToken);
-                }
-                catch (System.Text.Json.JsonException)
-                {
-                    return Results.BadRequest(new
-                    {
-                        error = "Invalid JSON request."
-                    });
-                }
-
-                if (request is null)
-                    return Results.BadRequest(new
-                    {
-                        error = "Request body is required."
-                    });
-
+                var (request, error) = await ReadRequestAsync(httpContext, cancellationToken);
+                if (error is not null)
+                    return error;
                 var validator = new LaboratoryMetadataValidator();
 
                 var validation = validator.Validate(
                     id,
-                    request.Objective,
+                    request!.Objective,
                     request.Difficulty,
                     request.Type,
                     request.Tags);
@@ -241,5 +149,34 @@ public static class LaboratoryMetadataEndpoints
 
 
         return app;
+    }
+    // Bound bytes before deserializing, including requests without Content-Length.
+    private static async Task<(LaboratoryMetadataRequest? Request, IResult? Error)> ReadRequestAsync(
+        HttpContext context, CancellationToken cancellationToken)
+    {
+        if (context.Request.ContentLength > MaxBodyBytes)
+            return (null, Results.StatusCode(StatusCodes.Status413PayloadTooLarge));
+
+        if (!context.Request.HasJsonContentType())
+            return (null, Results.StatusCode(StatusCodes.Status415UnsupportedMediaType));
+
+        var buffer = new byte[MaxBodyBytes + 1];
+        var length = await context.Request.Body.ReadAtLeastAsync(
+            buffer, buffer.Length, throwOnEndOfStream: false, cancellationToken: cancellationToken);
+        if (length > MaxBodyBytes)
+            return (null, Results.StatusCode(StatusCodes.Status413PayloadTooLarge));
+
+        try
+        {
+            var request = JsonSerializer.Deserialize<LaboratoryMetadataRequest>(
+                buffer.AsSpan(0, length), JsonOptions);
+            return request is null
+                ? (null, Results.BadRequest(new { error = "Request body is required." }))
+                : (request, null);
+        }
+        catch (JsonException)
+        {
+            return (null, Results.BadRequest(new { error = "Invalid JSON request." }));
+        }
     }
 }
