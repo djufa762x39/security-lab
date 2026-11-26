@@ -224,6 +224,9 @@ Cookie: SecurityLab.Session=<mfa-pending-session>
   (i briše brojač i lockout), opoziv `MfaPending` sesije (neopozvane, neistekle), nova `Active` sesija sa novim
   tokenom i handle-om (`StoreSessionCreator.Lifetime`) i audit zapis. Odgovor postavlja cookie nove sesije, pa
   cookie iz vremena pre drugog faktora posle toga dobija `401` (IDN-11, zaštita od session fixation).
+  CSRF token je vezan za sesiju (US-15, `CsrfSessionBinding`), pa odgovor izdaje i novi token za novu sesiju,
+  kao login. Token `MfaPending` sesije posle toga dobija `403 csrf_invalid`
+  (`Verification_ValidCode_IssuesACsrfTokenForTheNewSession_AndTheOldTokenIsRejected`).
   Paralelni zahtev sa istim kodom čeka zaključan red, ponovo proverava `WHERE` i ne menja ništa.
 
 ## 8. Testovi
