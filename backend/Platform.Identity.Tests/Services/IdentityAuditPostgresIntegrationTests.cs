@@ -174,7 +174,7 @@ public sealed class IdentityAuditPostgresIntegrationTests
                         postgres.MigrationsHistoryTable("__EFMigrationsHistory", "audit")));
             });
         });
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        using var client = factory.CreateCsrfClient(new WebApplicationFactoryClientOptions
         {
             BaseAddress = new Uri("https://localhost"),
             HandleCookies = true,
