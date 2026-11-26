@@ -7,7 +7,7 @@ using Platform.Api.Modules.Laboratories.Api;
 using Platform.Api.Services.Identity;
 using Platform.LabLocalization.Application;
 using Platform.LabLocalization.Domain;
-// Unutar ovog namespace-a ime LabLocalization oznacava namespace, ne domensku klasu.
+// Unutar ovog namespace-a ime LabLocalization označava namespace, ne domensku klasu.
 using LabTranslation = Platform.LabLocalization.Domain.LabLocalization;
 
 namespace Platform.Api.Modules.LabLocalization;
@@ -41,7 +41,7 @@ public static class LabLocalizationEndpoints
                 return Unauthenticated();
             }
 
-            // Odbijeno citanje daje isti odgovor kao nepostojeca laboratorija.
+            // Odbijeno čitanje daje isti odgovor kao nepostojeća laboratorija.
             if (!await access.IsAllowedAsync(actorId, LocalizationAction.ReadContent, labId, http.RequestAborted))
             {
                 return NotFound();
@@ -102,8 +102,7 @@ public static class LabLocalizationEndpoints
                     request.Instructions,
                     http.RequestAborted);
 
-                // Bez Location zaglavlja: prevod moze pripadati reviziji koja jos nije objavljena,
-                // a GET /content vraca samo trenutno objavljenu.
+                // Bez Location zaglavlja: prevod pripada nacrtu, a GET /content vraća samo trenutno objavljenu reviziju.
                 return Results.Created((string?)null, new LabTranslationResponse(
                     translation.RevisionId,
                     ToCode(translation.Language),
@@ -137,7 +136,8 @@ public static class LabLocalizationEndpoints
 
     private static IResult Failure(string code) => code switch
     {
-        LocalizationErrorCodes.InvalidLanguage => BadRequest(code, "Language must be 'sr' or 'en'."),
+        LocalizationErrorCodes.InvalidLanguage => BadRequest(code,
+            "Language must be 'sr' or 'en'. Translations are added only for 'en'; Serbian text comes from the revision."),
         LocalizationErrorCodes.InvalidTitle => BadRequest(code,
             $"Title is required, must not exceed {LabTranslation.MaxTitleLength} characters and must not contain control characters."),
         LocalizationErrorCodes.InvalidDescription => BadRequest(code,
@@ -149,6 +149,8 @@ public static class LabLocalizationEndpoints
         LocalizationErrorCodes.NotFound => NotFound(),
         LocalizationErrorCodes.Conflict => Results.Conflict(new ApiErrorResponse(
             code, "A translation in this language already exists for this revision.")),
+        LocalizationErrorCodes.RevisionNotDraft => Results.Conflict(new ApiErrorResponse(
+            code, "Translations can be added only while the revision is a draft.")),
         _ => Results.Problem(statusCode: StatusCodes.Status500InternalServerError, title: "Unexpected error"),
     };
 
@@ -164,7 +166,7 @@ public static class LabLocalizationEndpoints
     private static IResult InvalidBody() =>
         Results.BadRequest(new ApiErrorResponse(LabErrorCodes.InvalidBody, "Request body is invalid."));
 
-    // Rucno citanje tela: neispravan ili prevelik JSON uvek daje 400, i u Development rezimu bez stack trace-a.
+    // Ručno čitanje tela: neispravan ili prevelik JSON uvek daje 400, i u Development režimu bez stack trace-a.
     private static async Task<(bool Ok, AddTranslationRequest? Value)> TryReadBodyAsync(HttpContext http)
     {
         HttpRequest request = http.Request;
@@ -195,6 +197,11 @@ public static class LabLocalizationEndpoints
         }
         catch (JsonException)
         {
+            return (false, null);
+        }
+        catch (BadHttpRequestException)
+        {
+            // Kestrel prekida chunked telo veće od RequestSizeLimit pre naše provere dužine.
             return (false, null);
         }
     }

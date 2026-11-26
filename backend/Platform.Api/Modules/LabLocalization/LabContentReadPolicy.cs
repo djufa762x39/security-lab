@@ -7,7 +7,7 @@ using LabCourseRole = Platform.LabVisibility.Contracts.CourseRole;
 
 namespace Platform.Api.Modules.LabLocalization;
 
-// Sadrzaj sme da cita onaj ko sme da otvori laboratoriju (LAB-03): student kursa ili nastavnik kursa koji je autor.
+// Sadržaj sme da čita onaj ko sme da otvori laboratoriju (LAB-03): student kursa ili nastavnik kursa koji je autor.
 public sealed class LabContentReadPolicy(IServiceScopeFactory scopes) : IAccessPolicy
 {
     public string Id => LabLocalizationActions.Read;
@@ -24,7 +24,7 @@ public sealed class LabContentReadPolicy(IServiceScopeFactory scopes) : IAccessP
             return false;
         }
 
-        // Politika je singleton, a repozitorijum laboratorija moze biti scoped.
+        // Politika je singleton, a repozitorijum laboratorija može biti scoped.
         await using var scope = scopes.CreateAsyncScope();
         var laboratory = await scope.ServiceProvider.GetRequiredService<ILaboratoryRepository>()
             .GetByIdAsync(laboratoryId, cancellationToken);

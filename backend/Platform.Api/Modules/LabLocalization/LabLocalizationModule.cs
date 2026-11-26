@@ -20,7 +20,7 @@ public static class LabLocalizationModule
             .AddAccessAction<LabTranslationPolicy>(new ActionDefinition(
                 LabLocalizationActions.Translate, ActionScope.Course, LabLocalizationActions.RevisionResource, true));
 
-        // Prevodi se gube pri restartu dok modul ne dobije PostgreSQL skladiste.
+        // Prevodi se gube pri restartu dok modul ne dobije PostgreSQL skladište.
         services.TryAddSingleton<ILabLocalizationRepository, InMemoryLabLocalizationRepository>();
         services.TryAddSingleton<ILabRevisionReader, StoredLabRevisionReader>();
         services.TryAddScoped<ILocalizationAccess, AccessDecisionLocalizationAccess>();

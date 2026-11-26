@@ -49,7 +49,7 @@ public class SessionCheckMiddleware
             && context.RequestServices is not null
             && context.RequestServices.GetService<IHostEnvironment>()?.IsDevelopment() == true
             && ((context.Request.Path.StartsWithSegments("/api/laboratories")
-                // LAB-07: sadrzaj i prevodi traze pravu sesiju (LabCaller), i u Developmentu.
+                // LAB-07: sadržaj i prevodi traže pravu sesiju (LabCaller), i u Developmentu.
                 && endpoint.Metadata.GetMetadata<IAccessRequirementMetadata>()?.Action != LabLocalizationActions.Entry)
                 || (context.Request.Path.StartsWithSegments("/api/labs")
                 && context.Request.Path.Value?.TrimEnd('/').EndsWith("/student-view", StringComparison.OrdinalIgnoreCase) != true

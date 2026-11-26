@@ -31,7 +31,7 @@ using Testcontainers.PostgreSql;
 namespace Platform.Laboratories.IntegrationTests;
 
 /// <summary>
-/// LAB-07 (П): obe jezicke varijante prikazuju istu reviziju i isti evaluator.
+/// LAB-07 (П): obe jezičke varijante prikazuju istu reviziju i isti evaluator.
 /// Revizije nastaju i objavljuju se kroz REV rute nad stvarnim PostgreSQL-om; prava proverava IAccessDecision.
 /// </summary>
 [TestFixture, Category("Integration"), Category("LAB-07"), NonParallelizable]
@@ -128,14 +128,12 @@ public sealed class LabLocalizationHttpTests
         await database.DisposeAsync();
     }
 
-    // ------------------------------------------------------------------ citanje
+    // ------------------------------------------------------------------ čitanje
 
     [Test]
     public async Task SerbianAndEnglish_ShowTheSameRevisionAndEvaluator()
     {
-        var revision = await PublishRevision();
-        await AddTranslation(revision, "sr", "Analiza logova");
-        await AddTranslation(revision, "en", "Log analysis");
+        var revision = await PublishRevision("Analiza logova", english: "Log analysis");
 
         var serbian = await ReadContent(studentClient, "?lang=sr");
         var english = await ReadContent(studentClient, "?lang=en");
@@ -151,13 +149,24 @@ public sealed class LabLocalizationHttpTests
         });
     }
 
+    [Test]
+    public async Task SerbianText_IsTheTextOfThePublishedRevision()
+    {
+        // Bez ijednog ručnog unosa: naslov, cilj i pitanje revizije su srpski tekst.
+        await PublishRevision("Analiza logova");
+
+        var content = await ReadContent(studentClient, "?lang=sr");
+
+        Assert.That((content.Title, content.Description, content.Instructions),
+            Is.EqualTo(("Analiza logova", Goal, Question)));
+    }
+
     [TestCase("?lang=en")]
     [TestCase("?lang=")]
     [TestCase("")]
     public async Task MissingTranslationOrLanguage_ReturnsSerbianTextOfTheSameRevision(string query)
     {
-        var revision = await PublishRevision();
-        await AddTranslation(revision, "sr", "Analiza logova");
+        var revision = await PublishRevision("Analiza logova");
 
         var content = await ReadContent(studentClient, query);
 
@@ -175,8 +184,7 @@ public sealed class LabLocalizationHttpTests
     [TestCase("?lang=sr&lang=en")]
     public async Task InvalidLanguage_Returns400(string query)
     {
-        var revision = await PublishRevision();
-        await AddTranslation(revision, "sr", "Analiza logova");
+        await PublishRevision();
 
         using var response = await studentClient.GetAsync(ContentUrl(lab) + query);
 
@@ -187,12 +195,8 @@ public sealed class LabLocalizationHttpTests
     [Test]
     public async Task NewPublishedRevision_ReplacesTheOldOneInBothLanguages()
     {
-        var first = await PublishRevision();
-        await AddTranslation(first, "sr", "Prva verzija");
-        await AddTranslation(first, "en", "First version");
-        var second = await PublishRevision();
-        await AddTranslation(second, "sr", "Druga verzija");
-        await AddTranslation(second, "en", "Second version");
+        await PublishRevision("Prva verzija", english: "First version");
+        var second = await PublishRevision("Druga verzija", english: "Second version");
 
         var serbian = await ReadContent(studentClient, "?lang=sr");
         var english = await ReadContent(studentClient, "?lang=en");
@@ -209,30 +213,35 @@ public sealed class LabLocalizationHttpTests
     [Test]
     public async Task DraftTranslation_IsNotVisibleUntilTheRevisionIsPublished()
     {
-        var (draft, hash) = await CreateDraft();
-        await AddTranslation(draft, "sr", "Tekst nacrta");
-        using (var before = await studentClient.GetAsync(ContentUrl(lab)))
+        var (draft, hash) = await CreateDraft("Tekst nacrta");
+        await AddTranslation(draft, "en", "Draft text");
+        using (var before = await studentClient.GetAsync(ContentUrl(lab) + "?lang=en"))
         {
             Assert.That(before.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
-            Assert.That(await before.Content.ReadAsStringAsync(), Does.Not.Contain("Tekst nacrta"));
+            Assert.That(await before.Content.ReadAsStringAsync(), Does.Not.Contain("Draft text"));
         }
 
         await Publish(draft, hash);
 
-        Assert.That((await ReadContent(studentClient, "")).RevisionId, Is.EqualTo(draft));
+        var content = await ReadContent(studentClient, "?lang=en");
+        Assert.That((content.RevisionId, content.Title), Is.EqualTo((draft, "Draft text")));
     }
 
     [Test]
     public async Task NewDraft_DoesNotReplaceThePublishedRevision()
     {
-        var published = await PublishRevision();
-        await AddTranslation(published, "sr", "Objavljeno");
-        var (draft, _) = await CreateDraft();
-        await AddTranslation(draft, "sr", "Tekst nacrta");
+        var published = await PublishRevision("Objavljeno");
+        var (draft, _) = await CreateDraft("Tekst nacrta");
+        await AddTranslation(draft, "en", "Draft text");
 
-        var content = await ReadContent(studentClient, "?lang=sr");
+        var serbian = await ReadContent(studentClient, "?lang=sr");
+        var english = await ReadContent(studentClient, "?lang=en");
 
-        Assert.That((content.RevisionId, content.Title), Is.EqualTo((published, "Objavljeno")));
+        Assert.Multiple(() =>
+        {
+            Assert.That((serbian.RevisionId, serbian.Title), Is.EqualTo((published, "Objavljeno")));
+            Assert.That((english.RevisionId, english.Language), Is.EqualTo((published, "sr")));
+        });
     }
 
     [Test]
@@ -247,8 +256,7 @@ public sealed class LabLocalizationHttpTests
     [Test]
     public async Task ReadWithoutRightToTheLaboratory_IsIndistinguishableFromNonexistentLaboratory()
     {
-        var revision = await PublishRevision();
-        await AddTranslation(revision, "sr", "Analiza logova");
+        await PublishRevision();
         using var nonexistent = await outsiderClient.GetAsync(ContentUrl(Guid.NewGuid()));
         var expected = await nonexistent.Content.ReadAsStringAsync();
 
@@ -268,7 +276,6 @@ public sealed class LabLocalizationHttpTests
     public async Task LaboratoryAuthor_ReadsPublishedContent()
     {
         var revision = await PublishRevision();
-        await AddTranslation(revision, "sr", "Analiza logova");
 
         Assert.That((await ReadContent(teacherClient, "?lang=sr")).RevisionId, Is.EqualTo(revision));
     }
@@ -278,10 +285,10 @@ public sealed class LabLocalizationHttpTests
     [Test]
     public async Task StudentAddsTranslation_Returns403_StoresNothingAndIsAudited()
     {
-        var revision = await PublishRevision();
-        await AddTranslation(revision, "sr", "Analiza logova");
+        var (draft, hash) = await CreateDraft();
 
-        using var response = await PostTranslation(studentClient, lab, revision, "en", "Student text");
+        using var response = await PostTranslation(studentClient, lab, draft, "en", "Student text");
+        await Publish(draft, hash);
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
         Assert.That((await ReadContent(studentClient, "?lang=en")).Language, Is.EqualTo("sr"));
@@ -292,11 +299,11 @@ public sealed class LabLocalizationHttpTests
     [Test]
     public async Task TeacherWhoIsNotAuthorOrMember_CannotAddTranslation()
     {
-        var revision = await PublishRevision();
+        var (draft, _) = await CreateDraft();
 
         foreach (var client in new[] { otherTeacherClient, outsiderClient })
         {
-            using var response = await PostTranslation(client, lab, revision, "sr", "Analiza logova");
+            using var response = await PostTranslation(client, lab, draft, "en", "Log analysis");
             Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
         }
     }
@@ -304,8 +311,8 @@ public sealed class LabLocalizationHttpTests
     [Test]
     public async Task NonexistentRevision_CannotBeTranslated()
     {
-        // Isti odgovor kao za tudju reviziju, da se ID-jevi ne mogu pogadjati.
-        using var response = await PostTranslation(teacherClient, lab, Guid.NewGuid(), "sr", "Analiza logova");
+        // Isti odgovor kao za tuđu reviziju, da se ID-jevi ne mogu pogađati.
+        using var response = await PostTranslation(teacherClient, lab, Guid.NewGuid(), "en", "Log analysis");
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
     }
@@ -313,36 +320,52 @@ public sealed class LabLocalizationHttpTests
     [Test]
     public async Task RevisionOfAnotherLaboratory_Returns404()
     {
-        var revision = await PublishRevision();
+        var (draft, _) = await CreateDraft();
         var otherLab = await AddLaboratory();
 
         foreach (var target in new[] { otherLab, Guid.NewGuid() })
         {
-            using var response = await PostTranslation(teacherClient, target, revision, "sr", "Analiza logova");
+            using var response = await PostTranslation(teacherClient, target, draft, "en", "Log analysis");
             Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
         }
     }
 
     [Test]
-    public async Task ExistingTranslation_IsNotOverwritten()
+    public async Task PublishedRevision_CannotBeTranslated_Returns409()
     {
-        var revision = await PublishRevision();
-        await AddTranslation(revision, "sr", "Analiza logova");
+        // Objavljen tekst se menja samo novom revizijom koja prolazi REV pregled.
+        var published = await PublishRevision();
 
-        using var response = await PostTranslation(teacherClient, lab, revision, "sr", "Novi naslov");
+        using var response = await PostTranslation(teacherClient, lab, published, "en", "Log analysis");
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
-        Assert.That((await ReadContent(studentClient, "?lang=sr")).Title, Is.EqualTo("Analiza logova"));
+        Assert.That(await ErrorCode(response), Is.EqualTo("REVISION_NOT_DRAFT"));
+        Assert.That((await ReadContent(studentClient, "?lang=en")).Language, Is.EqualTo("sr"));
     }
 
-    [TestCase("xx", "Naslov", "INVALID_LANGUAGE")]
-    [TestCase(null, "Naslov", "INVALID_LANGUAGE")]
-    [TestCase("sr", "", "INVALID_TITLE")]
+    [Test]
+    public async Task ExistingTranslation_IsNotOverwritten()
+    {
+        var (draft, hash) = await CreateDraft();
+        await AddTranslation(draft, "en", "Log analysis");
+
+        using var response = await PostTranslation(teacherClient, lab, draft, "en", "New title");
+        await Publish(draft, hash);
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
+        Assert.That(await ErrorCode(response), Is.EqualTo("CONFLICT"));
+        Assert.That((await ReadContent(studentClient, "?lang=en")).Title, Is.EqualTo("Log analysis"));
+    }
+
+    [TestCase("xx", "Title", "INVALID_LANGUAGE")]
+    [TestCase(null, "Title", "INVALID_LANGUAGE")]
+    [TestCase("sr", "Naslov", "INVALID_LANGUAGE")]
+    [TestCase("en", "", "INVALID_TITLE")]
     public async Task InvalidTranslation_Returns400(string? language, string title, string code)
     {
-        var revision = await PublishRevision();
+        var (draft, _) = await CreateDraft();
 
-        using var response = await PostTranslation(teacherClient, lab, revision, language, title);
+        using var response = await PostTranslation(teacherClient, lab, draft, language, title);
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
         Assert.That(await ErrorCode(response), Is.EqualTo(code));
@@ -351,11 +374,11 @@ public sealed class LabLocalizationHttpTests
     [Test]
     public async Task RequestWithoutSession_Returns401()
     {
-        var revision = await PublishRevision();
+        var (draft, _) = await CreateDraft();
         using var client = host.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
 
         using var read = await client.GetAsync(ContentUrl(lab));
-        using var write = await PostTranslation(client, lab, revision, "sr", "Analiza logova");
+        using var write = await PostTranslation(client, lab, draft, "en", "Log analysis");
 
         Assert.Multiple(() =>
         {
@@ -364,9 +387,13 @@ public sealed class LabLocalizationHttpTests
         });
     }
 
-    // ------------------------------------------------------------------ pomocno
+    // ------------------------------------------------------------------ pomoćno
 
-    private sealed record Content(Guid RevisionId, string EvaluatorVersion, string Language, string Title);
+    private const string Goal = "Pronađi neuspešne prijave";
+    private const string Question = "Koji događaj nije uspeo?";
+
+    private sealed record Content(
+        Guid RevisionId, string EvaluatorVersion, string Language, string Title, string Description, string Instructions);
 
     private static string ContentUrl(Guid laboratoryId) => $"/api/laboratories/{laboratoryId}/content";
 
@@ -380,7 +407,7 @@ public sealed class LabLocalizationHttpTests
     private static Task<HttpResponseMessage> PostTranslation(HttpClient client, Guid laboratoryId, Guid revision,
         string? language, string title) =>
         client.PostAsJsonAsync($"/api/laboratories/{laboratoryId}/revisions/{revision}/translations",
-            new { language, title, description = "Opis", instructions = "Uputstvo" });
+            new { language, title, description = "Description", instructions = "Instructions" });
 
     private async Task AddTranslation(Guid revision, string language, string title)
     {
@@ -399,9 +426,12 @@ public sealed class LabLocalizationHttpTests
         return laboratory.Id;
     }
 
-    private async Task<Guid> PublishRevision()
+    // Prevod se dodaje dok je revizija nacrt, pa se revizija objavljuje.
+    private async Task<Guid> PublishRevision(string title = "Analiza logova", string? english = null)
     {
-        var (id, hash) = await CreateDraft();
+        var (id, hash) = await CreateDraft(title);
+        if (english is not null)
+            await AddTranslation(id, "en", english);
         await Publish(id, hash);
         return id;
     }
@@ -412,12 +442,12 @@ public sealed class LabLocalizationHttpTests
         await Command(id, hash, "approve", 2);
     }
 
-    private async Task<(Guid Id, string Hash)> CreateDraft()
+    private async Task<(Guid Id, string Hash)> CreateDraft(string title = "Analiza logova")
     {
         using var response = await teacherClient.PostAsJsonAsync("/api/revisions/", new
         {
             laboratoryId = lab, courseId = course,
-            definition = new { type = "LogAnalysis", title = "Localized lab", goal = "Find failed logins", question = "Which event failed?",
+            definition = new { type = "LogAnalysis", title, goal = Goal, question = Question,
                 events = new[] { new { id = "event-1", timestamp = DateTimeOffset.UnixEpoch, message = "Failed login" } },
                 evaluator = new { kind = "event-set", version = 1, expectedEventIds = new[] { "event-1" } } }
         });
