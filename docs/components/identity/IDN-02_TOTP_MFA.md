@@ -202,6 +202,8 @@ Cookie: SecurityLab.Session=<mfa-pending-session>
 ```
 
 - Login naloga sa uključenim MFA kreira `MfaPending` sesiju; kod se proverava samo za nju.
+- Ruta nema `[AllowAnonymous]`: `SessionCheckMiddleware` odbija zahtev bez cookie-ja ili sa opozvanom ili
+  isteklom sesijom (`401 session_invalid`) pre handler-a. Access politika `MfaVerificationPolicy` samo propušta akciju.
 - **Lockout:** dok je `mfa_locked_until` u budućnosti, kod se ne proverava (ni ispravan), pending sesija se
   opoziva, a odgovor je isti `401 invalid_mfa` kao za pogrešan kod.
 - **Pogrešan kod:** jedan `UPDATE` povećava `mfa_failed_attempts`, a na pragu
@@ -245,3 +247,9 @@ US-18 i audit testovi (`MfaServiceTests`, `MfaIntegrationTests` na PostgreSQL-u)
 
 Recovery kodovi i administratorski MFA reset nisu deo US-17. TOTP nije
 phishing-resistant MFA; WebAuthn/passkeys mogu biti buduće poboljšanje.
+
+HTTP rate limit (SEC-04) za `POST /api/auth/mfa/verify` nije uključen. Pokušaje danas ograničava MFA
+lockout po nalogu (odeljak 7), a zahtev bez važeće sesije odbija `SessionCheckMiddleware` pre handler-a.
+Limiter i njegove politike pripadaju IDN-05 (`Platform.Api/Modules/Identity/RateLimiting`). Postojeća
+politika `identity-login` ne odgovara ovoj ruti: delila bi brojač sa prijavom, a njen `429` upisuje
+`auth.login.throttled`.

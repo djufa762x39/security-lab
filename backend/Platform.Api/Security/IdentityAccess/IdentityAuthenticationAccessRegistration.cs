@@ -70,6 +70,9 @@ public sealed class MfaEnrollmentPolicy : IAccessPolicy
 /// <summary>
 /// IDN-06: the TOTP check after the password. Like login it has no Access subject; <c>MfaService.VerifyAsync</c>
 /// accepts only an unexpired <c>MfaPending</c> session from the cookie and changes nothing else.
+/// This policy only admits the action and is not a defence of its own. The route is protected by
+/// <c>SessionCheckMiddleware</c> (no <c>[AllowAnonymous]</c>, so a missing, revoked or expired session gets 401) and by
+/// <c>MfaService</c> (only a <c>MfaPending</c> session, per-account MFA lockout, each TOTP step accepted once).
 /// </summary>
 public sealed class MfaVerificationPolicy : IAccessPolicy
 {
