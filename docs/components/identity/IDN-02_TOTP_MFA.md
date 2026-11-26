@@ -177,7 +177,7 @@ Identity ishoda u Audit katalog:
 | `auth.mfa.verified` | Failure (`invalid_code`, `replayed_code`, `invalid_secret`, `session_inactive`) | `ITrustedAuditWriter`, sa `CancellationToken.None` |
 | `auth.mfa.verified` | Denied (`attempt_limit`): kod koji dostigne prag ili pokušaj dok traje lockout | `ITrustedAuditWriter`, sa `CancellationToken.None` |
 
-`reasonCode` je obavezan uz svako odbijanje i mora biti na zatvorenoj listi iz `CONTRACTS.md` ("MFA events").
+MFA tok piše `reasonCode` uz svako odbijanje, samo sa vrednostima iz liste u `CONTRACTS.md` (producer metode).
 Pogrešan ili ponovljen kod je `Failure`, kao pogrešna lozinka u `auth.login`; ograničenje pokušaja je `Denied`,
 kao `auth.login.throttled`. Za korisnika je odgovor u oba slučaja isti `401 invalid_mfa`.
 
@@ -253,8 +253,8 @@ US-18 i audit testovi (`MfaServiceTests`, `MfaIntegrationTests` na PostgreSQL-u)
 - zapise `auth.mfa.enabled` i `auth.mfa.verified` u `audit` šemi bez koda, tajne i e-maila;
 - svaki razlog koji servis piše prolazi pravi `AuditDraftValidator` (`MfaRefusals_WithEveryReasonTheServiceWrites_PassTheAuditContract`);
 - potvrdu bez enrollment-a (`401`) i dva paralelna enroll-a (jedan `200`, jedan `409`, nijedan `500`);
-- key ring (`MfaKeyRingTests`): nova instanca sa istim ključevima dešifruje sačuvanu tajnu, ključevi na disku su
-  šifrovani sertifikatom, a start van Development okruženja pada bez podešavanja.
+- ključeve u `KeysPath` (`IdentityModuleTests`): nova instanca sa istim direktorijumom dešifruje sačuvanu tajnu,
+  a ključevi iz drugog direktorijuma ne.
 
 ## 9. Budući rad
 
