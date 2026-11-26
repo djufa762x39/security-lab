@@ -227,7 +227,7 @@ dotnet test backend/Laboratories.Tests/Laboratories.Tests.csproj --configuration
 | `TeacherOfAnotherCourse_CannotUpdateLaboratoryMetadata` | PATCH vraca `403` |
 | `WithoutStorage_MetadataRoutesAreNotExposed` | Production/Testing, POST/PATCH: stvarni host pokrece DI validaciju, ruta nije mapirana i zahtev vraca `404` (4 slucaja) |
 | `ConcurrentPosts_CreateExactlyOneRecord_AndReturnConflictForTheOther` | Dva zahteva se susrecu pre upisa; jedan dobija `201`, drugi `409`, sacuvan je odgovor pobednika |
-| `PostThenCatalogThenPatchThenCatalog_ReturnsSavedValuesAcrossRequests` | Stvarne HTTP rute, zajednicki razvojni repozitorijum i provera svih metapolja u katalogu posle POST/PATCH |
+| `PostThenCatalogThenPatchThenCatalog_ReturnsSavedValuesAcrossRequests` | Stvarne HTTP rute, zajednicki razvojni repozitorijum i provera svih metapolja u katalogu posle POST/PATCH; validna sesija bez CSRF tokena dobija `403 csrf_invalid` bez upisa |
 | `ConfiguredPersistentStorage_RegistersAdapterAndBothRoutes` | Production/Testing: DI bira PostgreSQL adapter i mapira obe metadata rute |
 | `PostgreSql_PostCatalogPatchCatalog_UsesOnePersistentStore` | Tri okruzenja sa pravim PostgreSQL-om; upis, konkurentni konflikt, GET kataloga, izmena i novi GET |
 | `WithoutCatalogStore_HostStartsAndCatalogIsNotMapped` | Nedostatak skladista ne rusi host niti izlaze nefunkcionalne rute kataloga |
@@ -236,6 +236,15 @@ dotnet test backend/Laboratories.Tests/Laboratories.Tests.csproj --configuration
 | `InvalidMetadata_IsRejectedWithoutChangingStorage` | POST/PATCH: nepoznati difficulty/type, previse oznaka i preduga oznaka daju `400` sa greskom polja, bez promene podataka |
 | `OversizedBody_IsRejectedWithAndWithoutContentLength` | POST/PATCH: telo iznad 32 KiB daje `413`, sa i bez poznate duzine, bez promene podataka |
 | `BoundaryValues_AreAccepted_WithOneCentralAccessDecision` | POST/PATCH prihvataju granicne vrednosti i koriste tacno jednu centralnu odluku pristupa |
+
+Testni klijent toka katalog/metapodaci koristi zajednicki
+`Platform.Identity.Testing.CreateCsrfClient`: pribavlja token sa `/api/auth/csrf`
+i salje cookie/token par za istu sesiju. CSRF middleware ostaje ukljucen,
+ukljucujuci PostgreSQL provere u sva tri okruzenja.
+Provera posle uskladjivanja sa `main` (`1ea6a41`): 375 proslih laboratorijskih
+testova, 0 neuspesnih; 3 PostgreSQL slucaja izvrsena zasebno u proveri sa svih
+7 uspesnih testova. Dokazi: `TestResults/lab02-csrf/laboratories.trx` i
+`TestResults/metadata-768d023d173b44dba361b75be5734e39/metadata.trx`.
 
 Dopuna review-a 26. 11. 2026: 18 novih HTTP slucajeva u
 `LaboratoryMetadataRequestTests`. Ceo `Laboratories.Tests`: 375 proslih,

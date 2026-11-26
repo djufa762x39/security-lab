@@ -21,6 +21,7 @@ using Platform.Api.Services.Identity;
 using Platform.Identity.Enums;
 using Platform.Identity.Interfaces;
 using Platform.Identity.Models;
+using Platform.Identity.Testing;
 using Platform.LabMetadata;
 using Platform.LaboratoryPersistence.Application;
 using Platform.LaboratoryPersistence.Infrastructure.Persistence;
@@ -89,7 +90,7 @@ public sealed class LaboratoryMetadataCatalogTests
             builder.UseEnvironment(environment);
             builder.UseSetting("ConnectionStrings:Authoring", connection ?? "");
         });
-        using var client = factory.CreateClient();
+        using var client = factory.CreateCsrfClient();
         client.DefaultRequestHeaders.Add(TestMetadataSubjectProvider.HeaderName, MetadataTestData.TeacherId.ToString());
         client.DefaultRequestHeaders.Add("Cookie", SessionCookie.Name + "=metadata-catalog-test");
         MetadataTestData.ConfigureAccess(
@@ -118,6 +119,19 @@ public sealed class LaboratoryMetadataCatalogTests
 
         var path = $"/api/laboratories/{MetadataTestData.LaboratoryId}/metadata";
         var payload = new { objective = "Initial goal", difficulty = 0, type = 0, tags = new[] { "First" } };
+        // A valid session alone must not bypass the shared CSRF protection.
+        using (var unprotectedClient = factory.CreateClient())
+        {
+            unprotectedClient.DefaultRequestHeaders.Add(TestMetadataSubjectProvider.HeaderName, MetadataTestData.TeacherId.ToString());
+            unprotectedClient.DefaultRequestHeaders.Add("Cookie", SessionCookie.Name + "=metadata-catalog-test");
+            using var rejected = await unprotectedClient.PostAsJsonAsync(path, payload);
+            Assert.That(rejected.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
+            var error = await rejected.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+            Assert.That(error.GetProperty("code").GetString(), Is.EqualTo(CsrfToken.InvalidCode));
+            using var scope = factory.Services.CreateScope();
+            Assert.That(await scope.ServiceProvider.GetRequiredService<ILaboratoryMetadataRepository>()
+                .GetByLaboratoryIdAsync(MetadataTestData.LaboratoryId), Is.Null);
+        }
         var creates = await Task.WhenAll(client.PostAsJsonAsync(path, payload), client.PostAsJsonAsync(path, payload));
         try
         {
