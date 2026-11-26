@@ -7,6 +7,7 @@ using Moq;
 using Platform.Identity.Enums;
 using Platform.Identity.Helpers;
 using Platform.Identity.Tests.Helpers;
+using Platform.Identity.Testing;
 
 namespace Platform.Identity.Tests.Integration.Mfa;
 
@@ -73,7 +74,7 @@ public sealed class MfaLockoutIntegrationTests : MfaIntegrationTestBase
             services.RemoveAll<TimeProvider>();
             services.AddSingleton(clock.Object);
         }));
-        using var client = shifted.CreateClient();
+        using var client = shifted.CreateCsrfClient();
         var secret = TotpHelpers.GenerateSecret();
         var user = await UserTestData.AddAsync(Factory, "mfa-lockout-expiry@platform.com", Password);
         await MfaTestData.AddEnabledAsync(Factory, user.Id, secret);

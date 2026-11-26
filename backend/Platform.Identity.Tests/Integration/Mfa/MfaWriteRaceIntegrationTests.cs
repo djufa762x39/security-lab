@@ -10,6 +10,7 @@ using Platform.Identity.Helpers;
 using Platform.Identity.Interfaces.Mfa;
 using Platform.Identity.Persistence.Mfa;
 using Platform.Identity.Tests.Helpers;
+using Platform.Identity.Testing;
 
 namespace Platform.Identity.Tests.Integration.Mfa;
 
@@ -34,7 +35,7 @@ public sealed class MfaWriteRaceIntegrationTests : MfaIntegrationTestBase
         var session = await SessionTestData.CreateAsync(Factory, user.Id);
         var block = new BlockStillOpenAtTheWrite(user.Id);
         using var interrupted = WithInterruptionBeforeTheWrite(block.StartAsync);
-        using var client = interrupted.CreateClient();
+        using var client = interrupted.CreateCsrfClient();
 
         // Act
         var response = await PostWithSessionAsync(
@@ -59,7 +60,7 @@ public sealed class MfaWriteRaceIntegrationTests : MfaIntegrationTestBase
         await MfaTestData.AddPendingAsync(Factory, user.Id, secret, DateTimeOffset.UtcNow.AddMinutes(5));
         var session = await SessionTestData.CreateAsync(Factory, user.Id);
         using var interrupted = WithInterruptionBeforeTheWrite(() => SessionTestData.RevokeAsync(session.Session.Id));
-        using var client = interrupted.CreateClient();
+        using var client = interrupted.CreateCsrfClient();
 
         // Act
         var response = await PostWithSessionAsync(
@@ -82,7 +83,7 @@ public sealed class MfaWriteRaceIntegrationTests : MfaIntegrationTestBase
         var session = await SessionTestData.CreateAsync(Factory, user.Id);
         var block = new BlockStillOpenAtTheWrite(user.Id);
         using var interrupted = WithInterruptionBeforeTheWrite(block.StartAsync);
-        using var client = interrupted.CreateClient();
+        using var client = interrupted.CreateCsrfClient();
 
         // Act
         var response = await PostWithSessionAsync("/api/auth/mfa/enroll", session.RawToken, new { }, client);
@@ -103,7 +104,7 @@ public sealed class MfaWriteRaceIntegrationTests : MfaIntegrationTestBase
         var user = await UserTestData.AddAsync(Factory, "mfa-enroll-revoked@platform.com", Password);
         var session = await SessionTestData.CreateAsync(Factory, user.Id);
         using var interrupted = WithInterruptionBeforeTheWrite(() => SessionTestData.RevokeAsync(session.Session.Id));
-        using var client = interrupted.CreateClient();
+        using var client = interrupted.CreateCsrfClient();
 
         // Act
         var response = await PostWithSessionAsync("/api/auth/mfa/enroll", session.RawToken, new { }, client);

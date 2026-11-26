@@ -143,6 +143,13 @@ public class AuthController(
         {
             // IDN-11: the pending session is revoked, so the cookie gets the token of the new active session.
             Response.Cookies.Append(SessionCookie.Name, session!.Token, SessionCookie.Options(session.ExpiresAt));
+            // US-15: the CSRF token is bound to the session, so the one of the pending session stops working now.
+            // Issue one for the new session at once, as Login does, so the next request does not get a 403.
+            if (HttpContext.RequestServices?.GetService<IAntiforgery>() is { } antiforgery)
+            {
+                HttpContext.Items[CsrfSessionBinding.SessionOverrideKey] = session.Token;
+                CsrfToken.Issue(HttpContext, antiforgery);
+            }
             return Ok();
         }
 

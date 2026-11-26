@@ -10,6 +10,7 @@ using Platform.Audit.Contracts;
 using Platform.Identity.Enums;
 using Platform.Identity.Helpers;
 using Platform.Identity.Tests.Helpers;
+using Platform.Identity.Testing;
 
 namespace Platform.Identity.Tests.Integration.Mfa;
 
@@ -26,7 +27,7 @@ public sealed class MfaAuditIntegrationTests : MfaIntegrationTestBase
         await MfaTestData.AddPendingAsync(Factory, user.Id, secret, DateTimeOffset.UtcNow.AddMinutes(5));
         var session = await SessionTestData.CreateAsync(Factory, user.Id);
         using var failing = WithUnavailableTransactionalAudit();
-        using var client = failing.CreateClient();
+        using var client = failing.CreateCsrfClient();
 
         var response = await PostWithSessionAsync(
             "/api/auth/mfa/enroll/confirm", session.RawToken, new { Code = MfaTestData.CurrentCode(secret) }, client);
@@ -47,7 +48,7 @@ public sealed class MfaAuditIntegrationTests : MfaIntegrationTestBase
         await MfaTestData.AddEnabledAsync(Factory, user.Id, secret);
         var session = await SessionTestData.CreateAsync(Factory, user.Id, AuthLevel.MfaPending);
         using var failing = WithUnavailableTransactionalAudit();
-        using var client = failing.CreateClient();
+        using var client = failing.CreateCsrfClient();
 
         var response = await PostWithSessionAsync(
             "/api/auth/mfa/verify", session.RawToken, new { Code = MfaTestData.CurrentCode(secret) }, client);
