@@ -187,6 +187,39 @@ public sealed class MfaIntegrationTests : IntegrationTestBase
         Assert.That(me.StatusCode, Is.EqualTo(HttpStatusCode.OK));
     }
 
+    [Test]
+    [Category("US-18")]
+    public async Task Login_WithMfaEnabled_ReturnsMfaRequired()
+    {
+        // Arrange
+        var user = await UserTestData.AddAsync(Factory, "mfa-login-required@platform.com", Password);
+        await MfaTestData.AddEnabledAsync(Factory, user.Id, TotpHelpers.GenerateSecret());
+
+        // Act
+        var response = await LoginAsync("mfa-login-required@platform.com");
+
+        // Assert
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        var body = await response.Content.ReadFromJsonAsync<LoginResponse>();
+        Assert.That(body, Is.EqualTo(new LoginResponse(user.Id, true)));
+    }
+
+    [Test]
+    [Category("US-18")]
+    public async Task Login_WithoutMfa_DoesNotReturnMfaRequired()
+    {
+        // Arrange
+        var user = await UserTestData.AddAsync(Factory, "mfa-login-not-required@platform.com", Password);
+
+        // Act
+        var response = await LoginAsync("mfa-login-not-required@platform.com");
+
+        // Assert
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        var body = await response.Content.ReadFromJsonAsync<LoginResponse>();
+        Assert.That(body, Is.EqualTo(new LoginResponse(user.Id, false)));
+    }
+
     // IDN-11: the second factor changes the privilege level, so the session identifier changes too.
     [Test]
     [Category("US-18")]

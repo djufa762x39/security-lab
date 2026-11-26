@@ -100,12 +100,37 @@ public class AuthControllerTests
 
         var result = response as OkObjectResult;
         Assert.That(result, Is.Not.Null);
-        Assert.That(result!.Value, Is.EqualTo(new LoginResponse(userId)));
+        Assert.That(result!.Value, Is.EqualTo(new LoginResponse(userId, false)));
         Assert.That(http.Response.Headers.CacheControl.ToString(), Is.EqualTo("no-store"));
         Assert.That(http.Response.Headers.SetCookie.ToString(), Does.Contain($"{SessionCookie.Name}={token}"));
         _login.Verify(
             service => service.ExecuteAsync(email, password, http.TraceIdentifier, CancellationToken.None),
             Times.Once);
+    }
+
+    [Test]
+    public async Task Login_MfaPendingSession_ReturnsMfaRequired()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var http = _controller.HttpContext;
+        var request = new LoginRequest("test@platform.com", "SecurePassword123!");
+        _login
+            .Setup(service => service.ExecuteAsync(
+                request.Email, request.Password, http.TraceIdentifier, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LoginResult(
+                LoginOutcome.Success,
+                userId,
+                new IssuedSession("pending-session-token", Guid.NewGuid(), DateTimeOffset.UtcNow.AddHours(1)),
+                MfaRequired: true));
+
+        // Act
+        var response = await _controller.Login(request, CancellationToken.None);
+
+        // Assert
+        var result = response as OkObjectResult;
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result!.Value, Is.EqualTo(new LoginResponse(userId, true)));
     }
 
     [TestCase(LoginOutcome.InvalidRequest, 400, "invalid_request")]

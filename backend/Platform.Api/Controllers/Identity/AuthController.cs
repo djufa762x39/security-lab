@@ -39,7 +39,7 @@ public class AuthController(
             case LoginOutcome.Success:
                 // The token goes only into the cookie, never into the body.
                 Response.Cookies.Append(SessionCookie.Name, result.Session!.Token, SessionCookie.Options(result.Session.ExpiresAt));
-                return Ok(new LoginResponse(result.UserId!.Value));
+                return Ok(new LoginResponse(result.UserId!.Value, result.MfaRequired));
             case LoginOutcome.InvalidRequest:
                 return BadRequest(new { code = "invalid_request" });
             case LoginOutcome.Unavailable:
