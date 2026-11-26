@@ -239,7 +239,7 @@ US-17 negativni testovi pokrivaju:
 - neispravan Data Protection ciphertext;
 - odsustvo tajne u audit događajima.
 
-US-18 i audit testovi (`MfaServiceTests`, `MfaIntegrationTests` na PostgreSQL-u) pokrivaju i:
+US-18 i audit testovi (`MfaServiceTests` i PostgreSQL testovi u `backend/Platform.Identity.Tests/Integration/Mfa/`) pokrivaju i:
 
 - nova `Active` sesija posle uspeha, uz opozvanu pending sesiju i odbijen stari cookie
   (`Verification_ValidCode_*`);

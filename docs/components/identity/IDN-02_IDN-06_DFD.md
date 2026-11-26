@@ -203,7 +203,7 @@ The phone (E2) is outside all boundaries. The TOTP secret leaves the server once
 
 - Server-side access checks: every request to an endpoint without `[AllowAnonymous]` goes through P3 and gets `401` without a valid session. Administrator-only actions are decided on the server (`AdminOnlyAccessDecision`, `CreateAccountPolicy`). Endpoints without an explicit policy are denied by default (ACC-05).
 - Input validation and sensitive data: length limits and generic error messages on login, no secrets in logs or API responses (SEC-02, AUD-03).
-- Negative scenarios: see [Negative flows](#negative-flows). Unit tests exist for `LoginService`, `LogoutService`, `MfaService`, `IdentityAuditProducer`, `SessionStore`, `StoreSessionCreator`, `SessionManager`, `SessionCheckMiddleware`, `DevelopmentAccountSeeder` and `TestUsers`. HTTP-level tests against PostgreSQL (Testcontainers) cover login, logout, `me`, sessions and MFA (`MfaIntegrationTests`, including parallel requests and audit rows).
+- Negative scenarios: see [Negative flows](#negative-flows). Unit tests exist for `LoginService`, `LogoutService`, `MfaService`, `IdentityAuditProducer`, `SessionStore`, `StoreSessionCreator`, `SessionManager`, `SessionCheckMiddleware`, `DevelopmentAccountSeeder` and `TestUsers`. HTTP-level tests against PostgreSQL (Testcontainers) cover login, logout, `me`, sessions and MFA (`Integration/Mfa/`, including parallel requests and audit rows).
 
 ## Known deviations
 
