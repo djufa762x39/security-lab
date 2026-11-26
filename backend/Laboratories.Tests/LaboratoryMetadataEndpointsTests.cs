@@ -107,12 +107,14 @@ internal static class MetadataTestData
 internal static class MetadataTestHost
 {
     public static WebApplicationFactory<Program> Create(
-        Action<IServiceCollection>? configureServices = null)
+        Action<IServiceCollection>? configureServices = null,
+        Action<IWebHostBuilder>? configureHost = null)
     {
         return new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
                 builder.UseSetting("environment", "Development");
+                configureHost?.Invoke(builder);
 
                 builder.ConfigureTestServices(services =>
                 {

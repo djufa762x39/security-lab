@@ -1,4 +1,4 @@
-# LAB-02: API za nastavnika (Osoba 4)
+# LAB-02: API za nastavnika
 
 ## Obim i zavisnosti
 
@@ -14,23 +14,47 @@ pripadaju drugim delovima projekta.
 | Zavisnost | Uloga i trenutno stanje |
 | --- | --- |
 | `ILaboratoryRepository` | Provera da laboratorija postoji |
-| `ILaboratoryMetadataRepository` | Citanje i cuvanje metapodataka; u Development okruzenju koristi se privremeni `InMemoryLaboratoryMetadataRepository` |
-| `LaboratoryMetadataValidator` | Postojeca validacija Osobe 3; API vraca njene greske po poljima |
+| `ILaboratoryMetadataRepository` | Upis metapodataka; sa `ConnectionStrings:Authoring` koristi `PersistentMetadataRepository`, inace samo u Development-u memorijski stub |
+| `ILaboratoryMetadataStore` | Citanje kataloga: PostgreSQL store sa istom tabelom kao metadata adapter, ili `MetadataCatalogStore` most ka istom razvojnom repozitorijumu |
+| `LaboratoryMetadataValidator` | Postojeca validacija; API vraca njene greske po poljima |
 | `IAccessSubjectProvider` | Identitet pozivaoca |
 | `IAccessDecision` | Serverska odluka za `lab.draft.manage` nad resursom `laboratory` i konkretnim ID-em |
 
-Repozitorijum u memoriji je KT1 stub: podaci nestaju posle restarta. Sa Osobom 2
-treba usaglasiti povezivanje sa trajnim skladistem. Njegove migracije i bazu
-ovaj deo ne implementira. Za uspesan pristup potrebni su i podaci o clanstvu
+Repozitorijum u memoriji je KT1 stub: podaci nestaju posle restarta. Sa podesenom
+`ConnectionStrings:Authoring` koristi se postojeca tabela laboratorija preko
+LAB-02 adaptera; ovaj deo ne menja migracije niti pravi drugi model baze.
+Za uspesan pristup potrebni su i podaci o clanstvu
 nastavnika i vezi laboratorije sa kursom, koje koristi Access modul.
 
 Metadata rute se mapiraju samo kada je `ILaboratoryMetadataRepository`
-registrovan u DI-ju. Bez adaptera (trenutno Production i Testing) POST i PATCH
+registrovan u DI-ju. Bez podesene baze u Production i Testing, POST i PATCH
 nisu dostupni i vracaju `404`, umesto greske `500` zbog nerazresenog servisa.
-Ovo nije tvrdnja da je trajno cuvanje implementirano. Buduci adapter mora da
-implementira atomski `TryAddAsync`: postojeci zapis se ne prepisuje, a neuspesno
-kreiranje vraca `false`. U bazi je potrebna odgovarajuca jedinstvenost i atomski
-upis. Trenutni Development stub koristi `ConcurrentDictionary.TryAdd`.
+Sa podesenom bazom, i u Production/Testing se registruju adapter i obe rute.
+`PersistentMetadataRepository` koristi isti `ILaboratoryMetadataStore` kao
+katalog za citanje i PATCH, a atomski uslovni SQL UPDATE za POST. Uslov koristi
+istu definiciju nedostajucih metapodataka kao store. Jedan upis pobedjuje i pri
+konkurentnim zahtevima iz razlicitih procesa; drugi vraca `409`.
+Development stub koristi `ConcurrentDictionary.TryAdd`, a katalog pristupa
+tom istom stubu preko mosta koji nema zasebno stanje.
+
+HTTP test `PostThenCatalogThenPatchThenCatalog_ReturnsSavedValuesAcrossRequests`
+proverava POST -> GET `/api/catalog/{id}` -> PATCH -> ponovni GET, ukljucujuci
+cilj, tezinu, tip i oznake. Ne zamenjuje katalog ni metadata skladiste u DI-ju.
+Vidljivost, clanstvo, nalog i sesija su kontrolisani testni podaci.
+`ConfiguredPersistentStorage_RegistersAdapterAndBothRoutes` proverava stvarni
+Production/Testing DI i mapiranje sa konfigurisanom bazom bez kontakta sa bazom.
+To nije zamena za izvrsavanje PostgreSQL testa.
+
+Za izolovan PostgreSQL HTTP test u Development, Production i Testing okruzenju:
+
+```powershell
+.\scripts\test-metadata-postgres.ps1
+```
+
+Skripta koristi zaseban privremeni kontejner, nasumicnu lozinku i test baze sa
+prefiksom `lab02_test_`. Proverava upis, konflikt, katalog i PATCH i uklanja svoj
+kontejner. Podaci iz stvarnih baza se ne koriste. `EnsureCreated` u testu ne
+predstavlja proveru migracija; produkcija koristi postojece migracije tima.
 
 ## Rute i zahtevi
 
@@ -198,11 +222,27 @@ dotnet test backend/Laboratories.Tests/Laboratories.Tests.csproj --configuration
 | `TeacherOfAnotherCourse_CannotUpdateLaboratoryMetadata` | PATCH vraca `403` |
 | `WithoutStorage_MetadataRoutesAreNotExposed` | Production/Testing, POST/PATCH: stvarni host pokrece DI validaciju, ruta nije mapirana i zahtev vraca `404` (4 slucaja) |
 | `ConcurrentPosts_CreateExactlyOneRecord_AndReturnConflictForTheOther` | Dva zahteva se susrecu pre upisa; jedan dobija `201`, drugi `409`, sacuvan je odgovor pobednika |
+| `PostThenCatalogThenPatchThenCatalog_ReturnsSavedValuesAcrossRequests` | Stvarne HTTP rute, zajednicki razvojni repozitorijum i provera svih metapolja u katalogu posle POST/PATCH |
+| `ConfiguredPersistentStorage_RegistersAdapterAndBothRoutes` | Production/Testing: DI bira PostgreSQL adapter i mapira obe metadata rute |
+| `PostgreSql_PostCatalogPatchCatalog_UsesOnePersistentStore` | Tri okruzenja sa pravim PostgreSQL-om; upis, konkurentni konflikt, GET kataloga, izmena i novi GET |
+| `WithoutCatalogStore_HostStartsAndCatalogIsNotMapped` | Nedostatak skladista ne rusi host niti izlaze nefunkcionalne rute kataloga |
 
 Lokalna provera 18. 11. 2026, nakon uskladjivanja sa `main` (`b43cdd0`):
 svih 9 LAB-02 testova prolazi. Ceo `Laboratories.Tests` paket: 343 prosla,
 0 neuspesnih, 0 preskocenih; `ApiEndpointCoverageTests`: 2 prosla.
 Ovo nisu rezultati novog GitHub CI-ja; on se proverava nakon slanja izmena.
+
+Provera PostgreSQL integracije 26. 11. 2026: sedam testova izvrseno i proslo,
+bez preskakanja. TRX: `TestResults/metadata-ea864bdfb3744739849fb122c5f6fb1d/metadata.trx`.
+Zavrsni ceo `Laboratories.Tests` paket istog datuma: 357 proslih, 0 neuspesnih,
+3 uslovno preskocena PostgreSQL slucaja (sva tri izvrsena i prosla u zasebnoj
+proveri iznad). Paket se zavrsio, bez hang dump-a. Izvestaj:
+`TestResults/lab02-review-final/laboratories.trx`.
+Obe Access provere prolaze; izvestaj:
+`TestResults/lab02-review-final/access-routes.trx`.
+Skripta sada radi i u Windows PowerShell-u bez instalacije `pwsh`.
+CI korak `Test LAB-02 metadata and catalog with isolated PostgreSQL` pokrece
+istu skriptu; ne prihvata zelenu proveru sa preskocenim PostgreSQL slucajevima.
 
 Redosled demonstracije:
 
