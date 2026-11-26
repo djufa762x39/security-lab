@@ -10,6 +10,7 @@ using Platform.Api.Modules.Administration.Api;
 
 using Platform.Api.Modules.Access.Api;
 using Platform.Api.Modules.RevisionReviews;
+using Platform.Api.Modules.SessionSecurity;
 using Platform.Api.Modules.Laboratories.Application;
 using Platform.Api.Modules.Laboratories.Infrastructure;
 
@@ -185,6 +186,7 @@ builder.Services.AddScoped<IdentityAuditProducer>();
 // IDN-03: politika i subjekat iz sesije za centralni ACC-05 middleware (pre AddAccessControl).
 builder.Services.AddIdentityAuthenticationAccess();
 builder.Services.AddIdentitySessionAccess();
+builder.Services.AddSessionSecurity();
 
 builder.Services.AddScoped<Platform.Api.Interfaces.Identity.IIdentityContext, SessionIdentityContext>();
 
