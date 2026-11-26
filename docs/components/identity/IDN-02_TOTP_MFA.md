@@ -212,7 +212,9 @@ Cookie: SecurityLab.Session=<mfa-pending-session>
   Na pragu se pending sesija opoziva.
 - **Replay:** korak koji nije noviji od `last_totp_time_step` se odbija (isti i stariji).
 - **Uspeh:** jedna transakcija: provera sesije i naloga pod lock-om (4.1), `UPDATE` koji upisuje korak samo ako je noviji i nalog nije zaključan
-  (i briše brojač i lockout), `UPDATE` sesije `MfaPending -> Active` (neopozvana, neistekla) i audit zapis.
+  (i briše brojač i lockout), opoziv `MfaPending` sesije (neopozvane, neistekle), nova `Active` sesija sa novim
+  tokenom i handle-om (`StoreSessionCreator.Lifetime`) i audit zapis. Odgovor postavlja cookie nove sesije, pa
+  cookie iz vremena pre drugog faktora posle toga dobija `401` (IDN-11, zaštita od session fixation).
   Paralelni zahtev sa istim kodom čeka zaključan red, ponovo proverava `WHERE` i ne menja ništa.
 
 ## 8. Testovi
@@ -230,6 +232,8 @@ US-17 negativni testovi pokrivaju:
 
 US-18 i audit testovi (`MfaServiceTests`, `MfaIntegrationTests` na PostgreSQL-u) pokrivaju i:
 
+- nova `Active` sesija posle uspeha, uz opozvanu pending sesiju i odbijen stari cookie
+  (`Verification_ValidCode_*`);
 - isti kod iz dve paralelne `MfaPending` sesije (tačno jedan uspeh) i stariji kod posle novijeg;
 - dve paralelne potvrde enrollment-a (jedan uspeh);
 - blokiran nalog ili opozvana sesija između čitanja i upisa, za enrollment i potvrdu (`401`, ništa nije upisano;
@@ -253,8 +257,3 @@ lockout po nalogu (odeljak 7), a zahtev bez važeće sesije odbija `SessionCheck
 Limiter i njegove politike pripadaju IDN-05 (`Platform.Api/Modules/Identity/RateLimiting`). Postojeća
 politika `identity-login` ne odgovara ovoj ruti: delila bi brojač sa prijavom, a njen `429` upisuje
 `auth.login.throttled`.
-
-Uspešna verifikacija ne menja token sesije: `TryPromoteSessionAsync` podiže istu sesiju sa `MfaPending` na
-`Active`, pa cookie izdat posle lozinke važi i posle drugog faktora. Rotaciju identifikatora sesije posle
-promene nivoa (IDN-11, `RotationTrigger.MfaCompleted`) dodaje Team 09 kroz svoj modul
-`Platform.SessionSecurity`. Rotacija ne sme da ostavi stari token kao `Active` sesiju ako ne uspe.

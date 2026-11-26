@@ -11,7 +11,7 @@
 - Processes and user scenarios:
   - A user logs in with e-mail and password and receives a server-side session in `identity.sessions` (IDN-02, implemented).
   - Every protected request is checked against the session store by `SessionCheckMiddleware`; logout and revocation take effect on the next request (IDN-02, UC-05, implemented).
-  - A user with MFA enabled receives a `MfaPending` session first, promoted to `Active` only after a valid TOTP code, and enrolls an authenticator by QR code from an `Active` session (IDN-06, US-17 and US-18, implemented). Mandatory MFA for selected groups (US-19) is not implemented: MFA is opt-in.
+  - A user with MFA enabled receives a `MfaPending` session first, replaced by a new `Active` session with a new token only after a valid TOTP code (IDN-11), and enrolls an authenticator by QR code from an `Active` session (IDN-06, US-17 and US-18, implemented). Mandatory MFA for selected groups (US-19) is not implemented: MFA is opt-in.
   - In Development only, the API applies the identity migrations and seeds four known accounts (US-09, implemented).
 - Contracts with other modules:
   - Provided: `IIdentityContext` (implemented by `SessionIdentityContext`), `ISessionManager` (implemented by `SessionManager`), `IMfaPolicy` (proposed, US-19).
@@ -49,7 +49,7 @@ flowchart LR
   end
 
   E1 <-->|"F1 email, password / session cookie or generic error"| P1
-  E1 <-->|"F2 TOTP code / promotion or error"| P2
+  E1 <-->|"F2 TOTP code / new Active cookie or error"| P2
   E1 <-->|"F3 enroll request / otpauth URI once, confirm code"| P5
   E1 <-->|"F4 every protected request with cookie / 401 or result"| P3
   E1 <-->|"F5 logout request / 204, cookie cleared"| P4
@@ -61,7 +61,7 @@ flowchart LR
   P5 <-->|"F8 read MFA state, write pending secret, enable on confirmation"| D6
 
   P1 -->|"F9 create session"| D2
-  P2 -->|"F10 promote to Active or revoke"| D2
+  P2 -->|"F10 replace with a new Active session or revoke"| D2
   P3 <-->|"F11 lookup by token hash, update last activity"| D2
   P4 <-->|"F12 revoke by token, revoke all, revoke one, list"| D2
 
@@ -128,7 +128,7 @@ Process numbers follow the team work plan (P5 is listed after P2 only for layout
 | Flow | Direction | Data | Endpoint or contract | Store / table | Status |
 |-|-|-|-|-|-|
 | F1 | E1 <-> P1 | E-mail and password in. Session cookie `SecurityLab.Session` (`HttpOnly`, `Secure`, `SameSite=Strict`) and `{ userId }`, or one generic `401 invalid_credentials`. `400 invalid_request`, `503 login_unavailable`. The token is never in the body. `Cache-Control: no-store` | `POST /api/auth/login` | none | implemented |
-| F2 | E1 <-> P2 | 6-digit TOTP code in, requires a `MfaPending` cookie. `200` (same cookie, session promoted in place; IDN-11 rotation is not connected yet, see [`IDN-02_TOTP_MFA.md`](IDN-02_TOTP_MFA.md) section 9), one generic `401 invalid_mfa` (wrong, replayed or expired code, locked second factor, invalid session), `400 invalid_request`, `503 mfa_unavailable`. `Cache-Control: no-store` | `POST /api/auth/mfa/verify` | none | implemented |
+| F2 | E1 <-> P2 | 6-digit TOTP code in, requires a `MfaPending` cookie. `200` (a new cookie with the token of a new `Active` session; the `MfaPending` cookie is rejected afterwards), one generic `401 invalid_mfa` (wrong, replayed or expired code, locked second factor, invalid session), `400 invalid_request`, `503 mfa_unavailable`. `Cache-Control: no-store` | `POST /api/auth/mfa/verify` | none | implemented |
 | F3 | E1 <-> P5 | Enroll request from an `Active` session. `otpauth://` URI shown once. Confirmation code. `409` when MFA is already enabled or an enrollment is pending | `POST /api/auth/mfa/enroll`, `.../enroll/confirm` | none | implemented |
 | F4 | E1 <-> P3 | Cookie on every request. `401` without reason, or the normal response. Endpoints with `[AllowAnonymous]` skip the check. No CSRF token yet (US-15), `SameSite=Strict` is the only layer | any protected endpoint, e.g. `GET /api/auth/me`, `PUT /api/admin/accounts/{id}/status`, `POST /api/admin/accounts` | none | implemented |
 | F5 | E1 <-> P4 | Logout request with the cookie. `204` and the cleared cookie. Always the same answer | `POST /api/auth/logout` (`[AllowAnonymous]`) | none | implemented |
@@ -136,7 +136,7 @@ Process numbers follow the team work plan (P5 is listed after P2 only for layout
 | F7 | P2 <-> D6 | Protected secret and `mfa_locked_until` read. A correct, newer step is consumed by one conditional `UPDATE` (newer than `last_totp_time_step`, not locked; clears the counter and lockout). A wrong code is counted by one atomic `UPDATE` that sets `mfa_locked_until` at the threshold | `IMfaCredentialsStore` (`RecordFailedAttemptAsync`, `BeginAsync` -> `IMfaUnitOfWork.TryConsumeTimeStepAsync`) | `identity.mfa_credentials` | implemented |
 | F8 | P5 <-> D6 | MFA state read, protected pending secret written (10 minutes). Both writes first lock the account (`Active`) and the session (not revoked or expired) in the same transaction. Confirmation moves it to the active secret in one conditional `UPDATE` (MFA still disabled, same unexpired pending enrollment). An enabled secret is never overwritten | `IMfaUnitOfWork` (`TryLockActiveSessionAsync`, `TryCreatePendingAsync`, `TryConfirmEnrollmentAsync`) | `identity.mfa_credentials` | implemented |
 | F9 | P1 -> D2 | New session with a fresh random token and handle (session fixation protection), 8 hours lifetime, level `MfaPending` when D6 says MFA is enabled, otherwise `Active` | `ISessionCreator` -> `StoreSessionCreator` -> `ISessionStore.CreateForActiveAccountAsync` | `identity.sessions` | implemented |
-| F10 | P2 -> D2 | `MfaPending` to `Active` in the same transaction as F7 and the F13 record (only a session that is not revoked or expired), or revoke the pending session at the threshold or while the second factor is locked | `IMfaUnitOfWork.TryPromoteSessionAsync`, `ISessionStore.RevokeByTokenAsync` | `identity.sessions` | implemented |
+| F10 | P2 -> D2 | In the same transaction as F7 and the F13 record, the `MfaPending` session (only one that is not revoked or expired) is revoked and a new `Active` session with a new token and handle and an 8 hours lifetime is stored (IDN-11, session fixation protection), or revoke the pending session at the threshold or while the second factor is locked | `IMfaUnitOfWork.TryReplaceWithActiveSessionAsync`, `ISessionStore.RevokeByTokenAsync` | `identity.sessions` | implemented |
 | F11 | P3 <-> D2 | Lookup by token hash on every request. Missing, unknown, revoked or expired means `401`. `last_activity_at` is updated | `ISessionManager.ValidateAsync` (`SessionManager`) | `identity.sessions` | implemented |
 | F12 | P4 <-> D2 | Logout revokes the session of the cookie. Revoke all and revoke one set `revoked_at`. List returns public handles of `Active` sessions only (an `MfaPending` session gives no access) | `ISessionStore.RevokeByTokenAsync` (logout), `ISessionManager.RevokeAllForUser`, `RevokeSession`, `ListForUser` | `identity.sessions` | implemented; list and revoke one also over HTTP (IDN-07, `SessionController`) |
 | F13 | P1, P2, P4, P5 -> D3 | `auth.login` (Success, Failure with `reasonCode`), `auth.logout`, `auth.mfa.enrollment.started`, `auth.mfa.enabled` (Success, Failure with `reasonCode`) and `auth.mfa.verified` (Success, Failure with `reasonCode`, Denied with `attempt_limit`). Never e-mail, password, hash, token, TOTP secret, URI or code. Correlation ID from the server (`CorrelationMiddleware`, also in `HttpContext.TraceIdentifier`) | `IdentityAuditProducer` -> `ITrustedAuditWriter`; MFA enabled and verified through `ITransactionalAuditWriter` (no record, no commit, `503`) | `audit.audit_events` | implemented. Logout of an unknown or already revoked session writes no event. A login whose record fails revokes the new session and answers `503` |
@@ -176,6 +176,7 @@ The phone (E2) is outside all boundaries. The TOTP secret leaves the server once
 | Account blocked or archived through IDN-03 | F16 | All sessions of that user in D2 are revoked at once |
 | Revoking another user's session handle | F16 | Returns false, indistinguishable from an unknown handle |
 | Seeding outside Development | F18 | `InvalidOperationException`, nothing written |
+| Cookie captured before the second factor (network, logs, shared machine) | F2, F10 | The verification revokes the `MfaPending` session and issues a new `Active` session with a new token, so the old cookie gets `401` afterwards (IDN-11) |
 | `MfaPending` cookie sent to a protected endpoint (UI bypassed) | F4 | `IsAuthenticated` is false and there is no Access subject until `Active`, so ACC-05 denies it (IDN-06 criterion) |
 | Wrong TOTP code | F2, F7 | `401 invalid_mfa`, session stays `MfaPending`, the attempt is counted atomically. At `IdentityLockout:MaxFailedAccessAttempts` the second factor is locked for `IdentityLockout:LockoutMinutes` and the pending session is revoked |
 | Correct code while the second factor is locked, also after a new password login | F2, F7 | Same `401 invalid_mfa`, the code is not checked, the pending session is revoked, `auth.mfa.verified` Denied (`attempt_limit`) |
