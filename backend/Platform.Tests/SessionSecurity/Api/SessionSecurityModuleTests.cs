@@ -1,6 +1,9 @@
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Platform.Api.Modules.SessionSecurity;
+using Platform.SessionSecurity.Application;
 using Platform.SessionSecurity.Contracts;
 using Platform.SessionSecurity.Domain;
 using Platform.SessionSecurity.Infrastructure;
@@ -24,7 +27,7 @@ public sealed class SessionSecurityModuleTests
 
         var useCase = scope.ServiceProvider.GetRequiredService<IRotateSessionUseCase>();
 
-        Assert.That(useCase, Is.Not.Null);
+        Assert.That(useCase, Is.InstanceOf<SessionRotationService>());
     }
 
     [Test]
@@ -35,7 +38,25 @@ public sealed class SessionSecurityModuleTests
 
         var useCase = scope.ServiceProvider.GetRequiredService<ISearchLoginHistoryUseCase>();
 
-        Assert.That(useCase, Is.Not.Null);
+        Assert.That(useCase, Is.InstanceOf<LoginHistoryService>());
+    }
+
+    [Test]
+    public void ApiHost_WhenStarted_ResolvesSessionSecurityUseCases()
+    {
+        using var host = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            builder.UseEnvironment("Development"));
+        using var client = host.CreateClient();
+        using var scope = host.Services.CreateScope();
+
+        var rotation = scope.ServiceProvider.GetRequiredService<IRotateSessionUseCase>();
+        var loginHistory = scope.ServiceProvider.GetRequiredService<ISearchLoginHistoryUseCase>();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(rotation, Is.InstanceOf<SessionRotationService>());
+            Assert.That(loginHistory, Is.InstanceOf<LoginHistoryService>());
+        });
     }
 
     [Test]
@@ -87,10 +108,15 @@ public sealed class SessionSecurityModuleTests
         services.AddLogging();
         services.AddSingleton<TimeProvider>(new FixedTimeProvider(Now));
         services.AddSessionSecurity();
-        // This test exercises the module's wiring in isolation, not a real store adapter
-        // (Platform.Identity.Tests/SessionSecurity covers that over PostgreSQL), so the
-        // in-memory store is pinned regardless of what AddSessionSecuritySessions() resolves to.
+        // These tests exercise the module's wiring in isolation, not a real store adapter.
+        // AddSessionSecuritySessions() registers the same in-memory store for now; the line
+        // prepares for IdentitySessionRotationStore, which Platform.Identity.Tests/SessionSecurity
+        // will cover over PostgreSQL once it exists.
         services.Replace(ServiceDescriptor.Singleton<ISessionRotationStore, InMemorySessionRotationStore>());
-        return services.BuildServiceProvider();
+        return services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateOnBuild = true,
+            ValidateScopes = true
+        });
     }
 }
