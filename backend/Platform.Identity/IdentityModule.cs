@@ -1,9 +1,11 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Platform.Identity.Interfaces;
+using Platform.Identity.Interfaces.Mfa;
 using Platform.Identity.Persistence;
 using Platform.Identity.Services;
 
@@ -14,11 +16,23 @@ public static class IdentityModule
 {
     public const string ConnectionStringName = "Identity";
 
+    /// <summary>IDN-06: folder of the Data Protection keys that encrypt the TOTP secrets.</summary>
+    public const string DataProtectionKeysPathKey = "Identity:DataProtection:KeysPath";
+
     public static IServiceCollection AddIdentityModule(this IServiceCollection services, IConfiguration configuration)
     {
         var connectionString = configuration.GetConnectionString(ConnectionStringName);
 
         services.AddDbContext<PlatformIdentityDbContext>(options => options.UseIdentityNpgsql(connectionString));
+
+        // IDN-06: with KeysPath the keys survive a restart and can be backed up with the database. Without it the
+        // framework default location is used. The keys are not encrypted at rest (IDN-02_TOTP_MFA.md, key storage).
+        var dataProtection = services.AddDataProtection().SetApplicationName("SecurityLab");
+        var keysPath = configuration[DataProtectionKeysPathKey];
+        if (!string.IsNullOrWhiteSpace(keysPath))
+            dataProtection.PersistKeysToFileSystem(new DirectoryInfo(keysPath));
+        // IDN-06: no plain IDataProtector is registered; only MFA gets the MFA purpose.
+        services.AddSingleton<ITotpSecretProtector, DataProtectionTotpSecretProtector>();
 
         // IDN-05: an invalid lockout setting stops the service from starting.
         services.AddOptions<IdentityLockoutOptions>()
