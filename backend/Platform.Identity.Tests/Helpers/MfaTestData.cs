@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using OtpNet;
 using Platform.Identity.Entities;
 using Platform.Identity.Interfaces.Mfa;
 using Platform.Identity.Persistence;
@@ -51,4 +52,12 @@ public static class MfaTestData
         await db.SaveChangesAsync(ct);
         return credentials;
     }
+
+    /// <summary>The TOTP code of the current 30-second step.</summary>
+    public static string CurrentCode(string secret) =>
+        new Totp(Base32Encoding.ToBytes(secret)).ComputeTotp(DateTime.UtcNow);
+
+    /// <summary>The code of the next step; still accepted (clock drift tolerance) and newer than the current one.</summary>
+    public static string NextCode(string secret) =>
+        new Totp(Base32Encoding.ToBytes(secret)).ComputeTotp(DateTime.UtcNow.AddSeconds(30));
 }
