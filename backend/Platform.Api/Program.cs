@@ -284,12 +284,10 @@ if (app.Environment.IsDevelopment())
 
         await app.SeedDevelopmentAccountsAsync();
     }
-
     // LAB-03 drugi demo kurs: 3333 je student samo ovde, ne na prvom kursu.
     // Primer: X-Test-User: 11111111-1111-1111-1111-111111111111:Teacher pravi laboratoriju na prvom kursu.
     var secondDemoCourse = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
-    membership.Set(secondDemoCourse, Guid.Parse("33333333-3333-3333-3333-333333333333"),
-        LabVisibilityCourseRole.Student);
+    membership.Set(secondDemoCourse, Guid.Parse("33333333-3333-3333-3333-333333333333"), LabVisibilityCourseRole.Student);
 }
 
 // Health endpoint
@@ -319,16 +317,16 @@ app.MapRevisionReviews();
 if (app.Environment.IsDevelopment())
 {
     app.MapGet("/api/access/demo-deny", async (
-            PlatformAccessDecision accessDecision,
-            CancellationToken cancellationToken) =>
-        {
-            var decision = await accessDecision.DecideAsync(
-                new AccessRequest(
-                    new SubjectRef("demo-student", AccountState.Active),
-                    "demo.unknown",
-                    null,
-                    Guid.NewGuid().ToString("N")),
-                cancellationToken);
+        PlatformAccessDecision accessDecision,
+        CancellationToken cancellationToken) =>
+    {
+        var decision = await accessDecision.DecideAsync(
+            new AccessRequest(
+                new SubjectRef("demo-student", AccountState.Active),
+                "demo.unknown",
+                null,
+                Guid.NewGuid().ToString("N")),
+            cancellationToken);
 
         // This DEVELOPMENT-ONLY diagnostic reports the engine's denial as data.
         // It never grants access to a resource; clients receive no secret data.
@@ -343,6 +341,4 @@ if (app.Environment.IsDevelopment())
 
 app.Run();
 
-public partial class Program
-{
-}
+public partial class Program { }

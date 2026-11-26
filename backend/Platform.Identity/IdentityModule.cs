@@ -54,8 +54,7 @@ public static class IdentityModule
         return services;
     }
 
-    internal static DbContextOptionsBuilder UseIdentityNpgsql(this DbContextOptionsBuilder options,
-        string? connectionString) =>
+    internal static DbContextOptionsBuilder UseIdentityNpgsql(this DbContextOptionsBuilder options, string? connectionString) =>
         options.UseNpgsql(connectionString, npgsql =>
             npgsql.MigrationsHistoryTable("__EFMigrationsHistory", PlatformIdentityDbContext.SchemaName));
 }

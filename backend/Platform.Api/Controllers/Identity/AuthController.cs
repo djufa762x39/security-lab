@@ -38,8 +38,7 @@ public class AuthController(
         {
             case LoginOutcome.Success:
                 // The token goes only into the cookie, never into the body.
-                Response.Cookies.Append(SessionCookie.Name, result.Session!.Token,
-                    SessionCookie.Options(result.Session.ExpiresAt));
+                Response.Cookies.Append(SessionCookie.Name, result.Session!.Token, SessionCookie.Options(result.Session.ExpiresAt));
                 return Ok(new LoginResponse(result.UserId!.Value));
             case LoginOutcome.InvalidRequest:
                 return BadRequest(new { code = "invalid_request" });
@@ -57,8 +56,7 @@ public class AuthController(
     {
         // Revoke first: if it fails, the cookie stays and the client can try again.
         // No request token: a closed tab or a broken connection must not leave the session valid.
-        await _logout.ExecuteAsync(Request.Cookies[SessionCookie.Name], HttpContext.TraceIdentifier,
-            CancellationToken.None);
+        await _logout.ExecuteAsync(Request.Cookies[SessionCookie.Name], HttpContext.TraceIdentifier, CancellationToken.None);
 
         Response.Headers.CacheControl = "no-store";
         Response.Cookies.Delete(SessionCookie.Name, SessionCookie.Options(DateTimeOffset.UnixEpoch));
