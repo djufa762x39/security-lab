@@ -45,7 +45,7 @@ public sealed class MfaServiceTests
         _protector = new DataProtectionTotpSecretProtector(new EphemeralDataProtectionProvider());
         _service = new MfaService(_credentials.Object, _sessions.Object,
             new IdentityAuditProducer(_audit, _audit, NullLogger<IdentityAuditProducer>.Instance),
-            _clock.Object, _protector, Options.Create(new IdentityLockoutOptions()), NullLogger<MfaService>.Instance);
+            _clock.Object, _protector, Options.Create(new MfaLockoutOptions()), NullLogger<MfaService>.Instance);
     }
 
     [Test]
@@ -263,6 +263,30 @@ public sealed class MfaServiceTests
         Assert.That(session.Handle, Is.EqualTo(_work.NewSession!.SessionHandle));
         Assert.That(session.ExpiresAt, Is.EqualTo(_work.NewSession.ExpiresAt));
         Assert.That(_work.Committed, Is.True);
+    }
+
+    [Test]
+    public async Task Verify_WrongCode_CountsWithTheMfaLockoutSettings()
+    {
+        // Arrange
+        var current = DateTimeOffset.UtcNow;
+        SetupVerification(TotpHelpers.GenerateSecret(), current);
+        var service = new MfaService(_credentials.Object, _sessions.Object,
+            new IdentityAuditProducer(_audit, _audit, NullLogger<IdentityAuditProducer>.Instance),
+            _clock.Object, _protector,
+            Options.Create(new MfaLockoutOptions { MaxFailedAttempts = 3, LockoutMinutes = 30 }),
+            NullLogger<MfaService>.Instance);
+        _credentials.Setup(store => store.RecordFailedAttemptAsync(
+                UserId, 3, current, current.AddMinutes(30), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        // Act
+        var (result, _) = await service.VerifyAsync(Token, "000000", "corr-mfa-lockout", CancellationToken.None);
+
+        // Assert
+        Assert.That(result, Is.EqualTo(MfaOutcome.InvalidCode));
+        _credentials.Verify(store => store.RecordFailedAttemptAsync(
+            UserId, 3, current, current.AddMinutes(30), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Test]

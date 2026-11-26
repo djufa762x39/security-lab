@@ -41,6 +41,12 @@ public static class IdentityModule
             .ValidateOnStart();
         services.AddSingleton<IValidateOptions<IdentityLockoutOptions>, IdentityLockoutOptionsValidator>();
 
+        // US-18: the MFA lockout has its own section and stricter limits; an invalid value stops the start.
+        services.AddOptions<MfaLockoutOptions>()
+            .Bind(configuration.GetSection(MfaLockoutOptions.Section))
+            .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<MfaLockoutOptions>, MfaLockoutOptionsValidator>();
+
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
         services.TryAddSingleton<IResetTokenGenerator, ResetTokenGenerator>();

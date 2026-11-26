@@ -26,7 +26,7 @@ public sealed class MfaService(
     IdentityAuditProducer audit,
     TimeProvider clock,
     ITotpSecretProtector secretProtector,
-    IOptions<IdentityLockoutOptions> lockout,
+    IOptions<MfaLockoutOptions> lockout,
     ILogger<MfaService> logger) : IMfaService
 {
     private const int SecretKeyVersion = 1;
@@ -37,7 +37,7 @@ public sealed class MfaService(
     private readonly IdentityAuditProducer _audit = audit;
     private readonly TimeProvider _clock = clock;
     private readonly ITotpSecretProtector _secretProtector = secretProtector;
-    private readonly IdentityLockoutOptions _lockout = lockout.Value;
+    private readonly MfaLockoutOptions _lockout = lockout.Value;
     private readonly ILogger<MfaService> _logger = logger;
 
     public async Task<(MfaOutcome Outcome, string? Uri)> EnrollAsync(
@@ -221,7 +221,7 @@ public sealed class MfaService(
             var now = _clock.GetUtcNow();
             var locked = await _mfaCredentialsStore.RecordFailedAttemptAsync(
                 userId,
-                _lockout.MaxFailedAccessAttempts,
+                _lockout.MaxFailedAttempts,
                 now,
                 now.AddMinutes(_lockout.LockoutMinutes),
                 ct);
