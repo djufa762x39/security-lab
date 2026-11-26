@@ -20,7 +20,11 @@
     <ProjectReference Include="..\Platform.LaboratoryPersistence\Platform.LaboratoryPersistence.csproj" />
     <ProjectReference Include="..\Platform.Authoring\Platform.Authoring.csproj" />
     <ProjectReference Include="..\Platform.Competencies\Platform.Competencies.csproj" />
+<<<<<<< HEAD
     <ProjectReference Include="..\Platform.SessionSecurity\Platform.SessionSecurity.csproj" />
+=======
+    <ProjectReference Include="..\Platform.LabLocalization\Platform.LabLocalization.csproj" />
+>>>>>>> origin/main
   </ItemGroup>
 
   <ItemGroup>
@@ -33,6 +37,7 @@
   <ItemGroup Label="Laboratories">
     <ProjectReference Include="..\Platform.Laboratories.Domain\Platform.Laboratories.Domain.csproj" />
     <ProjectReference Include="..\Platform.Laboratories.Infrastructure\Platform.Laboratories.Infrastructure.csproj" />
+    <ProjectReference Include="..\Platform.Prerequisites\Platform.Prerequisites.csproj" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Modules/Administration/Persistence/Migrations/*.sql" />
