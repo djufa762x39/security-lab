@@ -22,6 +22,7 @@ using Platform.Identity.Models;
 using Platform.Identity.Services;
 using Platform.Identity.Entities;
 using Platform.Audit.Contracts;
+using SecurityLab.TestShared;
 
 namespace Platform.RateLimiting.Tests;
 
