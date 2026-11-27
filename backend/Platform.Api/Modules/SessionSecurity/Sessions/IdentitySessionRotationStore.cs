@@ -18,13 +18,16 @@ namespace Platform.Api.Modules.SessionSecurity.Sessions;
 /// <see cref="Session.SessionHandle"/>. A rotation replaces the token hash in the same row, so the handle,
 /// <see cref="Session.CreatedAt"/> and <see cref="Session.ExpiresAt"/> stay the same: a handle the user
 /// listed before a rotation still revokes the session after it (IDN-07), and the chain is stable. The old
-/// hash no longer exists, so the old token is rejected everywhere. <see cref="RevokeChainAsync"/> still
-/// revokes every session of the subject: fail-closed, the user is logged out everywhere.
+/// hash no longer exists, so the old token is rejected everywhere. A chain is therefore exactly one row:
+/// <see cref="RevokeChainAsync"/> revokes only the session with that handle, and the other sessions of the
+/// subject stay valid (IDN-07). Only <see cref="RevokeAllForSubjectAsync"/> revokes all of them (IDN-03).
 /// </para>
 /// <para>
 /// D5: "pending activation" is logical. <see cref="RotateAsync"/> stores the new hash in the active
 /// Team 1 session, but its token leaves the server only after the rotation was audited; when the audit
-/// fails, <see cref="Platform.SessionSecurity.Application.SessionRotationService"/> revokes every session of the subject.
+/// fails, the activation fails or the request is cancelled,
+/// <see cref="Platform.SessionSecurity.Application.SessionRotationService"/> revokes the chain, so this
+/// session ends and the new token is never valid (AUD-10).
 /// <see cref="ActivateAsync"/> therefore changes nothing and only checks that the session is still active.
 /// </para>
 /// <para>
@@ -121,13 +124,10 @@ internal sealed class IdentitySessionRotationStore(PlatformIdentityDbContext db)
         DateTimeOffset now,
         CancellationToken cancellationToken = default)
     {
-        var userId = await db.Sessions
-            .AsNoTracking()
-            .Where(session => session.SessionHandle == chainId)
-            .Select(session => (Guid?)session.UserId)
-            .SingleOrDefaultAsync(cancellationToken);
-
-        return userId is null ? 0 : await RevokeAllAsync(userId.Value, now, cancellationToken);
+        // D4: the chain is the one session with this handle; other sessions of the subject are not touched.
+        return await db.Sessions
+            .Where(session => session.SessionHandle == chainId && session.RevokedAt == null)
+            .ExecuteUpdateAsync(set => set.SetProperty(session => session.RevokedAt, (DateTimeOffset?)now), cancellationToken);
     }
 
     public async ValueTask<int> RevokeAllForSubjectAsync(

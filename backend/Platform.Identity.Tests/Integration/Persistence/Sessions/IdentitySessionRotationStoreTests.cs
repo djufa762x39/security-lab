@@ -19,7 +19,8 @@ namespace Platform.Identity.Tests.Integration.Persistence.Sessions;
 /// Testcontainers). Proves that the Team 1 session check rejects the old token and accepts the new one,
 /// that a rotation is atomic, keeps the session handle so IDN-07 revocation still ends the session (D4),
 /// never extends the lifetime (D6), never rotates a blocked account (IDN-03) and locks the account before
-/// the session (D13), and that the fail-closed cleanup revokes every session of the subject (D4, D5, AUD-10).
+/// the session (D13), and that the fail-closed cleanup revokes only the rotated session and keeps the other
+/// sessions of the subject (D4, D5, AUD-10, IDN-07).
 /// </summary>
 [TestFixture]
 [NonParallelizable]
@@ -474,7 +475,7 @@ public sealed class IdentitySessionRotationStoreTests : IntegrationTestBase
     }
 
     [Test]
-    public async Task RevokeChainAsync_SubjectHasRotatedAndOtherSessions_ShouldRevokeAll()
+    public async Task RevokeChainAsync_SubjectHasRotatedAndOtherSessions_ShouldRevokeOnlyRotatedSession()
     {
         // Arrange
         var seeded = await SeedSessionAsync(UserA);
@@ -488,10 +489,29 @@ public sealed class IdentitySessionRotationStoreTests : IntegrationTestBase
         // Assert
         await Assert.MultipleAsync(async () =>
         {
-            Assert.That(revoked, Is.EqualTo(2));
+            Assert.That(revoked, Is.EqualTo(1));
             Assert.That(await IsAcceptedBySessionCheckAsync(issued.Value), Is.False);
-            Assert.That(await IsAcceptedBySessionCheckAsync(secondToken), Is.False);
-            Assert.That(await CountActiveSessionsAsync(seeded.UserId), Is.Zero);
+            Assert.That(await IsAcceptedBySessionCheckAsync(secondToken), Is.True);
+            Assert.That(await CountActiveSessionsAsync(seeded.UserId), Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task RevokeChainAsync_ChainAlreadyRevoked_ShouldReturnZero_AndKeepOtherSession()
+    {
+        // Arrange
+        var seeded = await SeedSessionAsync(UserA);
+        var (secondToken, _) = await SessionTestData.CreateAsync(Factory, seeded.UserId);
+        await RevokeWithSessionManagerAsync(seeded.UserId, seeded.Session.SessionHandle);
+
+        // Act
+        var revoked = await GetService<ISessionRotationStore>().RevokeChainAsync(seeded.Current.ChainId, Now());
+
+        // Assert
+        await Assert.MultipleAsync(async () =>
+        {
+            Assert.That(revoked, Is.Zero);
+            Assert.That(await IsAcceptedBySessionCheckAsync(secondToken), Is.True);
         });
     }
 
@@ -540,7 +560,7 @@ public sealed class IdentitySessionRotationStoreTests : IntegrationTestBase
     }
 
     [Test]
-    public async Task RotationService_AuditFails_ShouldRevokeEverySessionOfSubject()
+    public async Task RotationService_AuditFails_ShouldRevokeOnlyRotatedSession()
     {
         // Arrange
         var seeded = await SeedSessionAsync(UserA);
@@ -556,8 +576,69 @@ public sealed class IdentitySessionRotationStoreTests : IntegrationTestBase
             Assert.That(result.Code, Is.EqualTo(SessionRotationCodes.AuditFailed));
             Assert.That(result.NewToken, Is.Null);
             Assert.That(await IsAcceptedBySessionCheckAsync(seeded.RawToken), Is.False);
-            Assert.That(await IsAcceptedBySessionCheckAsync(secondToken), Is.False);
-            Assert.That(await CountActiveSessionsAsync(seeded.UserId), Is.Zero);
+            Assert.That(await IsAcceptedBySessionCheckAsync(secondToken), Is.True);
+            Assert.That(await CountActiveSessionsAsync(seeded.UserId), Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task RotationService_RevokedByHandleBeforeActivation_ShouldKeepOtherSessions()
+    {
+        // Arrange
+        var seeded = await SeedSessionAsync(UserA);
+        var (secondToken, _) = await SessionTestData.CreateAsync(Factory, seeded.UserId);
+        var entries = new List<SessionSecurityAuditEntry>();
+        var audit = new Mock<ISessionSecurityAuditWriter>(MockBehavior.Strict);
+        // The rotation is audited after RotateAsync and before ActivateAsync; at that moment the user
+        // revokes the session by its handle from another device (IDN-07).
+        audit
+            .Setup(w => w.TryWriteAsync(It.IsAny<SessionSecurityAuditEntry>(), It.IsAny<CancellationToken>()))
+            .Returns<SessionSecurityAuditEntry, CancellationToken>(async (entry, _) =>
+            {
+                entries.Add(entry);
+                if (entry.Outcome == SessionRotationCodes.Rotated)
+                {
+                    await RevokeWithSessionManagerAsync(seeded.UserId, seeded.Session.SessionHandle);
+                }
+
+                return true;
+            });
+
+        // Act
+        var result = await RotateThroughServiceAsync(seeded, audit.Object);
+
+        // Assert
+        await Assert.MultipleAsync(async () =>
+        {
+            Assert.That(result.Code, Is.EqualTo(SessionRotationCodes.RotationConflict));
+            Assert.That(result.NewToken, Is.Null);
+            Assert.That(
+                entries.Select(entry => entry.Outcome),
+                Is.EqualTo(new[] { SessionRotationCodes.Rotated, SessionRotationCodes.RotationConflict }));
+            Assert.That(await IsAcceptedBySessionCheckAsync(secondToken), Is.True);
+            Assert.That(await CountActiveSessionsAsync(seeded.UserId), Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task RotationService_CancelledAfterRotation_ShouldRevokeOnlyRotatedSession()
+    {
+        // Arrange
+        var seeded = await SeedSessionAsync(UserA);
+        var (secondToken, _) = await SessionTestData.CreateAsync(Factory, seeded.UserId);
+        var audit = new Mock<ISessionSecurityAuditWriter>(MockBehavior.Strict);
+        // The HTTP request is aborted after the rotation committed, while the rotation is audited.
+        audit
+            .Setup(w => w.TryWriteAsync(It.IsAny<SessionSecurityAuditEntry>(), It.IsAny<CancellationToken>()))
+            .Returns(() => ValueTask.FromException<bool>(new OperationCanceledException()));
+
+        // Act & Assert
+        await Assert.ThrowsAsync<OperationCanceledException>(async () => await RotateThroughServiceAsync(seeded, audit.Object));
+        await Assert.MultipleAsync(async () =>
+        {
+            Assert.That(await IsAcceptedBySessionCheckAsync(seeded.RawToken), Is.False);
+            Assert.That(await IsAcceptedBySessionCheckAsync(secondToken), Is.True);
+            Assert.That(await CountActiveSessionsAsync(seeded.UserId), Is.EqualTo(1));
         });
     }
 
