@@ -92,8 +92,13 @@ Provjera `git diff --check` prolazi. Frontend nije mijenjan niti je za ovu dopun
 
 Ponovljivo pokretanje (potreban Docker za PostgreSQL):
 
+Od dorade za #262 audit integracioni testovi su u
+`Integration/Audit/IdentityAuditIntegrationTests.cs` i koriste zajednicki
+`IntegrationTestBase`, host i PostgreSQL kontejner. Ograniceni Audit runtime nalog
+i stvarno odbijanje INSERT-a ostaju pokriveni; pomocne operacije su u `AuditTestData`.
+
 ```powershell
 dotnet test backend/Platform.RateLimiting.Tests/Platform.RateLimiting.Tests.csproj --configuration Release
-dotnet test backend/Platform.Identity.Tests/Platform.Identity.Tests.csproj --configuration Release --filter "FullyQualifiedName~IdentityAuditProducerTests|FullyQualifiedName~IdentityAuditPostgresIntegrationTests"
+dotnet test backend/Platform.Identity.Tests/Platform.Identity.Tests.csproj --configuration Release --filter "FullyQualifiedName~IdentityAuditProducerTests|FullyQualifiedName~IdentityAuditIntegrationTests"
 ./scripts/audit/test-postgres.ps1
 ```
