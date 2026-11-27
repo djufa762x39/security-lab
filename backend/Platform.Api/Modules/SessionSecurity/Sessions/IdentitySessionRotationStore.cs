@@ -15,21 +15,27 @@ namespace Platform.Api.Modules.SessionSecurity.Sessions;
 /// <remarks>
 /// <para>
 /// D4: identity.sessions has no chain, so <see cref="RotatableSession.ChainId"/> is the
-/// <see cref="Session.SessionHandle"/> of the session that was found. The handle is unique (IDN-07 looks
-/// sessions up by it), so every rotation gives the new session a new handle. For that reason
-/// <see cref="RevokeChainAsync"/> revokes every session of the subject, not only one chain: fail-closed,
-/// the user is logged out everywhere.
+/// <see cref="Session.SessionHandle"/>. A rotation replaces the token hash in the same row, so the handle,
+/// <see cref="Session.CreatedAt"/> and <see cref="Session.ExpiresAt"/> stay the same: a handle the user
+/// listed before a rotation still revokes the session after it (IDN-07), and the chain is stable. The old
+/// hash no longer exists, so the old token is rejected everywhere. <see cref="RevokeChainAsync"/> still
+/// revokes every session of the subject: fail-closed, the user is logged out everywhere.
 /// </para>
 /// <para>
-/// D5: "pending activation" is logical. <see cref="RotateAsync"/> stores the new session as an active
+/// D5: "pending activation" is logical. <see cref="RotateAsync"/> stores the new hash in the active
 /// Team 1 session, but its token leaves the server only after the rotation was audited; when the audit
 /// fails, <see cref="Platform.SessionSecurity.Application.SessionRotationService"/> revokes every session of the subject.
 /// <see cref="ActivateAsync"/> therefore changes nothing and only checks that the session is still active.
 /// </para>
 /// <para>
-/// D6, D13: the new session keeps the absolute expiry of the old one. A rotation locks the account
-/// (FOR SHARE) before the session (FOR UPDATE), in the same order as the Team 1 status change, so a
-/// concurrent block cannot deadlock with it and no session outlives a block (IDN-03).
+/// D6, D13: the expiry is never changed. A rotation locks the account (FOR SHARE) before the session
+/// (FOR UPDATE), in the same order as the Team 1 status change, so a concurrent block cannot deadlock with
+/// it and no session outlives a block (IDN-03). A rotation never writes RevokedAt, the concurrency token
+/// of a Team 1 revocation, so a concurrent IDN-07 revocation waits for the row lock and then succeeds.
+/// </para>
+/// <para>
+/// A reused old token is reported as not found instead of revoked. The client gets the same generic
+/// answer for both; only the audit reason code differs.
 /// </para>
 /// </remarks>
 internal sealed class IdentitySessionRotationStore(PlatformIdentityDbContext db) : ISessionRotationStore
@@ -63,27 +69,31 @@ internal sealed class IdentitySessionRotationStore(PlatformIdentityDbContext db)
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
-        // D13: the owner is read without a lock, so the account can be locked before the session.
-        var userId = await FindOwnerAsync(oldHash, cancellationToken);
-        if (userId is null)
+        // D13: the session key is read without a lock, so the account can be locked before the session.
+        var key = await FindKeyAsync(oldHash, cancellationToken);
+        if (key is null)
         {
             return SessionRotationStoreStatus.NotFound;
         }
 
-        if (!await LockActiveAccountAsync(userId.Value, cancellationToken))
+        if (!await LockActiveAccountAsync(key.UserId, cancellationToken))
         {
             return SessionRotationStoreStatus.AlreadyRevoked;
         }
 
-        var current = await LockSessionAsync(oldHash, cancellationToken);
-        var status = CheckLockedSession(current, userId.Value, now);
+        var current = await LockSessionAsync(key.Id, cancellationToken);
+        var status = CheckLockedSession(current, key.UserId, oldHash, now);
         if (status is not null)
         {
             return status.Value;
         }
 
         // Not null: CheckLockedSession returns a status for a missing session.
-        await ReplaceAsync(current!, replacement, now, cancellationToken);
+        if (!await ReplaceTokenAsync(current!, oldHash, replacement, now, cancellationToken))
+        {
+            return SessionRotationStoreStatus.AlreadyRevoked;
+        }
+
         await transaction.CommitAsync(cancellationToken);
         return SessionRotationStoreStatus.Rotated;
     }
@@ -131,11 +141,11 @@ internal sealed class IdentitySessionRotationStore(PlatformIdentityDbContext db)
             : 0;
     }
 
-    private Task<Guid?> FindOwnerAsync(byte[] tokenHash, CancellationToken cancellationToken) =>
+    private Task<SessionKey?> FindKeyAsync(byte[] tokenHash, CancellationToken cancellationToken) =>
         db.Sessions
             .AsNoTracking()
             .Where(session => session.TokenHash == tokenHash)
-            .Select(session => (Guid?)session.UserId)
+            .Select(session => new SessionKey(session.Id, session.UserId))
             .SingleOrDefaultAsync(cancellationToken);
 
     // FOR SHARE pairs with the FOR UPDATE of the Team 1 status change, the same lock as
@@ -154,23 +164,27 @@ internal sealed class IdentitySessionRotationStore(PlatformIdentityDbContext db)
 
     // Not tracked: the request's context may already track this session (SessionManager.ValidateAsync)
     // with values from before the lock, and the checks below need the locked row.
-    private Task<Session?> LockSessionAsync(byte[] tokenHash, CancellationToken cancellationToken) =>
+    private Task<Session?> LockSessionAsync(Guid sessionId, CancellationToken cancellationToken) =>
         db.Sessions
             .FromSqlInterpolated($"""
-                SELECT * FROM identity.sessions WHERE token_hash = {tokenHash} FOR UPDATE
+                SELECT * FROM identity.sessions WHERE id = {sessionId} FOR UPDATE
                 """)
             .AsNoTracking()
             .SingleOrDefaultAsync(cancellationToken);
 
-    // A concurrent rotation that committed first is seen here as a revoked session.
-    private static SessionRotationStoreStatus? CheckLockedSession(Session? current, Guid userId, DateTimeOffset now)
+    // A concurrent rotation that committed first is seen here as a changed token hash.
+    private static SessionRotationStoreStatus? CheckLockedSession(
+        Session? current,
+        Guid userId,
+        byte[] oldHash,
+        DateTimeOffset now)
     {
         if (current is null || current.UserId != userId)
         {
             return SessionRotationStoreStatus.NotFound;
         }
 
-        if (current.RevokedAt is not null)
+        if (!current.TokenHash.AsSpan().SequenceEqual(oldHash) || current.RevokedAt is not null)
         {
             return SessionRotationStoreStatus.AlreadyRevoked;
         }
@@ -178,24 +192,26 @@ internal sealed class IdentitySessionRotationStore(PlatformIdentityDbContext db)
         return current.ExpiresAt <= now ? SessionRotationStoreStatus.Expired : null;
     }
 
-    private async Task ReplaceAsync(
+    // D4: the same row gets the new hash, so Id, SessionHandle, CreatedAt and ExpiresAt (D6) stay. The new
+    // token starts its activity now, as a Team 1 login does. RevokedAt is not written (see the remarks).
+    private async Task<bool> ReplaceTokenAsync(
         Session current,
+        byte[] oldHash,
         RotatableSession replacement,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         var (replacementHash, level) = ValidateReplacement(current, replacement);
 
-        // The row is locked by this transaction, so exactly this session is revoked.
-        await db.Sessions
-            .Where(session => session.Id == current.Id && session.RevokedAt == null)
-            .ExecuteUpdateAsync(set => set.SetProperty(session => session.RevokedAt, (DateTimeOffset?)now), cancellationToken);
+        // The row is locked by this transaction; the filter repeats the checks above as a second guard.
+        var updated = await db.Sessions
+            .Where(session => session.Id == current.Id && session.TokenHash == oldHash && session.RevokedAt == null)
+            .ExecuteUpdateAsync(set => set
+                .SetProperty(session => session.TokenHash, replacementHash)
+                .SetProperty(session => session.AuthLevel, level)
+                .SetProperty(session => session.LastActivityAt, now), cancellationToken);
 
-        // Guid.NewGuid only for the non-secret Id and SessionHandle, as in Team 1. The handle is new because
-        // the column is unique (D4); the expiry is the old one (D6).
-        db.Sessions.Add(new Session(
-            Guid.NewGuid(), current.UserId, replacementHash, Guid.NewGuid(), level, now, current.ExpiresAt));
-        await db.SaveChangesAsync(cancellationToken);
+        return updated == 1;
     }
 
     // Programming errors of the caller, checked before anything is written. The messages carry no values.
@@ -235,4 +251,7 @@ internal sealed class IdentitySessionRotationStore(PlatformIdentityDbContext db)
         session.ExpiresAt,
         session.RevokedAt,
         IsPendingActivation: false);
+
+    // Not a secret: the row ID and the owner, read before any lock (D13).
+    private sealed record SessionKey(Guid Id, Guid UserId);
 }

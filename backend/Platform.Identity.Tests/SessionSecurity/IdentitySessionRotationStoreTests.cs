@@ -19,9 +19,9 @@ namespace Platform.Identity.Tests.SessionSecurity;
 /// <summary>
 /// IDN-11: <see cref="IdentitySessionRotationStore"/> over the real identity.sessions table (PostgreSQL,
 /// Testcontainers). Proves that the Team 1 session check rejects the old token and accepts the new one,
-/// that a rotation is atomic, never extends the lifetime (D6), never rotates a blocked account (IDN-03)
-/// and locks the account before the session (D13), and that the fail-closed cleanup revokes every session
-/// of the subject (D4, D5, AUD-10).
+/// that a rotation is atomic, keeps the session handle so IDN-07 revocation still ends the session (D4),
+/// never extends the lifetime (D6), never rotates a blocked account (IDN-03) and locks the account before
+/// the session (D13), and that the fail-closed cleanup revokes every session of the subject (D4, D5, AUD-10).
 /// </summary>
 /// <remarks>
 /// <see cref="TestDatabaseFixture"/> is a SetUpFixture of the Integration namespace and does not run for
@@ -248,6 +248,62 @@ public sealed class IdentitySessionRotationStoreTests
         Assert.That(await IsAcceptedBySessionCheckAsync(other.RawToken), Is.True);
     }
 
+    [Test]
+    public async Task RotateAsync_WhenOldTokenWasAlreadyRotated_ReturnsNotFoundAndKeepsNewToken()
+    {
+        var seeded = await SeedSessionAsync(UserA);
+        var issued = TokenGenerator.Generate();
+        await RotateAsync(seeded.Current, issued);
+
+        var status = await RotateAsync(seeded.Current, TokenGenerator.Generate());
+
+        await Assert.MultipleAsync(async () =>
+        {
+            Assert.That(status, Is.EqualTo(SessionRotationStoreStatus.NotFound));
+            Assert.That(await IsAcceptedBySessionCheckAsync(issued.Value), Is.True);
+            Assert.That(await CountSessionsAsync(seeded.UserId), Is.EqualTo(1));
+        });
+    }
+
+    // IDN-07: the handle listed before a rotation still ends the session after it.
+
+    [Test]
+    public async Task RevokeSession_WhenHandleWasListedBeforeRotation_RejectsNewToken()
+    {
+        var seeded = await SeedSessionAsync(UserA);
+        var issued = TokenGenerator.Generate();
+        await RotateAsync(seeded.Current, issued);
+
+        var revoked = await RevokeWithSessionManagerAsync(seeded.UserId, seeded.Session.SessionHandle);
+
+        await Assert.MultipleAsync(async () =>
+        {
+            Assert.That(revoked, Is.True);
+            Assert.That(await IsAcceptedBySessionCheckAsync(issued.Value), Is.False);
+            Assert.That(await CountActiveSessionsAsync(seeded.UserId), Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task RotateAsync_WhenSessionIsRevokedByHandleDuringRotation_LeavesNoActiveSession()
+    {
+        var seeded = await SeedSessionAsync(UserA);
+        var issued = TokenGenerator.Generate();
+
+        var rotation = RotateAsync(seeded.Current, issued);
+        var revocation = RevokeWithSessionManagerAsync(seeded.UserId, seeded.Session.SessionHandle);
+        await Task.WhenAll(rotation, revocation);
+
+        await Assert.MultipleAsync(async () =>
+        {
+            Assert.That(await rotation, Is.AnyOf(SessionRotationStoreStatus.Rotated, SessionRotationStoreStatus.AlreadyRevoked));
+            Assert.That(await revocation, Is.True);
+            Assert.That(await IsAcceptedBySessionCheckAsync(seeded.RawToken), Is.False);
+            Assert.That(await IsAcceptedBySessionCheckAsync(issued.Value), Is.False);
+            Assert.That(await CountActiveSessionsAsync(seeded.UserId), Is.Zero);
+        });
+    }
+
     // Positive: the rotation is visible to the Team 1 session check.
 
     [Test]
@@ -311,6 +367,18 @@ public sealed class IdentitySessionRotationStoreTests
     }
 
     [Test]
+    public async Task RotateAsync_KeepsTheHandleListedForSessionReview()
+    {
+        var seeded = await SeedSessionAsync(UserA);
+
+        await RotateAsync(seeded.Current, TokenGenerator.Generate());
+
+        using var scope = factory.Services.CreateScope();
+        var listed = await scope.ServiceProvider.GetRequiredService<ISessionManager>().ListForUser(seeded.UserId);
+        Assert.That(listed.Select(session => session.Handle), Is.EqualTo(new[] { seeded.Session.SessionHandle }));
+    }
+
+    [Test]
     public async Task ActivateAsync_WhenSessionIsActive_ReturnsTrue()
     {
         var seeded = await SeedSessionAsync(UserA);
@@ -332,8 +400,13 @@ public sealed class IdentitySessionRotationStoreTests
         await Assert.MultipleAsync(async () =>
         {
             Assert.That(statuses.Count(status => status == SessionRotationStoreStatus.Rotated), Is.EqualTo(1));
-            Assert.That(statuses, Does.Contain(SessionRotationStoreStatus.AlreadyRevoked));
-            Assert.That(await CountSessionsAsync(seeded.UserId), Is.EqualTo(2));
+            // The loser waits on the row lock and sees the new hash (AlreadyRevoked), or starts after the
+            // commit and no longer finds the old hash (NotFound). The client gets the same answer for both.
+            Assert.That(
+                statuses.Single(status => status != SessionRotationStoreStatus.Rotated),
+                Is.AnyOf(SessionRotationStoreStatus.AlreadyRevoked, SessionRotationStoreStatus.NotFound));
+            Assert.That(await CountSessionsAsync(seeded.UserId), Is.EqualTo(1));
+            Assert.That(await CountActiveSessionsAsync(seeded.UserId), Is.EqualTo(1));
         });
     }
 
@@ -500,10 +573,10 @@ public sealed class IdentitySessionRotationStoreTests
         return await scope.ServiceProvider.GetRequiredService<ISessionManager>().ValidateAsync(rawToken) is not null;
     }
 
-    private async Task RevokeWithSessionManagerAsync(Guid userId, Guid sessionHandle)
+    private async Task<bool> RevokeWithSessionManagerAsync(Guid userId, Guid sessionHandle)
     {
         using var scope = factory.Services.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<ISessionManager>().RevokeSession(userId, sessionHandle);
+        return await scope.ServiceProvider.GetRequiredService<ISessionManager>().RevokeSession(userId, sessionHandle);
     }
 
     private async Task BlockAccountAsync(Guid userId)
