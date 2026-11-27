@@ -13,6 +13,7 @@ import './TeacherMetadataForm.css'
 interface TeacherMetadataFormProps {
     user: TestUser
     labId?: string
+    developmentCourses?: Course[]
 }
 
 type TeacherFormFieldErrors = MetadataFieldErrors & { title?: string[] }
@@ -20,6 +21,7 @@ type TeacherFormFieldErrors = MetadataFieldErrors & { title?: string[] }
 export default function TeacherMetadataForm({
     user,
     labId,
+    developmentCourses,
 }: TeacherMetadataFormProps) {
     const [title, setTitle] = useState('')
     const [courses, setCourses] = useState<Course[]>([])
@@ -47,7 +49,8 @@ export default function TeacherMetadataForm({
     useEffect(() => {
         if (labId) return
         let cancelled = false
-        courseService.listCourses()
+        const coursesRequest = developmentCourses ? Promise.resolve(developmentCourses) : courseService.listCourses()
+        coursesRequest
             .then((availableCourses) => {
                 if (cancelled) return
                 const activeCourses = availableCourses.filter((course) => course.status === 'Active')
@@ -62,7 +65,7 @@ export default function TeacherMetadataForm({
                 if (!cancelled) setCoursesLoading(false)
             })
         return () => { cancelled = true }
-    }, [labId])
+    }, [labId, developmentCourses])
 
     useEffect(() => {
         if (!labId) return
@@ -289,5 +292,3 @@ export default function TeacherMetadataForm({
         </form>
     )
 }
-
-

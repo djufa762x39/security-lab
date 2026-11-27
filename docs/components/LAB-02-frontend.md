@@ -54,7 +54,7 @@ Frontend trenutno koristi sledeće pozive:
 ### Status integracije
 
 - Frontend testovi pokrivaju izbor kursa, slanje `courseId`, serverske greške, učitavanje nacrta i izmenu naziva i metapodataka.
-- Integracioni test laboratorijskog API-ja koristi stvarnu registraciju ruta i prolazi tok create → save → load → edit → reload. Ne ubacuje javni sadržaj; testni adapter izoluje proveru pristupa, dok laboratorije i metapodaci prolaze kroz stvarne HTTP rute i repozitorijume.
+- Integracioni test laboratorijskog API-ja koristi stvarnu registraciju ruta i prolazi tok create → save → load → edit → reload. Ne ubacuje javni sadržaj; testni adapter izoluje proveru pristupa u ovom toku, dok posebni HTTP testovi potvrđuju da student i nastavnik sa drugog kursa ne mogu da čitaju nacrt.
 - Pri izmeni, forma koristi zaštićeni metadata endpoint, zato nacrt može da se učita i kada u katalogu nema javnog sadržaja. Enum vrednosti prihvataju numerički oblik koji vraća backend.
 - Lokalna provera: 27 frontend test fajlova, 253 testa i produkcioni build su prošli. Backend tok integracije je prošao ciljano.
 
@@ -63,7 +63,7 @@ Frontend trenutno koristi sledeće pozive:
 ### Kada serverski API-ji budu dostupni
 
 1. Pokrenuti API i frontend prema README-u.
-2. Otvoriti `/teacher/labs/new`; u razvojnom režimu ekran koristi test-identitet nastavnika `marko`.
+2. Otvoriti `/teacher/labs/new`; u razvojnom režimu ekran koristi demo nastavnika `marko` sa serverskim test ID-jem `11111111-1111-1111-1111-111111111111` i demo kurs `OIB-DEMO` (`aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa`), koji odgovaraju backend seed članstvu.
 3. Izabrati aktivni kurs, pa uneti naziv, cilj, težinu, tip i oznake.
 4. Izabrati **Sačuvaj laboratoriju** i proveriti da zahtev za kreiranje uključuje `courseId`, a zatim da se čuvaju metapodaci.
 5. Otvoriti `/teacher/labs/{labId}/edit`, proveriti učitane vrednosti, promeniti naziv ili metapodatke i sačuvati ih.
@@ -71,4 +71,4 @@ Frontend trenutno koristi sledeće pozive:
 
 ### Ograničenje lokalnog pokretanja
 
-Kada razvojni backend nema povezano skladište kurseva, lista kurseva može biti prazna i forma neće dozvoliti kreiranje. U tom slučaju treba pokrenuti backend sa dostupnim kursom i nastavničkim članstvom; klijentski testovi koriste kurs samo kao testni podatak.
+Stranica koristi unapred podešeni demo kurs samo u `Development` režimu, zato što backend lokalno seed-uje članstvo nastavnika na tom kursu. Produkcioni prikaz učitava kurseve preko `/api/courses`; identitet mora doći iz stvarne prijave, a server i dalje odlučuje o dozvoli.

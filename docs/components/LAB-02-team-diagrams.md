@@ -2,7 +2,7 @@
 
 Ovaj fajl prikazuje ceo tok LAB-02: model i validaciju metapodataka, perzistenciju, nastavničku formu, API metapodataka, katalog i njegov korisnički interfejs. Ne zamenjuje lični opis Osobe 6 u [LAB-02-frontend.md](LAB-02-frontend.md) i ne obuhvata LAB-06, koji ima zaseban dokument.
 
-**Osnova za status:** lokalno pregledan `main` (`e744fab`). Puna linija označava kod prisutan u `main`; isprekidana linija označava rad na grani/PR-u ili integraciju koja još nije potvrđena u tom `main`.
+**Osnova za status:** `main` u trenutku pregleda (`13dae720`). Puna linija označava kod prisutan u `main`; isprekidana linija označava rad na grani/PR-u ili integraciju koja još nije potvrđena u tom `main`.
 
 ## Dijagram arhitekture
 
@@ -42,11 +42,11 @@ flowchart LR
   subgraph DOMAIN["LAB-02 domen i ugovori"]
     MODEL[LaboratoryMetadata<br/>ID reference na LAB-01, cilj,<br/>težina, tip, oznake — main]
     VALIDATOR[LaboratoryMetadataValidator<br/>serverska validacija — main]
-    API_REPO[ILaboratoryMetadataRepository<br/>in-memory implementacija na PR #130]
+    API_REPO[ILaboratoryMetadataRepository<br/>InMemory u Development; persistent adapter kad je konfigurisan]
     STORE_CONTRACT[ILaboratoryMetadataStore<br/>ugovor perzistencije — main]
     META_API -.-> VALIDATOR --> MODEL
     META_API -.-> API_REPO
-    API_REPO -.->|potrebno usaglasiti ugovor| STORE_CONTRACT
+    API_REPO -->|PersistentMetadataRepository adapter| STORE_CONTRACT
   end
 
   subgraph PERSISTENCE["LAB-02 perzistencija"]
@@ -71,7 +71,7 @@ flowchart LR
   SEARCH_API -.->|kartice i opcije filtera| CATALOG_CLIENT
 ```
 
-**Napomena o ugovorima:** `LaboratoryMetadata` ne poseduje naziv niti novi ID. Naziv i identitet laboratorije pripadaju LAB-01; LAB-02 metapodaci koriste postojeći `LaboratoryId`. LAB-01 API u `main` trenutno koristi `InMemoryLaboratoryRepository`; PostgreSQL adapter postoji, ali nije podrazumevano registrovan. PR #130 koristi `ILaboratoryMetadataRepository`, dok je u `main` perzistencioni ugovor `ILaboratoryMetadataStore`; adapter/usaglašavanje između njih je integraciona zavisnost.
+**Napomena o ugovorima:** `LaboratoryMetadata` ne poseduje naziv niti novi ID. Naziv i identitet laboratorije pripadaju LAB-01; LAB-02 metapodaci koriste postojeći `LaboratoryId`. `PersistentMetadataRepository` povezuje API ugovor `ILaboratoryMetadataRepository` sa perzistencionim ugovorom `ILaboratoryMetadataStore`; `MetadataCatalogStore` izlaže metapodatke katalogu. U lokalnom Development režimu koristi se memorijsko skladište, a PostgreSQL putanja zavisi od konfiguracije konekcije.
 
 ## Dijagram toka podataka (DFD)
 
@@ -99,7 +99,7 @@ flowchart LR
     P4[LAB-05: detalji kataloga<br/>CatalogVisibilityPolicy — PR #139]
     CHECK[Serverska provera vidljivosti<br/>pre vraćanja rezultata]
     VALIDATOR[LaboratoryMetadataValidator]
-    REPO[ILaboratoryMetadataRepository<br/>in-memory na PR #130]
+    REPO[ILaboratoryMetadataRepository<br/>API skladišni ugovor]
     AUTH --> P1
     AUTH -.-> P2
     AUTH -.-> P3
@@ -112,15 +112,15 @@ flowchart LR
   subgraph DATA["Granica 3 — skladišta"]
     D0[(InMemoryLaboratoryRepository<br/>LAB-01: podrazumevano u main)]
     D1[(PostgreSQL authoring.laboratories<br/>LAB-02 store postoji u main)]
-    D2[(InMemoryLaboratoryMetadataRepository<br/>PR #130)]
+    D2[(InMemoryLaboratoryMetadataRepository<br/>Development)]
   end
 
   FORM_CLIENT -->|GET kursevi / POST title + courseId / PATCH title| AUTH
   P1 -->|ID i naziv: main podrazumevano| D0
   P1 -.->|Postgres adapter postoji; nije podrazumevani| D1
   FORM_CLIENT -->|POST/GET/PATCH cilj, težina, tip, oznake| AUTH
-  REPO -.->|upis/čitanje po LaboratoryId| D2
-  D2 -.->|potreban adapter/usaglašavanje ugovora| D1
+  REPO -.->|upis/čitanje po LaboratoryId u Development| D2
+  REPO -.->|PersistentMetadataRepository| D1
   VALIDATOR -.->|400 greške polja| FORM_CLIENT
   P2 -.->|uspeh ili 403| FORM_CLIENT
 
@@ -138,7 +138,7 @@ Puna linija prikazuje tokove potvrđene u implementaciji. LAB-01 čuva laborator
 
 ## Stanje i preostalo usaglašavanje
 
-- **U `main`:** LAB-02 model, validator, `ILaboratoryMetadataStore`, PostgreSQL store i LAB-01 identitet/naziv laboratorije. LAB-01 modul podrazumevano registruje memorijski repozitorijum.
+- **U `main`:** LAB-02 model, validator, metadata API, `ILaboratoryMetadataStore`, PostgreSQL store i LAB-01 identitet/naziv laboratorije. API sloj koristi adapter `PersistentMetadataRepository` kada je PostgreSQL konfigurisan, a razvojno memorijsko skladište lokalno.
 - **LAB-02 tok u ovoj grani:** nastavnik bira aktivni kurs; server proverava članstvo; forma kreira laboratoriju, čuva metapodatke i koristi zaštićeni metadata GET za učitavanje nacrta.
 - **Tok kataloga:** student koristi zasebni javni katalog i politiku vidljivosti; katalog nije izvor podataka za nastavničku izmenu.
-- **Perzistencija:** lokalni razvoj koristi memorijska skladišta; trajno čuvanje zavisi od konfigurisanog PostgreSQL adaptera.
+- **Perzistencija:** lokalni razvoj koristi memorijska skladišta; trajno čuvanje koristi adaptere ka PostgreSQL skladištu kada su konekcije konfigurisane.

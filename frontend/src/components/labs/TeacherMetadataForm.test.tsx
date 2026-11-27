@@ -72,6 +72,38 @@ describe('TeacherMetadataForm', () => {
         )
     })
 
+    it('koristi eksplicitno prosleđen demo kurs umesto udaljenog spiska', async () => {
+        const fetchMock = vi.fn()
+        fetchMock
+            .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'lab-demo' }), { status: 201 }))
+            .mockResolvedValueOnce(new Response('{}', { status: 201 }))
+        vi.stubGlobal('fetch', fetchMock)
+        render(<TeacherMetadataForm
+            user={{ id: '11111111-1111-1111-1111-111111111111', role: 'Teacher' }}
+            developmentCourses={[{
+                id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+                code: 'OIB-DEMO',
+                name: 'Lokalni demo kurs',
+                description: null,
+                status: 'Active',
+                createdAt: '',
+                archivedAt: null,
+            }]}
+        />)
+
+        await screen.findByRole('option', { name: 'OIB-DEMO — Lokalni demo kurs' })
+        fireEvent.change(screen.getByLabelText('Naziv laboratorije'), { target: { value: 'Demo laboratorija' } })
+        fireEvent.change(screen.getByLabelText('Cilj laboratorije'), { target: { value: 'Proveriti demo tok rada' } })
+        fireEvent.change(screen.getByLabelText('Težina'), { target: { value: '0' } })
+        fireEvent.change(screen.getByLabelText('Tip laboratorije'), { target: { value: '0' } })
+        fireEvent.submit(screen.getByRole('button', { name: 'Sačuvaj laboratoriju' }))
+
+        expect(await screen.findByText('Laboratorija je sačuvana.')).toBeTruthy()
+        expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/laboratories/', expect.objectContaining({
+            method: 'POST',
+            body: JSON.stringify({ title: 'Demo laboratorija', courseId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' }),
+        }))
+    })
     it('prikazuje serversku grešku uz odgovarajuće polje', async () => {
         const fetchMock = vi.fn()
         fetchMock

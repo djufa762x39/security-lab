@@ -298,6 +298,51 @@ public sealed class LaboratoryMetadataApiTests
 
 
     [Test]
+    public async Task Student_CannotReadLaboratoryMetadata()
+    {
+        using var factory = MetadataTestHost.Create();
+        using var client = factory.CreateClient();
+        var memberships = factory.Services.GetRequiredService<InMemoryMembershipReader>();
+        var resources = factory.Services.GetRequiredService<InMemoryResourceDescriptorResolver>();
+        MetadataTestData.ConfigureAccess(memberships, resources);
+
+        var repository = factory.Services.GetRequiredService<ILaboratoryRepository>();
+        await repository.AddAsync(Laboratory.Rehydrate(
+            MetadataTestData.LaboratoryId, MetadataTestData.CourseId, "Privatni nacrt",
+            LabStatus.Draft, MetadataTestData.TeacherId, DateTimeOffset.UtcNow));
+        await factory.Services.GetRequiredService<ILaboratoryMetadataRepository>().SaveAsync(
+            new LaboratoryMetadata(MetadataTestData.LaboratoryId, "Tajni cilj",
+                LaboratoryDifficulty.Easy, LaboratoryType.AccessControl, new List<string>()));
+
+        client.DefaultRequestHeaders.Add(TestMetadataSubjectProvider.HeaderName, MetadataTestData.StudentId.ToString());
+        using var response = await client.GetAsync($"/api/laboratories/{MetadataTestData.LaboratoryId}/metadata");
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
+    }
+
+    [Test]
+    public async Task TeacherOfAnotherCourse_CannotReadLaboratoryMetadata()
+    {
+        using var factory = MetadataTestHost.Create();
+        using var client = factory.CreateClient();
+        var memberships = factory.Services.GetRequiredService<InMemoryMembershipReader>();
+        var resources = factory.Services.GetRequiredService<InMemoryResourceDescriptorResolver>();
+        MetadataTestData.ConfigureAccess(memberships, resources);
+
+        var repository = factory.Services.GetRequiredService<ILaboratoryRepository>();
+        await repository.AddAsync(Laboratory.Rehydrate(
+            MetadataTestData.LaboratoryId, MetadataTestData.CourseId, "Privatni nacrt",
+            LabStatus.Draft, MetadataTestData.TeacherId, DateTimeOffset.UtcNow));
+        await factory.Services.GetRequiredService<ILaboratoryMetadataRepository>().SaveAsync(
+            new LaboratoryMetadata(MetadataTestData.LaboratoryId, "Tajni cilj",
+                LaboratoryDifficulty.Easy, LaboratoryType.AccessControl, new List<string>()));
+
+        client.DefaultRequestHeaders.Add(TestMetadataSubjectProvider.HeaderName, MetadataTestData.OtherTeacherId.ToString());
+        using var response = await client.GetAsync($"/api/laboratories/{MetadataTestData.LaboratoryId}/metadata");
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
+    }
+    [Test]
     public async Task CourseTeacher_CanCreateLaboratoryMetadata()
     {
         using var factory = MetadataTestHost.Create();
