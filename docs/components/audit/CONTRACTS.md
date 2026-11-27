@@ -273,14 +273,12 @@ mistake. A rejected value is never copied into a log, exception message or HTTP 
 
 | Team / module | Events | Current state |
 |-|-|-|
-| Identity, Teams 1 and 2 (IDN-02, IDN-03, IDN-05) | `auth.*`, `account.status.changed` | Has its own `IAuditWriter` in `Platform.Api.Services.Identity`, which writes to `ILogger`. Needs an agreed adapter or a switch to this contract. |
+| Identity, Teams 1 and 2 (IDN-02, IDN-03, IDN-05, IDN-06) | `auth.*`, `account.status.changed`, `account.unlocked` | Uses this contract. `IdentityAuditProducer` maps login, logout and MFA outcomes (`ITrustedAuditWriter`; MFA enabled and MFA verified through `ITransactionalAuditWriter` in the identity transaction). Status change and unlock write through `ITransactionalAuditWriter`. The old `LoggerAuditWriter` is removed. |
 | Access, Team 3 (ACC-05, ACC-08) | `access.denied` | Calls `IAccessAuditWriter`; today `NullAccessAuditWriter`. Connected by the host adapter (S-13). |
 | Memberships and delegation (ACC-03, ACC-07) | `course.*` | Not on `main` yet. |
 | Revision publishing (AUD-02) | not in this version | Can add its event type through a catalog change. |
 | Audit query (AUD-06) | `audit.events.viewed` | Our own story S-14/S-15. |
 
-Two interfaces named `IAuditWriter` exist in different namespaces. In `Program.cs` use an alias,
-as is already done for the two `IAccessDecision` interfaces.
 
 ## Test double
 
@@ -313,7 +311,7 @@ Planned tests in `backend/Platform.Audit.Tests`, each with its negative case:
 
 | # | Question | Owner |
 |-|-|-|
-| 1 | Does Identity switch to this contract or keep its own interface behind an adapter? `ChangeAccountStatus` currently writes a free-text administrator reason into `Detail`, which conflicts with AUD-03; the proposal is a `reasonCode` instead. | Member 9 with Teams 1 and 2 (D1) |
+| 1 | ~~Does Identity switch to this contract or keep its own interface behind an adapter?~~ Settled: Identity uses this contract (login, logout, MFA through `IdentityAuditProducer`; status change and unlock with `reasonCode` through `ITransactionalAuditWriter`), and its own interface is removed (PR #196). | Member 9 with Teams 1 and 2 (D1) |
 | 2 | Shared transaction or transactional outbox for privileged changes. | Members 2, 3 and 9 with producers (D3) |
 | 3 | Is `auth.login` with valid credentials on a blocked account recorded with a `User` actor? (Proposed: yes; the identity is confirmed, the login is refused.) | Members 3, 8 and 9 with Team 1 |
 | 4 | Who sees events without a course (global or administrator view)? Proposed: nobody through the teacher API. | Members 5, 7 and 9 with the assistant (D4) |
