@@ -67,7 +67,7 @@ Završne ciljane provjere, 17.11.2026:
 | Grupa | Prošlo | Palo | Preskočeno |
 | --- | ---: | ---: | ---: |
 | Platform.RateLimiting.Tests | 38 | 0 | 0 |
-| IdentityAuditProducerTests + IdentityAuditPostgresIntegrationTests | 16 | 0 | 0 |
+| IdentityAuditProducerTests + audit integracioni testovi | 16 | 0 | 0 |
 
 Novi scenariji provjeravaju:
 
@@ -102,3 +102,44 @@ dotnet test backend/Platform.RateLimiting.Tests/Platform.RateLimiting.Tests.cspr
 dotnet test backend/Platform.Identity.Tests/Platform.Identity.Tests.csproj --configuration Release --filter "FullyQualifiedName~IdentityAuditProducerTests|FullyQualifiedName~IdentityAuditIntegrationTests"
 ./scripts/audit/test-postgres.ps1
 ```
+
+## Uskladjivanje po Audit reviewu PR-a #263
+
+Zajednicki `CustomWebApplicationFactory` eksplicitno registruje `AuditDbContext`
+nad `TestDatabaseFixture.ConnectionString`, nezavisno od lokalnog `.env` i drugih
+konfiguracionih izvora. Varijanta za HTTP audit i dalje koristi zaseban ograniceni
+runtime nalog u istom kontejneru. Regresiona provjera namjerno podmece drugu Audit
+konekciju i provjerava da oba helpera citaju stvarni zapis iz testne baze.
+
+Audit sema se migrira prije pravljenja Respawn plana, a eksplicitno je izuzeta
+iz resetovanja zbog append-only zastite. Identiteti i sesije se resetuju, dok se
+audit zapisi biraju po jedinstvenom akteru ili korelaciji. Ponovni poziv
+`CreateRestrictedRuntimeAsync` koristi isti testni nalog i lozinku u okviru
+pokretanja, pa vec izdati runtime connection string ostaje vazeci.
+
+Za S-17 matricu iz #221 potrebna su sljedeca preimenovanja (zajednicki novi
+namespace i klasa: `Platform.Identity.Tests.Integration.Audit.IdentityAuditIntegrationTests`):
+
+| Stavka | Stari metod u `Platform.Identity.Tests.Services.IdentityAuditPostgresIntegrationTests` | Novi metod |
+| --- | --- | --- |
+| T02 | LoginAndLogoutHttpFlow_PersistsTrustedAuditEventsAndRevokesSession | LoginAndLogout_ValidAccount_ShouldPersistAuditEventsAndRevokeSession |
+| T06 | Login_WhenAuditWriteFails_PersistsOnlyARevokedSession | Login_WhenAuditWriteFails_PersistsOnlyARevokedSession |
+
+Matrica i njeni filteri jos nisu na ovoj osnovi `main`-a; autor #221 treba da ih
+uskladi prema konacnim nazivima. Istorijski brojevi testova iznad nisu nova kampanja.
+Prije merge-a #263 sacekati #243 i #232, zatim prenijeti novi session-revoked test
+i objediniti oba `AuditTestData` helpera. Ove zavisnosti ostaju otvorene do tog
+uskladjivanja; ova dorada ih ne merge-uje.
+
+Provjera 27.11.2026, osnova `main` 549f5a87 + dorade #263:
+
+- Prije ispravke novi `.env` regresioni test pada na pogresnoj Audit konekciji,
+  prije pristupa drugoj bazi; poslije ispravke prolazi.
+- `dotnet test backend/Platform.Identity.Tests/Platform.Identity.Tests.csproj --configuration Release --filter "FullyQualifiedName~Integration.Audit"`:
+  10 proslo, 0 palo, 0 preskoceno (7 postojecih + 3 regresiona scenarija).
+- Kompletan `Platform.Identity.Tests` u Release: 512 proslo, 0 palo, 0 preskoceno.
+  Audit grupa je ukljucena u taj broj, ne sabira se ponovo.
+- `git diff --check` prolazi, a preimenovanje originalnog audit fajla ostaje vidljivo.
+
+Logovi i TRX: `TestResults/issue-262-audit-review/` (git-ignored).
+GitHub CI i dalje treba potvrditi na novom PR commitu.

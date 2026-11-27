@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
+using Platform.Audit.Composition;
 using Platform.Identity.Persistence;
 using Platform.Identity.Tests.Helpers;
 using Respawn;
@@ -41,6 +42,8 @@ public class TestDatabaseFixture
         _respawner = await Respawner.CreateAsync(_connection, new RespawnerOptions
         {
             DbAdapter = DbAdapter.Postgres,
+            // Audit is append-only: Respawn's DELETE must never touch its history or migration tables.
+            SchemasToExclude = ["audit"],
             TablesToIgnore = [new Table("__EFMigrationsHistory") ]
         });
     }
@@ -68,7 +71,9 @@ public class TestDatabaseFixture
         var db = scope.ServiceProvider.GetRequiredService<PlatformIdentityDbContext>();
         
         // Primenjivanje migracije na testnu bazu
-        await db.Database.MigrateAsync(); 
+        await db.Database.MigrateAsync();
+        // Build the reset plan with Audit already present, rather than depending on fixture execution order.
+        await AuditPersistenceExtensions.MigrateAuditDatabaseAsync(ConnectionString);
     }
     #endregion
 }

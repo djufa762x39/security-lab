@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -15,14 +16,22 @@ namespace Platform.Identity.Tests.Helpers;
 internal static class AuditTestData
 {
     private const string RuntimeRole = "identity_audit_test_runtime";
+    // Stable for this test process: repeated setup must not invalidate an earlier host's connection string.
+    private static readonly string RuntimePassword = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
 
     public static async Task<string> CreateRestrictedRuntimeAsync()
     {
         await AuditPersistenceExtensions.MigrateAuditDatabaseAsync(TestDatabaseFixture.ConnectionString);
-        var password = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
         // The password is generated hexadecimal text and the role name is a fixed test-only identifier.
         await ExecuteAsync($"""
-            CREATE ROLE {RuntimeRole} LOGIN PASSWORD '{password}'
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{RuntimeRole}') THEN
+                    CREATE ROLE {RuntimeRole};
+                END IF;
+            END;
+            $$;
+            ALTER ROLE {RuntimeRole} WITH LOGIN PASSWORD '{RuntimePassword}'
                 NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
             GRANT USAGE ON SCHEMA audit TO {RuntimeRole};
             GRANT SELECT, INSERT ON audit.audit_events TO {RuntimeRole};
@@ -30,7 +39,7 @@ internal static class AuditTestData
         return new NpgsqlConnectionStringBuilder(TestDatabaseFixture.ConnectionString)
         {
             Username = RuntimeRole,
-            Password = password,
+            Password = RuntimePassword,
             Pooling = false
         }.ConnectionString;
     }
@@ -40,7 +49,7 @@ internal static class AuditTestData
         : $"REVOKE INSERT ON audit.audit_events FROM {RuntimeRole}");
 
     public static async Task<List<AuditEventRow>> GetByCorrelationAsync(
-        CustomWebApplicationFactory<Program> factory, string correlation)
+        WebApplicationFactory<Program> factory, string correlation)
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AuditDbContext>();
@@ -48,7 +57,7 @@ internal static class AuditTestData
     }
 
     public static async Task<List<AuditEventRow>> GetByActorAsync(
-        CustomWebApplicationFactory<Program> factory, Guid actorId)
+        WebApplicationFactory<Program> factory, Guid actorId)
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AuditDbContext>();
