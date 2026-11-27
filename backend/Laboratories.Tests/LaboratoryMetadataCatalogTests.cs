@@ -183,7 +183,7 @@ public sealed class LaboratoryMetadataCatalogTests
         var routes = factory.Services.GetServices<EndpointDataSource>()
             .SelectMany(source => source.Endpoints).OfType<RouteEndpoint>()
             .Where(route => route.RoutePattern.RawText?.EndsWith("/metadata") == true).ToList();
-        Assert.That(routes, Has.Count.EqualTo(2));
+        Assert.That(routes, Has.Count.EqualTo(3));
     }
 
     private sealed class TeacherAccount : IAccountStatusReader
