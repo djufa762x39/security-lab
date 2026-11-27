@@ -106,7 +106,7 @@ public class CsrfProtectionIntegrationTests : IntegrationTestBase
 
         // Assert
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
-        Assert.That(SetCookieValue(response, CsrfToken.CookieName), Is.Null,
+        Assert.That(SetsCookie(response, CsrfToken.CookieName), Is.False,
             "the HttpOnly cookie token is kept, so tokens already held by other tabs stay valid");
     }
 

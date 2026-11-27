@@ -121,7 +121,10 @@ public sealed class DevelopmentDatabaseTests
                 new Dictionary<string, string?> { [$"ConnectionStrings:{IdentityModule.ConnectionStringName}"] = connectionString }))
             .ConfigureLogging(logging => logging.AddProvider(logs.Object))
             // The shared factory points the identity context at the Testcontainers database. These cases need the
-            // server the setting names, so the context is configured once more, last, with that connection string.
+            // server the setting names, so the context is configured once more with that connection string.
+            // EF Core applies every AddDbContext configuration of a context in order, so this last one wins. Do not
+            // turn this into a replace-only pattern without checking it: the test could then quietly connect to the
+            // Testcontainers database and stop checking an unreachable server.
             .ConfigureTestServices(services =>
                 services.AddDbContext<PlatformIdentityDbContext>(options => options.UseNpgsql(connectionString))));
     }
