@@ -111,6 +111,14 @@ and do not add new ones. When you touch one of those files, replace the fake in 
 
 Integration tests run the real API host against real PostgreSQL and go through HTTP.
 
+**Every test that needs the database lives under `Integration/`**, including tests of an EF store that call the
+store directly instead of going through HTTP. Those go to `Integration/Persistence/<Feature>/`, inherit
+`IntegrationTestBase` and get the store with `GetService<TStore>()`.
+
+The reason is `TestDatabaseFixture`. It is a `[SetUpFixture]` in the `Platform.Identity.Tests.Integration`
+namespace, so NUnit starts the PostgreSQL container and runs Respawn only for classes in that namespace or below
+it. A database test in `Persistence/` would get an empty `TestDatabaseFixture.ConnectionString`.
+
 ### 5.1 One host, one database, one base class
 
 - Every integration test class inherits `Integration/IntegrationTestBase`, or a feature base that inherits it,
@@ -214,7 +222,8 @@ placeholder files.
 | Test | Folder |
 |---|---|
 | unit test of a service | `Services/<Feature>/<Service>Tests.cs` |
-| test of an EF store against PostgreSQL | `Persistence/<Feature>/<Store>Tests.cs` |
+| test of an EF store against PostgreSQL | `Integration/Persistence/<Feature>/<Store>Tests.cs` (needs `TestDatabaseFixture`, section 5) |
+| unit test of a persistence helper without a database | `Persistence/<Helper>Tests.cs` |
 | HTTP integration test | `Integration/<Feature>/<Feature>IntegrationTests.cs` |
 | controller unit test | `Controllers/<Controller>Tests.cs` |
 | middleware unit test | `Middleware/<Middleware>Tests.cs` |
