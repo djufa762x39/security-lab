@@ -10,6 +10,7 @@ using Platform.Api.Models.Identity;
 using Platform.Api.Services.Identity;
 using Platform.Audit.Composition;
 using Platform.Identity.Tests.Helpers;
+using Platform.Identity.Testing;
 
 namespace Platform.Identity.Tests.Integration;
 
@@ -70,7 +71,8 @@ public class SessionReviewRevokeIntegrationTests : IntegrationTestBase
             new { status = "BLOCKED" });
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
-        Assert.That(await CodeAsync(response), Is.EqualTo("forbidden"));
+        // ACC-05: the 403 is written by the central Access middleware (ProblemDetails), not by an Identity handler.
+        Assert.That(await ProblemTitleAsync(response), Is.EqualTo("Forbidden"));
         Assert.That((await UserTestData.GetAsync(Factory, other.Id))!.Status,
             Is.EqualTo(Platform.Identity.Enums.AccountStatus.Active));
         Assert.That((await SendAsync(_http, HttpMethod.Get, MeUrl, session.RawToken)).StatusCode,
@@ -216,7 +218,7 @@ public class SessionReviewRevokeIntegrationTests : IntegrationTestBase
     // Helpers
 
     private static HttpClient NewClient(WebApplicationFactory<Program> factory) =>
-        factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
+        factory.CreateCsrfClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
 
     private static string StatusUrl(Guid accountId) => $"/api/admin/accounts/{accountId}/status";
 
@@ -233,6 +235,12 @@ public class SessionReviewRevokeIntegrationTests : IntegrationTestBase
     {
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         return document.RootElement.GetProperty("code").GetString();
+    }
+
+    private static async Task<string?> ProblemTitleAsync(HttpResponseMessage response)
+    {
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return document.RootElement.GetProperty("title").GetString();
     }
 
     private static async Task AssertSessionInvalidAsync(HttpResponseMessage response, bool cookieCleared)
