@@ -1,4 +1,5 @@
-﻿import { LABS_BASE_PATH, TEST_USER_HEADER, type TestUser } from './labs'
+import { csrfFetch } from '../auth/csrf'
+import { LABS_BASE_PATH, TEST_USER_HEADER, type TestUser } from './labs'
 
 export interface LabMetadataInput {
     objective: string
@@ -55,7 +56,7 @@ export async function saveLabMetadata(
     mode: 'create' | 'edit',
 ): Promise<SaveMetadataOutcome> {
     try {
-        const response = await fetch(
+        const response = await csrfFetch(
             `${LABS_BASE_PATH}/${encodeURIComponent(labId)}/metadata`,
             {
                 method: mode === 'create' ? 'POST' : 'PATCH',
@@ -114,7 +115,7 @@ export async function renameLabTitle(
     user: TestUser,
 ): Promise<RenameLabTitleOutcome> {
     try {
-        const response = await fetch(
+        const response = await csrfFetch(
             `${LABS_BASE_PATH}/${encodeURIComponent(labId)}/title`,
             {
                 method: 'PATCH',
