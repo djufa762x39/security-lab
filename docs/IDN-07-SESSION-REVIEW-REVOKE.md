@@ -18,6 +18,8 @@
   - Missing, invalid, or unauthenticated sessions are rejected with `401 Unauthorized`.
   - An authenticated user revokes one of their own sessions with `DELETE /api/auth/sessions/{handle}`, using a handle from the list response. The caller is always taken from the validated session, never from client input.
   - A handle that belongs to another user and a handle that does not exist both return `404 session_not_found` with the same body, so the response does not reveal that another user's session exists.
+  - A revoke writes `auth.session.revoked`: `Success` with `revocationCause=user_request` and `revokedHandle`, or `Failure` with `reasonCode=not_found`; the actor is the caller from the validated session, the resource is the caller's account, and the correlation ID comes from `ICorrelationContext` (or a generated ID if its value is invalid), not a caller-controlled header. The event never contains a session cookie, token, password, or other secret. If an audit write fails, `IdentityAuditProducer` logs it and returns `Unavailable`; `SessionController` ignores that result, so the response remains `204` for a successful revoke or `404 session_not_found` for an unknown or foreign handle. See [the Audit contract](components/audit/CONTRACTS.md).
+  - Revocation on account block or deactivation (IDN-03) is audited through `account.status.changed`.
   - The next request that carries a revoked or expired session is rejected by `SessionCheckMiddleware` with `401` and the stable code `session_invalid`. The rejected cookie is cleared and the response is `no-store`. This holds for the revoked session itself too, so revoking the current session ends it immediately.
   - Revoking one session leaves the user's other sessions valid.
   - 401 and 403 stay separate: no valid session is `401`, a valid session without permission is `403`. A session that was revoked gets `401` on the next request, not `403`, even on a permission-checked route.
@@ -166,6 +168,9 @@ Data-isolation rule: `SessionManager.ListForUser` applies `session.UserId == use
   | User revokes another of their sessions | `204`; the revoked one is refused at once, the caller's session stays valid | `RevokeOtherSession_RejectsItImmediately_AndKeepsTheCallersSessionValid` |
   | User revokes the session they are using | `204`; the same cookie is refused on the next request | `RevokeCurrentSession_RejectsTheSameCookieOnTheNextRequest` |
   | Revoke with another user's handle (IDOR, SEC-01) | `404 session_not_found`, same body as an unknown handle, nothing revoked | `RevokeSessionOfAnotherUser_Returns404_IndistinguishableFromUnknown_AndRevokesNothing` |
+  | Successful revoke | `auth.session.revoked` is `Success` with `revocationCause=user_request` and the revoked handle | `RevokeSession_OwnedSession_Returns204AndUsesCallerId` (`SessionControllerTests`), `SessionRevoked_UsesSuccessCauseHandleAccountResourceAndUserActor` (`IdentityAuditProducerTests`), `LoginAndRevokeHttpFlow_PersistsSessionRevokedWithRequestCorrelation` (`IdentityAuditPostgresIntegrationTests`) |
+  | Unknown or foreign handle | Audited as `Failure` with `reasonCode=not_found`; still returns `404 session_not_found` | `RevokeSession_UnknownOrForeignHandle_ReturnsSame404` (`SessionControllerTests`), `SessionRevokeFailed_UsesFailureReasonAndAccountResource` (`IdentityAuditProducerTests`) |
+  | Audit event contains credentials or secrets | No session cookie, token, password, or other credential material is accepted or written | `ProducerMethods_DoNotAcceptOrWriteCredentialMaterial` (`IdentityAuditProducerTests`) |
 
 ## Evidence of work
 
@@ -177,6 +182,9 @@ Data-isolation rule: `SessionManager.ListForUser` applies `session.UserId == use
   - `backend/Platform.Identity/Entities/Session.cs`
   - `backend/Platform.Api/Security/IdentityAccess/` (`IdentityAccessActions.cs`, `IdentitySessionAccessRegistration.cs`, `IdentitySessionSubjectProvider.cs`, `SessionSelfServicePolicy.cs`) and `backend/Platform.Api/Program.cs` (ACC-05 alignment, #185 and #200)
   - `backend/Platform.Identity.Tests/Controllers/SessionControllerTests.cs`
+  - `backend/Platform.Identity.Tests/Services/IdentityAuditProducerTests.cs`
+  - `backend/Platform.Identity.Tests/Services/IdentityAuditPostgresIntegrationTests.cs`
+  - `docs/components/audit/CONTRACTS.md`
   - `backend/Platform.Identity.Tests/Middleware/SessionCheckMiddlewareTests.cs`
   - `backend/Platform.Identity.Tests/Services/SessionManagerTests.cs`
   - `backend/Platform.Identity.Tests/Services/SessionManagerValidationTests.cs`
@@ -189,12 +197,14 @@ Data-isolation rule: `SessionManager.ListForUser` applies `session.UserId == use
 
   ```bash
   dotnet test backend/Platform.Identity.Tests/Platform.Identity.Tests.csproj \
-    --filter "FullyQualifiedName~SessionControllerTests|FullyQualifiedName~SessionCheckMiddlewareTests|FullyQualifiedName~SessionManagerTests|FullyQualifiedName~SessionManagerValidationTests|FullyQualifiedName~SessionReviewRevokeIntegrationTests"
+    --filter "FullyQualifiedName~SessionControllerTests|FullyQualifiedName~SessionCheckMiddlewareTests|FullyQualifiedName~SessionManagerTests|FullyQualifiedName~SessionManagerValidationTests|FullyQualifiedName~SessionReviewRevokeIntegrationTests|FullyQualifiedName~IdentityAuditProducerTests|FullyQualifiedName~IdentityAuditPostgresIntegrationTests"
   ```
 
 - Tests and results:
 
   - `SessionControllerTests` use a mocked `ISessionManager` to test controller behavior and authorization branches.
+  - `IdentityAuditProducerTests` verify session-revoke audit event shape and that producer methods do not accept or write credential material.
+  - `IdentityAuditPostgresIntegrationTests` cover the real login-and-revoke HTTP flow and persistence of `auth.session.revoked` with the request correlation ID, using PostgreSQL in Testcontainers.
   - `SessionManagerTests` and `SessionManagerValidationTests` use the real `SessionManager` with an isolated EF Core InMemory context to test ownership, revocation, expiration, account status, and projection behavior.
   - `SessionCheckMiddlewareTests` test the middleware branches with a mocked `ISessionManager`.
   - `SessionReviewRevokeIntegrationTests` send real HTTP requests through the whole pipeline to the real `SessionManager` and PostgreSQL. They confirm that no session is `401 session_invalid`, a valid session without permission is `403`, a revoked session is `401` on its next request (also in the `Production` environment) while the caller's other sessions stay valid, and another user's handle is `404`. The `403` route is the IDN-03 admin endpoint `PUT /api/admin/accounts/{id}/status`.
