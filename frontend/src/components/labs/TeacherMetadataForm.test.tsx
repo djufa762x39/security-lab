@@ -2,6 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import TeacherMetadataForm from './TeacherMetadataForm'
 
+vi.mock('../../services/courseService', () => ({
+    courseService: { listCourses: vi.fn().mockResolvedValue([{ id: 'course-456', code: 'SEC101', name: 'Bezbednost', status: 'Active' }]) },
+}))
+
 const teacher = { id: 'teacher-1', role: 'Teacher' } as const
 
 afterEach(() => {
@@ -21,6 +25,7 @@ describe('TeacherMetadataForm', () => {
         vi.stubGlobal('fetch', fetchMock)
         render(<TeacherMetadataForm user={teacher} />)
 
+        await screen.findByRole('option', { name: 'SEC101 — Bezbednost' })
         fireEvent.change(screen.getByLabelText('Naziv laboratorije'), {
             target: { value: 'Moja laboratorija' },
         })
@@ -48,7 +53,7 @@ describe('TeacherMetadataForm', () => {
             '/api/laboratories/',
             expect.objectContaining({
                 method: 'POST',
-                body: JSON.stringify({ title: 'Moja laboratorija' }),
+                body: JSON.stringify({ title: 'Moja laboratorija', courseId: 'course-456' }),
             }),
         )
 
@@ -87,6 +92,7 @@ describe('TeacherMetadataForm', () => {
         vi.stubGlobal('fetch', fetchMock)
         render(<TeacherMetadataForm user={teacher} />)
 
+        await screen.findByRole('option', { name: 'SEC101 — Bezbednost' })
         fireEvent.change(screen.getByLabelText('Naziv laboratorije'), {
             target: { value: 'Moja laboratorija' },
         })
@@ -116,8 +122,8 @@ describe('TeacherMetadataForm', () => {
                     title: 'Stara laboratorija',
                     status: 'Draft',
                     objective: 'Postojeći cilj',
-                    difficulty: 'Hard',
-                    type: 'MfaAndSessions',
+                    difficulty: 2,
+                    type: 4,
                     tags: ['web', 'auth'],
                 }),
                 { status: 200 },
@@ -142,7 +148,7 @@ describe('TeacherMetadataForm', () => {
         ).toBe('web, auth')
 
         expect(fetchMock).toHaveBeenCalledWith(
-            '/api/catalog/lab-123',
+            '/api/laboratories/lab-123/metadata',
             expect.objectContaining({ cache: 'no-store' }),
         )
     })

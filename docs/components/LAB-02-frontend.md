@@ -17,9 +17,9 @@ Ovaj opis daje doprinos Osobe 6 zajedničkim dijagramima tima.
 ### Deo za dijagram arhitekture
 
 - **React aplikacija:** `TeacherMetadataPage` otvara `TeacherMetadataForm`.
-- **Forma:** prikuplja naziv, cilj, težinu, tip i oznake; za izmenu prikazuje postojeće vrednosti kada ih API dostavi.
-- **API klijent:** `api/labMetadata.ts` šalje zahteve za metapodatke, učitavanje forme i izmenu naziva, a odgovore o greškama priprema za prikaz u formi.
-- **Zavisnosti:** API za laboratorije i metapodatke, format grešaka iz serverskog dela i API detalja laboratorije za učitavanje vrednosti pri izmeni.
+- **Forma:** pri kreiranju učitava aktivne kurseve i prikuplja kurs, naziv, cilj, težinu, tip i oznake; pri izmeni učitava sačuvane vrednosti nacrta.
+- **API klijenti:** `api/labs.ts` kreira laboratoriju uz obavezne `title` i `courseId`; `api/labMetadata.ts` čuva, učitava i menja metapodatke i naziv.
+- **Zavisnosti:** `/api/courses`, `/api/laboratories` i zaštićeni API metapodataka. Server proverava članstvo nastavnika na izabranom kursu, prava pristupa i validnost metapodataka.
 - **Granica odgovornosti:** frontend ne čuva podatke i ne odlučuje o pravima pristupa; autorizaciju i konačnu validaciju sprovodi server.
 
 ### Deo za DFD
@@ -44,18 +44,19 @@ Frontend trenutno koristi sledeće pozive:
 
 | Radnja | Trenutni poziv |
 | --- | --- |
-| Kreiranje laboratorije | `POST /api/laboratories/` sa `{ title }` |
+| Učitavanje kurseva | `GET /api/courses`; forma prikazuje aktivne kurseve |
+| Kreiranje laboratorije | `POST /api/laboratories/` sa `{ title, courseId }` |
 | Kreiranje metapodataka | `POST /api/laboratories/{id}/metadata` sa ciljem, težinom, tipom i oznakama |
 | Izmena naziva | `PATCH /api/laboratories/{id}/title` sa `{ title }` |
-| Učitavanje podataka za izmenu | `GET /api/catalog/{id}` — trenutni poziv forme; ugovor za ovu putanju i odgovor sa svim metapoljima nije potvrđen |
+| Učitavanje podataka za izmenu | Zaštićeni `GET /api/laboratories/{id}/metadata`; vraća naziv i metapodatke nacrta bez zahteva za javni sadržaj |
 | Izmena metapodataka | `PATCH /api/laboratories/{id}/metadata` sa ciljem, težinom, tipom i oznakama |
 
 ### Status integracije
 
-- Testovi forme proveravaju slanje podataka, prikaz serverske greške uz polje, učitavanje pri izmeni i izmenu naziva. Odgovori API-ja u ovim testovima su simulirani, pa oni ne potvrđuju rad sa stvarnim serverom.
-- Build frontenda je uspeo, a na poslednjoj proveri prošlo je 65 testova u 9 test fajlova.
-- U lokalno pregledanoj grani Osobe 5 postoji `GET /api/laboratories/{id}`, ali njegov odgovor sadrži samo osnovne podatke o laboratoriji. To nije dovoljno za popunjavanje cilja, težine, tipa i oznaka. Potrebno je dogovoriti i potvrditi API ugovor koji vraća sva polja forme pre nego što se izmena laboratorije može potvrditi end-to-end.
-- Čuvanje i validacija na stvarnom serveru zavise od dostupnosti i spajanja odgovarajućih serverskih API-ja. Frontend ne prikazuje neuspešan zahtev kao uspešno čuvanje.
+- Frontend testovi pokrivaju izbor kursa, slanje `courseId`, serverske greške, učitavanje nacrta i izmenu naziva i metapodataka.
+- Integracioni test laboratorijskog API-ja koristi stvarnu registraciju ruta i prolazi tok create → save → load → edit → reload. Ne ubacuje javni sadržaj; testni adapter izoluje proveru pristupa, dok laboratorije i metapodaci prolaze kroz stvarne HTTP rute i repozitorijume.
+- Pri izmeni, forma koristi zaštićeni metadata endpoint, zato nacrt može da se učita i kada u katalogu nema javnog sadržaja. Enum vrednosti prihvataju numerički oblik koji vraća backend.
+- Lokalna provera: 27 frontend test fajlova, 253 testa i produkcioni build su prošli. Backend tok integracije je prošao ciljano.
 
 ## Scenario i redosled demonstracije
 
@@ -63,11 +64,11 @@ Frontend trenutno koristi sledeće pozive:
 
 1. Pokrenuti API i frontend prema README-u.
 2. Otvoriti `/teacher/labs/new`; u razvojnom režimu ekran koristi test-identitet nastavnika `marko`.
-3. Uneti naziv, cilj, težinu, tip i oznake.
-4. Izabrati **Sačuvaj laboratoriju** i proveriti stvarni odgovor servera.
-5. Poslati neispravnu vrednost i pokazati da se serverska greška prikazuje uz odgovarajuće polje.
-6. Kada se potvrdi API za učitavanje svih metapodataka, otvoriti `/teacher/labs/{labId}/edit`, proveriti učitane vrednosti, promeniti podatke i sačuvati ih.
+3. Izabrati aktivni kurs, pa uneti naziv, cilj, težinu, tip i oznake.
+4. Izabrati **Sačuvaj laboratoriju** i proveriti da zahtev za kreiranje uključuje `courseId`, a zatim da se čuvaju metapodaci.
+5. Otvoriti `/teacher/labs/{labId}/edit`, proveriti učitane vrednosti, promeniti naziv ili metapodatke i sačuvati ih.
+6. Proveriti da nacrt može da se učita i bez zapisa javnog sadržaja u katalogu.
 
-### Ako serverski API-ji još nisu dostupni
+### Ograničenje lokalnog pokretanja
 
-Prikazati ekran i objasniti koja polja se šalju, kako forma prikazuje greške i gde je granica poverenja. Navesti da testovi koriste simulirane odgovore i ne predstavljati serversko čuvanje ili učitavanje pri izmeni kao provereno.
+Kada razvojni backend nema povezano skladište kurseva, lista kurseva može biti prazna i forma neće dozvoliti kreiranje. U tom slučaju treba pokrenuti backend sa dostupnim kursom i nastavničkim članstvom; klijentski testovi koriste kurs samo kao testni podatak.

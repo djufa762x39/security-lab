@@ -1,5 +1,7 @@
 ﻿import { useEffect, useState, type FormEvent } from 'react'
 import { createLab, type TestUser } from '../../api/labs'
+import { courseService } from '../../services/courseService'
+import type { Course } from '../../types/course'
 import {
     loadLabMetadata,
     renameLabTitle,
@@ -20,6 +22,10 @@ export default function TeacherMetadataForm({
     labId,
 }: TeacherMetadataFormProps) {
     const [title, setTitle] = useState('')
+    const [courses, setCourses] = useState<Course[]>([])
+    const [courseId, setCourseId] = useState('')
+    const [coursesLoading, setCoursesLoading] = useState(!labId)
+    const [coursesError, setCoursesError] = useState('')
     const [loadedTitle, setLoadedTitle] = useState('')
     const [objective, setObjective] = useState('')
     const [difficulty, setDifficulty] = useState('')
@@ -37,6 +43,26 @@ export default function TeacherMetadataForm({
         .split(',')
         .map((tag) => tag.trim())
         .filter((tag) => tag.length > 0)
+
+    useEffect(() => {
+        if (labId) return
+        let cancelled = false
+        courseService.listCourses()
+            .then((availableCourses) => {
+                if (cancelled) return
+                const activeCourses = availableCourses.filter((course) => course.status === 'Active')
+                setCourses(activeCourses)
+                if (activeCourses.length === 1) setCourseId(activeCourses[0].id)
+                if (activeCourses.length === 0) setCoursesError('Nema aktivnih kurseva na kojima možete napraviti laboratoriju.')
+            })
+            .catch(() => {
+                if (!cancelled) setCoursesError('Nije moguće učitati kurseve. Osvežite stranicu i pokušajte ponovo.')
+            })
+            .finally(() => {
+                if (!cancelled) setCoursesLoading(false)
+            })
+        return () => { cancelled = true }
+    }, [labId])
 
     useEffect(() => {
         if (!labId) return
@@ -83,7 +109,11 @@ export default function TeacherMetadataForm({
             let targetLabId = labId ?? createdLabId
 
             if (!targetLabId) {
-                const created = await createLab(title, user)
+                if (!courseId) {
+                    setFormMessage('Izaberite kurs za laboratoriju.')
+                    return
+                }
+                const created = await createLab(title, courseId, user)
 
                 if (created.kind !== 'created') {
                     if (created.kind === 'invalid') {
@@ -174,6 +204,16 @@ export default function TeacherMetadataForm({
                     <small key={index} role="alert">{message}</small>
                 ))}
             </div>
+            {!labId && <div>
+                <label htmlFor="lab-course">Kurs</label>
+                <select id="lab-course" value={courseId} required
+                    disabled={coursesLoading || courses.length === 0 || Boolean(createdLabId)}
+                    onChange={(event) => setCourseId(event.target.value)}>
+                    <option value="">{coursesLoading ? 'Učitavanje kurseva...' : 'Izaberite kurs'}</option>
+                    {courses.map((course) => <option key={course.id} value={course.id}>{course.code} — {course.name}</option>)}
+                </select>
+                {coursesError && <small role="alert">{coursesError}</small>}
+            </div>}
             <div>
                 <label htmlFor="lab-objective">Cilj laboratorije</label>
                 <textarea
@@ -242,7 +282,7 @@ export default function TeacherMetadataForm({
             </div>
             <button
                 type="submit"
-                disabled={isSubmitting || isLoadingExisting || loadFailed}
+                disabled={isSubmitting || isLoadingExisting || loadFailed || coursesLoading || (!labId && (!courseId || Boolean(coursesError)))}
             >
                 {isSubmitting ? 'Čuvanje...' : 'Sačuvaj laboratoriju'}
             </button>

@@ -1,10 +1,14 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
+using Platform.Access.Domain.Models;
+using Platform.Access.Infrastructure.Membership;
+using Platform.Access.Infrastructure.Resources;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Platform.Api.Modules.Laboratories.Api;
@@ -130,6 +134,88 @@ public sealed class LaboratoriesHttpTests
         });
     }
 
+    [Test]
+    public async Task CreateSaveLoadAndEditDraftMetadata_UsesRealLaboratoryRoutesWithoutPublicContent()
+    {
+        using var factory = MetadataTestHost.Create(services =>
+        {
+            services.RemoveAll<Platform.Access.Contracts.IAccessDecision>();
+            services.AddSingleton<Platform.Access.Contracts.IAccessDecision, AllowSubjectAccessDecision>();
+        });
+        using var client = factory.CreateClient();
+        var accessMemberships = factory.Services.GetRequiredService<InMemoryMembershipReader>();
+        var resources = factory.Services.GetRequiredService<InMemoryResourceDescriptorResolver>();
+        MetadataTestData.ConfigureAccess(accessMemberships, resources);
+        factory.Services.GetRequiredService<InMemoryCourseMembership>()
+            .Set(CourseId, UserGuid("marko"), CourseRole.Teacher);
+
+        HttpRequestMessage CreateMetadataRequest(string method, string path, object? body = null)
+        {
+            var request = body is null
+                ? CreateRequest(method, path, Teacher)
+                : CreateJsonRequest(method, path, Teacher, body);
+            request.Headers.Add(TestMetadataSubjectProvider.HeaderName, MetadataTestData.TeacherId.ToString());
+            return request;
+        }
+
+        using var createRequest = CreateMetadataRequest(
+            "POST", Route, new { title = "LAB-02 draft", courseId = CourseId });
+        using var createResponse = await client.SendAsync(createRequest);
+        Assert.That(createResponse.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+        var created = await createResponse.Content.ReadFromJsonAsync<LaboratoryResponse>();
+        Assert.That(created, Is.Not.Null);
+
+        var metadataPath = $"{Route}{created!.Id}/metadata";
+        resources.SetCourse(new ResourceRef("laboratory", created.Id.ToString()), CourseId);
+        using var saveRequest = CreateMetadataRequest("POST", metadataPath, new
+        {
+            objective = "Početni cilj laboratorije",
+            difficulty = 0,
+            type = 0,
+            tags = new[] { "osnove" }
+        });
+        using var saveResponse = await client.SendAsync(saveRequest);
+        Assert.That(saveResponse.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+
+        using var loadRequest = CreateMetadataRequest("GET", metadataPath);
+        using var loadResponse = await client.SendAsync(loadRequest);
+        Assert.That(loadResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        var loaded = await loadResponse.Content.ReadFromJsonAsync<LaboratoryMetadataDetailResponse>();
+        Assert.That(loaded, Is.Not.Null);
+        Assert.Multiple(() =>
+        {
+            Assert.That(loaded!.Title, Is.EqualTo("LAB-02 draft"));
+            Assert.That(loaded.Objective, Is.EqualTo("Početni cilj laboratorije"));
+            Assert.That(loaded.Tags, Is.EqualTo(new[] { "osnove" }));
+        });
+
+        using var renameRequest = CreateMetadataRequest(
+            "PATCH", $"{Route}{created.Id}/title", new { title = "Izmenjen LAB-02 draft" });
+        using var renameResponse = await client.SendAsync(renameRequest);
+        Assert.That(renameResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+
+        using var editRequest = CreateMetadataRequest("PATCH", metadataPath, new
+        {
+            objective = "Izmenjeni cilj laboratorije",
+            difficulty = 1,
+            type = 3,
+            tags = new[] { "izmena", "bezbednost" }
+        });
+        using var editResponse = await client.SendAsync(editRequest);
+        Assert.That(editResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+
+        using var reloadRequest = CreateMetadataRequest("GET", metadataPath);
+        using var reloadResponse = await client.SendAsync(reloadRequest);
+        Assert.That(reloadResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        var reloaded = await reloadResponse.Content.ReadFromJsonAsync<LaboratoryMetadataDetailResponse>();
+        Assert.That(reloaded, Is.Not.Null);
+        Assert.Multiple(() =>
+        {
+            Assert.That(reloaded!.Title, Is.EqualTo("Izmenjen LAB-02 draft"));
+            Assert.That(reloaded.Objective, Is.EqualTo("Izmenjeni cilj laboratorije"));
+            Assert.That(reloaded.Tags, Is.EqualTo(new[] { "izmena", "bezbednost" }));
+        });
+    }
     [Test]
     public async Task PostLabs_WhenStudentCreates_Returns403AndStoresNothing()
     {
@@ -644,6 +730,20 @@ public sealed class LaboratoriesHttpTests
         return request;
     }
 
+    private sealed class AllowSubjectAccessDecision : Platform.Access.Contracts.IAccessDecision
+    {
+        public ValueTask<Platform.Access.Domain.Models.AccessDecision> DecideAsync(
+            Platform.Access.Domain.Models.AccessRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(request.Subject is null
+                ? Platform.Access.Domain.Models.AccessDecision.Deny(
+                    Platform.Access.Domain.Enums.AccessDenialReason.Unauthenticated,
+                    request.CorrelationId)
+                : Platform.Access.Domain.Models.AccessDecision.Allow("laboratory-http-test", request.CorrelationId));
+        }
+    }
     private sealed class LaboratoriesHostFactory(
         string environment, Action<IServiceCollection>? testServices = null) : WebApplicationFactory<Program>
     {

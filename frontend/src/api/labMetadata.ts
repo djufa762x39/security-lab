@@ -162,6 +162,10 @@ function enumNumber(
     value: unknown,
     values: Record<string, number>,
 ): number | null {
+    if (typeof value === 'number' && Number.isInteger(value)) {
+        return Object.values(values).includes(value) ? value : null
+    }
+
     if (
         typeof value !== 'string' ||
         !Object.prototype.hasOwnProperty.call(values, value)
@@ -178,7 +182,7 @@ export async function loadLabMetadata(
 ): Promise<LoadMetadataOutcome> {
     try {
         const response = await fetch(
-            `/api/catalog/${encodeURIComponent(labId)}`,
+            `${LABS_BASE_PATH}/${encodeURIComponent(labId)}/metadata`,
             {
                 headers: requestHeaders(user, false),
                 credentials: 'same-origin',
