@@ -131,6 +131,25 @@ Integration tests run the real API host against real PostgreSQL and go through H
 When `Program.cs` gains a required setting, only `CustomWebApplicationFactory` changes. That is the reason for
 this rule.
 
+**Exception: host tests that never reach the database.** Some tests only check how the host starts. They switch
+the environment, a setting or logging, and never open a database connection: for example, migrations refuse to run
+outside Development, or a missing connection string is skipped. Such a class may stay outside `Integration/`
+(`Development/DevelopmentDatabaseTests.cs` is the example). It does not inherit `IntegrationTestBase`, but it may
+create its own `new CustomWebApplicationFactory<Program>()` in `[OneTimeSetUp]` and dispose it in
+`[OneTimeTearDown]`.
+
+- Variants of that host still go through `WithWebHostBuilder`.
+- Everything in the **Never** list above still applies.
+- If the class needs the database after all, it belongs under `Integration/` and inherits the base.
+
+Why the exception exists:
+
+- `TestDatabaseFixture` is a `[SetUpFixture]` in the `Platform.Identity.Tests.Integration` namespace, so it only
+  starts the container for classes in that namespace.
+- Outside it, `TestDatabaseFixture.ConnectionString` is empty, and the base `[SetUp]` would call Respawn on a
+  database that does not exist.
+- Moving the fixture to the root namespace would make every unit test need Docker.
+
 ### 5.2 Use the base class helpers
 
 | Need | Helper |
@@ -240,6 +259,8 @@ VS Code and Visual Studio do not run `git mv` when you move a file in their expl
   - use `Factory` / `Client` / `GetService` / `<Entity>TestData`;
   - no `new WebApplicationFactory`, no own container;
   - host variants go through `Factory.WithWebHostBuilder`.
+- [ ] Host test without a database outside `Integration/`: its own `new CustomWebApplicationFactory<Program>()`,
+      variants through `WithWebHostBuilder`, and no database access (section 5.1 exception).
 - [ ] Missing test data helper → added to `Helpers/`, not inlined.
 - [ ] New file is in `<Layer>/<Feature>/` and its namespace matches. Moved files were moved with `git mv` in a
       separate commit.
