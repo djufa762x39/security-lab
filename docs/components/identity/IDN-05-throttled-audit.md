@@ -127,9 +127,12 @@ namespace i klasa: `Platform.Identity.Tests.Integration.Audit.IdentityAuditInteg
 
 Matrica i njeni filteri jos nisu na ovoj osnovi `main`-a; autor #221 treba da ih
 uskladi prema konacnim nazivima. Istorijski brojevi testova iznad nisu nova kampanja.
-Prije merge-a #263 sacekati #243 i #232, zatim prenijeti novi session-revoked test
-i objediniti oba `AuditTestData` helpera. Ove zavisnosti ostaju otvorene do tog
-uskladjivanja; ova dorada ih ne merge-uje.
+Prije merge-a #263 sacekati #243 i #232, zatim prenijeti novi session-revoked test.
+`AuditTestData` koji je u medjuvremenu stigao na `main` za CSRF provjere objedinjen
+je sa ovim helperom u jednu `public static class`: sacuvani su `Row` i `RowsAsync`,
+kao i ograniceni runtime nalog i citanja po akteru/korelaciji. Pri uskladjivanju sa
+#232 sacuvati tu objedinjenu verziju i provjeriti sve korisnike helpera.
+Ove zavisnosti ostaju otvorene; uskladjivanje sa `main`-om ih ne merge-uje.
 
 Provjera 27.11.2026, osnova `main` 549f5a87 + dorade #263:
 
@@ -143,3 +146,10 @@ Provjera 27.11.2026, osnova `main` 549f5a87 + dorade #263:
 
 Logovi i TRX: `TestResults/issue-262-audit-review/` (git-ignored).
 GitHub CI i dalje treba potvrditi na novom PR commitu.
+
+Uskladjivanje sa `main` 34da05b8, 27.11.2026: razrijesen je add/add konflikt
+`AuditTestData.cs` uz ocuvanje oba API-ja helpera. Cijeli backend se kompajlira bez
+gresaka; kompletan `Platform.Identity.Tests` u Release prolazi sa 551 testom,
+0 padova i 0 preskocenih, ukljucujuci nase audit i nove CSRF/Identity provjere.
+Dokazi su u `TestResults/issue-262-merge/` (git-ignored). Raniji brojevi iznad
+ostaju istorijski rezultati svojih osnova; ne sabiraju se sa ovim pokretanjem.
