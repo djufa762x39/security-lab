@@ -34,6 +34,8 @@ public class TestDatabaseFixture
 
         // 2. Kreiranje baze preko migracija
         await ApplyMigrationsAsync();
+        // Audit šema (AUD-01): uspešan MFA confirm i verify upisuju audit zapis u istoj transakciji.
+        await AuditPersistenceExtensions.MigrateAuditDatabaseAsync(ConnectionString);
 
         // 3. Inicijalizacija Respawn
         _connection = new NpgsqlConnection(ConnectionString);
@@ -42,9 +44,9 @@ public class TestDatabaseFixture
         _respawner = await Respawner.CreateAsync(_connection, new RespawnerOptions
         {
             DbAdapter = DbAdapter.Postgres,
-            // Audit is append-only: Respawn's DELETE must never touch its history or migration tables.
-            SchemasToExclude = ["audit"],
-            TablesToIgnore = [new Table("__EFMigrationsHistory") ]
+            TablesToIgnore = [new Table("__EFMigrationsHistory") ],
+            // audit.audit_events ne dozvoljava DELETE (ProtectAuditHistory); testovi čitaju samo redove svog korisnika.
+            SchemasToExclude = ["audit"]
         });
     }
 
@@ -71,9 +73,7 @@ public class TestDatabaseFixture
         var db = scope.ServiceProvider.GetRequiredService<PlatformIdentityDbContext>();
         
         // Primenjivanje migracije na testnu bazu
-        await db.Database.MigrateAsync();
-        // Build the reset plan with Audit already present, rather than depending on fixture execution order.
-        await AuditPersistenceExtensions.MigrateAuditDatabaseAsync(ConnectionString);
+        await db.Database.MigrateAsync(); 
     }
     #endregion
 }

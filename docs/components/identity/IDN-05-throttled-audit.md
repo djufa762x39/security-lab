@@ -127,12 +127,17 @@ namespace i klasa: `Platform.Identity.Tests.Integration.Audit.IdentityAuditInteg
 
 Matrica i njeni filteri jos nisu na ovoj osnovi `main`-a; autor #221 treba da ih
 uskladi prema konacnim nazivima. Istorijski brojevi testova iznad nisu nova kampanja.
-Prije merge-a #263 sacekati #243 i #232, zatim prenijeti novi session-revoked test.
-`AuditTestData` koji je u medjuvremenu stigao na `main` za CSRF provjere objedinjen
-je sa ovim helperom u jednu `public static class`: sacuvani su `Row` i `RowsAsync`,
-kao i ograniceni runtime nalog i citanja po akteru/korelaciji. Pri uskladjivanju sa
-#232 sacuvati tu objedinjenu verziju i provjeriti sve korisnike helpera.
-Ove zavisnosti ostaju otvorene; uskladjivanje sa `main`-om ih ne merge-uje.
+#243 i #232 su spojeni u `main`; #263 je uskladjen sa osnovom c991046e.
+Novi test iz #243 prenesen je kao
+`LoginAndRevokeHttpFlow_ValidSession_PersistsSessionRevokedWithRequestCorrelation`
+u `Integration/Audit/IdentityAuditIntegrationTests.cs`. Koristi `CreateIdentityHost`,
+`SessionTestData` i `AuditTestData`, uz ocuvane provjere aktera, korelacije, ishoda,
+resursa, uzroka i handle-a opozvane sesije; dodatno provjerava sacuvani opoziv.
+`AuditTestData` je jedna `public static class`: sacuvani su `Row` i `RowsAsync`
+za MFA i CSRF, kao i ograniceni runtime nalog i citanja po akteru/korelaciji.
+Zajednicki fixture migrira Audit semu jednom prije Respawn plana i eksplicitno je
+izuzima iz resetovanja. Cvetkove provjere izolacije od `.env` ostaju ukljucene.
+Preostaje CI i ponovni review na uskladjenom commitu prije merge-a #263.
 
 Provjera 27.11.2026, osnova `main` 549f5a87 + dorade #263:
 
@@ -153,3 +158,10 @@ gresaka; kompletan `Platform.Identity.Tests` u Release prolazi sa 551 testom,
 0 padova i 0 preskocenih, ukljucujuci nase audit i nove CSRF/Identity provjere.
 Dokazi su u `TestResults/issue-262-merge/` (git-ignored). Raniji brojevi iznad
 ostaju istorijski rezultati svojih osnova; ne sabiraju se sa ovim pokretanjem.
+
+Zavrsno uskladjivanje poslije merge-a #243 i #232, osnova `main` c991046e,
+27.11.2026: cijeli backend se kompajlira bez gresaka, a svih 690 Identity testova
+prolazi bez preskakanja. Audit grupa ima 11 scenarija (8 funkcionalnih i 3
+regresiona) i vec je ukljucena u tih 690. Preneseni session-revoked test prolazi
+sa stvarnim HTTP tokom, audit writer-om i ogranicenim nalogom baze.
+Dokazi su u `TestResults/issue-262-mfa-final/` (git-ignored).

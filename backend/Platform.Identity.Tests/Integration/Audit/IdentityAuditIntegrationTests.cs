@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Moq;
@@ -20,6 +21,7 @@ using Platform.Identity.Testing;
 namespace Platform.Identity.Tests.Integration.Audit;
 
 [TestFixture]
+[Category("AUD-01")]
 [NonParallelizable]
 public sealed class IdentityAuditIntegrationTests : IntegrationTestBase
 {
@@ -62,6 +64,53 @@ public sealed class IdentityAuditIntegrationTests : IntegrationTestBase
             Assert.That(events, Does.Contain(AuditEventTypes.AuthLogin));
             Assert.That(events, Does.Contain(AuditEventTypes.AuthLogout));
         });
+    }
+
+    [Test]
+    public async Task LoginAndRevokeHttpFlow_ValidSession_PersistsSessionRevokedWithRequestCorrelation()
+    {
+        // Arrange
+        var email = $"audit-revoke-{Guid.NewGuid():N}@example.com";
+        var userId = (await UserTestData.AddAsync(Factory, email, Password)).Id;
+        await using var factory = CreateIdentityHost(loginPermitLimit: 1000);
+        using var client = factory.CreateCsrfClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost"),
+            HandleCookies = true,
+            AllowAutoRedirect = false
+        });
+        using var loginResponse = await client.PostAsJsonAsync(
+            "/api/auth/login",
+            new { email, password = Password });
+        Assert.That(loginResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        var session = (await SessionTestData.GetForUserAsync(Factory, userId))
+            .Single(value => value.RevokedAt == null);
+
+        // Act
+        using var revokeResponse = await client.DeleteAsync(
+            $"/api/auth/sessions/{session.SessionHandle}");
+        var correlationId = revokeResponse.Headers.GetValues("X-Correlation-ID").Single();
+
+        // Assert
+        var records = await AuditTestData.GetByCorrelationAsync(Factory, correlationId);
+        Assert.That(records, Has.Count.EqualTo(1));
+        var record = records.Single(value =>
+            value.ActorId == userId
+            && value.EventType == AuditEventTypes.AuthSessionRevoked
+            && value.CorrelationId == correlationId);
+        Assert.Multiple(() =>
+        {
+            Assert.That(revokeResponse.StatusCode, Is.EqualTo(HttpStatusCode.NoContent));
+            Assert.That(record.ActorId, Is.EqualTo(userId));
+            Assert.That(record.ActorKind, Is.EqualTo(AuditActorKind.User));
+            Assert.That(record.EventType, Is.EqualTo(AuditEventTypes.AuthSessionRevoked));
+            Assert.That(record.Outcome, Is.EqualTo(AuditOutcome.Success));
+            Assert.That(record.ResourceType, Is.EqualTo(AuditResourceTypes.Account));
+            Assert.That(record.ResourceId, Is.EqualTo(userId.ToString()));
+            Assert.That(record.DetailsJson, Does.Contain("user_request"));
+            Assert.That(record.DetailsJson, Does.Contain(session.SessionHandle.ToString("D")));
+        });
+        Assert.That((await SessionTestData.GetAsync(Factory, session.Id))!.RevokedAt, Is.Not.Null);
     }
 
     [Test]
@@ -294,9 +343,16 @@ public sealed class IdentityAuditIntegrationTests : IntegrationTestBase
         int loginPermitLimit = 1, int maxFailedAttempts = 5, ITrustedAuditWriter? writer = null) =>
         Factory.WithWebHostBuilder(builder =>
         {
+            builder.UseEnvironment("Testing");
             builder.UseSetting("RateLimiting:Login:PermitLimit", loginPermitLimit.ToString(System.Globalization.CultureInfo.InvariantCulture));
             builder.UseSetting("RateLimiting:Login:WindowSeconds", "60");
             builder.UseSetting("Identity:Lockout:MaxFailedAccessAttempts", maxFailedAttempts.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            // Keep raw Audit configuration and the scoped context on the same restricted test role.
+            builder.ConfigureAppConfiguration((_, configuration) =>
+                configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:Audit"] = auditRuntimeConnection
+                }));
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<AuditDbContext>();
