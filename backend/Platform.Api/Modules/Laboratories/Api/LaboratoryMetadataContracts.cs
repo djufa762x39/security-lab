@@ -18,3 +18,12 @@ public sealed record LaboratoryMetadataResponse(
     LaboratoryType Type,
     IReadOnlyList<string> Tags
 );
+
+public sealed record LaboratoryMetadataDetailResponse(
+    Guid LaboratoryId,
+    string Title,
+    string Objective,
+    LaboratoryDifficulty Difficulty,
+    LaboratoryType Type,
+    IReadOnlyList<string> Tags
+);

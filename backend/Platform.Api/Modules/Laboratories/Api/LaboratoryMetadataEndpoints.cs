@@ -25,6 +25,32 @@ public static class LaboratoryMetadataEndpoints
             .IsService(typeof(ILaboratoryMetadataRepository)))
             return app;
 
+        app.MapGet(
+            $"{BasePath}/{{id:guid}}/metadata",
+            async (
+                Guid id,
+                ILaboratoryRepository laboratoryRepository,
+                ILaboratoryMetadataRepository metadataRepository,
+                CancellationToken cancellationToken) =>
+            {
+                var laboratory = await laboratoryRepository.GetByIdAsync(id, cancellationToken);
+                if (laboratory is null)
+                    return Results.NotFound();
+
+                var metadata = await metadataRepository.GetByLaboratoryIdAsync(id, cancellationToken);
+                if (metadata is null)
+                    return Results.NotFound();
+
+                return Results.Ok(new LaboratoryMetadataDetailResponse(
+                    metadata.LaboratoryId,
+                    laboratory.Title,
+                    metadata.Objective,
+                    metadata.Difficulty,
+                    metadata.Type,
+                    metadata.Tags));
+            })
+            .RequireAccess(AccessActions.LabDraftManage.Id, "laboratory", "id");
+
         app.MapPost(
             $"{BasePath}/{{id:guid}}/metadata",
             async (
