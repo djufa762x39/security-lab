@@ -27,6 +27,14 @@ public static class LaboratoriesModule
         services.AddScoped<LaboratoryService>();
         services.AddScoped<LaboratorySearchService>();
 
+        if (environment.IsDevelopment())
+        {
+            // Metadata routes use the central course-role policy. Bridge only the local demo
+            // membership/resource sources; production keeps its configured central providers.
+            services.TryAddSingleton<Platform.Access.Contracts.IMembershipReader, DevelopmentLaboratoryMembershipReader>();
+            services.TryAddSingleton<Platform.Access.Contracts.IResourceDescriptorResolver, DevelopmentLaboratoryResourceDescriptorResolver>();
+        }
+
         if (!string.IsNullOrWhiteSpace(configuration?.GetConnectionString("Authoring")))
         {
             services.TryAddScoped<ILaboratoryMetadataRepository, PersistentMetadataRepository>();
@@ -77,7 +85,9 @@ public static class LaboratoriesModule
         }
 
         services.AddScoped<IAccessSubjectProvider>(sp =>
-            new LaboratorySubjectProvider(CreateInnerSubjectProvider(sp, original)));
+            new LaboratorySubjectProvider(
+                CreateInnerSubjectProvider(sp, original),
+                sp.GetRequiredService<IHostEnvironment>()));
     }
 
     private static IAccessSubjectProvider CreateInnerSubjectProvider(IServiceProvider sp, ServiceDescriptor? original) =>
