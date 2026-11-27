@@ -16,6 +16,7 @@ using Platform.Api.Modules.Laboratories.Application;
 using Platform.Api.Modules.Laboratories.Domain;
 using Platform.LabVisibility.Contracts;
 using Platform.LabVisibility.Infrastructure.Membership;
+using Platform.LabMetadata;
 
 namespace Laboratories.Tests;
 
@@ -137,36 +138,32 @@ public sealed class LaboratoriesHttpTests
     [Test]
     public async Task CreateSaveLoadAndEditDraftMetadata_UsesRealLaboratoryRoutesWithoutPublicContent()
     {
-        using var factory = MetadataTestHost.Create(services =>
-        {
-            services.RemoveAll<Platform.Access.Contracts.IAccessDecision>();
-            services.AddSingleton<Platform.Access.Contracts.IAccessDecision, AllowSubjectAccessDecision>();
-        });
+        // Real Development host and central Access decision: do not replace IAccessDecision.
+        using var factory = new LaboratoriesHostFactory("Development");
         using var client = factory.CreateClient();
-        var accessMemberships = factory.Services.GetRequiredService<InMemoryMembershipReader>();
-        var resources = factory.Services.GetRequiredService<InMemoryResourceDescriptorResolver>();
-        MetadataTestData.ConfigureAccess(accessMemberships, resources);
+        var metadataRepository = factory.Services.GetRequiredService<ILaboratoryMetadataRepository>();
+        var demoCourseId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        var demoTeacherId = Guid.Parse("11111111-1111-1111-1111-111111111111");
         factory.Services.GetRequiredService<InMemoryCourseMembership>()
-            .Set(CourseId, UserGuid("marko"), CourseRole.Teacher);
+            .Set(demoCourseId, demoTeacherId, CourseRole.Teacher);
+        const string demoTeacher = "11111111-1111-1111-1111-111111111111:Teacher";
 
         HttpRequestMessage CreateMetadataRequest(string method, string path, object? body = null)
         {
             var request = body is null
-                ? CreateRequest(method, path, Teacher)
-                : CreateJsonRequest(method, path, Teacher, body);
-            request.Headers.Add(TestMetadataSubjectProvider.HeaderName, MetadataTestData.TeacherId.ToString());
+                ? CreateRequest(method, path, demoTeacher)
+                : CreateJsonRequest(method, path, demoTeacher, body);
             return request;
         }
 
         using var createRequest = CreateMetadataRequest(
-            "POST", Route, new { title = "LAB-02 draft", courseId = CourseId });
+            "POST", Route, new { title = "LAB-02 draft", courseId = demoCourseId });
         using var createResponse = await client.SendAsync(createRequest);
         Assert.That(createResponse.StatusCode, Is.EqualTo(HttpStatusCode.Created));
         var created = await createResponse.Content.ReadFromJsonAsync<LaboratoryResponse>();
         Assert.That(created, Is.Not.Null);
 
         var metadataPath = $"{Route}{created!.Id}/metadata";
-        resources.SetCourse(new ResourceRef("laboratory", created.Id.ToString()), CourseId);
         using var saveRequest = CreateMetadataRequest("POST", metadataPath, new
         {
             objective = "Početni cilj laboratorije",
@@ -215,6 +212,8 @@ public sealed class LaboratoriesHttpTests
             Assert.That(reloaded.Objective, Is.EqualTo("Izmenjeni cilj laboratorije"));
             Assert.That(reloaded.Tags, Is.EqualTo(new[] { "izmena", "bezbednost" }));
         });
+
+        Assert.That(await metadataRepository.GetByLaboratoryIdAsync(created.Id), Is.Not.Null);
     }
     [Test]
     public async Task PostLabs_WhenStudentCreates_Returns403AndStoresNothing()
@@ -730,20 +729,6 @@ public sealed class LaboratoriesHttpTests
         return request;
     }
 
-    private sealed class AllowSubjectAccessDecision : Platform.Access.Contracts.IAccessDecision
-    {
-        public ValueTask<Platform.Access.Domain.Models.AccessDecision> DecideAsync(
-            Platform.Access.Domain.Models.AccessRequest request,
-            CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return ValueTask.FromResult(request.Subject is null
-                ? Platform.Access.Domain.Models.AccessDecision.Deny(
-                    Platform.Access.Domain.Enums.AccessDenialReason.Unauthenticated,
-                    request.CorrelationId)
-                : Platform.Access.Domain.Models.AccessDecision.Allow("laboratory-http-test", request.CorrelationId));
-        }
-    }
     private sealed class LaboratoriesHostFactory(
         string environment, Action<IServiceCollection>? testServices = null) : WebApplicationFactory<Program>
     {
