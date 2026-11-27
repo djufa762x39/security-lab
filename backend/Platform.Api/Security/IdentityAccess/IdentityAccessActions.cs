@@ -1,4 +1,5 @@
 using Platform.Api.Modules.Laboratories.Application;
+using Platform.Api.Modules.LabLocalization;
 using Platform.LabVisibility.Contracts;
 using Platform.Identity.Services;
 using Platform.Api.Security.RevisionAuthorization;
@@ -16,6 +17,9 @@ public static class IdentityAccessActions
     public const string SessionRead = "identity.session.read";
     public const string SessionNotificationsRead = "identity.session.notifications.read";
     public const string SessionNotificationsUpdate = "identity.session.notifications.update";
+
+    /// <summary>US-15: anyone, signed in or not, gets a CSRF token (<c>GET /api/auth/csrf</c>); login needs one too.</summary>
+    public const string CsrfToken = "identity.csrf.token";
 
     /// <summary>IDN-07: the caller lists their own active sessions (<c>GET /api/auth/sessions</c>).</summary>
     public const string SessionList = "identity.session.list";
@@ -66,6 +70,8 @@ public static class IdentityAccessActions
             SessionNotificationsUpdate,
             // #185: /student-view i /preview (tim 6) dobijaju subjekat iz prave sesije, ne iz razvojnog zaglavlja.
             LabVisibilityActions.Entry,
+            // LAB-07: sadržaj i prevodi laboratorije.
+            LabLocalizationActions.Entry,
             CatalogReadPolicy.ActionId,
         };
 }
